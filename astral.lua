@@ -1,12 +1,15 @@
--- Astral v4.44 | visible capture and reduced native request load.
--- Toys, Misc, Keybinds, Toy Auras and Look Event Figures UI/controllers removed.
--- Kick Monitor reports observed RTT, ownership and local request rate; it never
--- labels unrelated black-hole counts as confirmed player kicks.
--- Native Grab/RNO cadence is separated from pallet physics updates. Existing
--- avatar joints are preserved; acquisition uses a real visible under-target trip.
--- A faster server disconnect cannot be guaranteed without live validation.
+-- Astral v4.45 | continuous overhead hold, restored Aim and compact Target UI.
+-- Ownership is released on stop/cleanup, not on each physics frame.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
+sources.Branding = [========[
+local Brand={}
+function Brand.Clean(value)
+    return (tostring(value or ""):gsub("[sS][aA][vV][iI][tT][aA][rR]","Astral"))
+end
+return Brand
+
+]========]
 sources.VisibleCapture = [========[
 -- Real-character capture. There are no render-step/camera position substitutes.
 local Capture={};Capture.__index=Capture
@@ -254,6 +257,7 @@ return Intro
 ]========]
 sources.Library = [========[
 local requireModule = ...
+local Brand=requireModule("Branding")
 local Identity = requireModule("AppIdentity")
 local MenuDecor = requireModule("MenuDecor")
 local FunctionGlyphs = requireModule("FunctionGlyphs")
@@ -10636,10 +10640,10 @@ function Library:Notify(...)
     local Info = select(1, ...)
 
     if typeof(Info) == "table" then
-        Data.Title = tostring(Info.Title)
+        Data.Title = Brand.Clean(Info.Title or "Astral")
         Data.TitleColor = Info.TitleColor
 
-        Data.Description = tostring(Info.Description)
+        Data.Description = Brand.Clean(Info.Description)
         Data.DescriptionColor = Info.DescriptionColor
 
         Data.Time = Info.Time or 5
@@ -10656,7 +10660,7 @@ function Library:Notify(...)
 
         Data.Volume = tonumber(Info.Volume) or 3
     else
-        Data.Description = tostring(Info)
+        Data.Description = Brand.Clean(Info)
         Data.Time = select(2, ...) or 5
         Data.SoundId = select(3, ...)
         Data.Volume = select(4, ...) or 3
@@ -10901,7 +10905,7 @@ function Library:Notify(...)
 
     function Data:ChangeTitle(Text)
         if Title then
-            Data.Title = tostring(Text)
+            Data.Title = Brand.Clean(Text)
             Title.Text = Data.Title
             Data:Resize()
         end
@@ -10909,7 +10913,7 @@ function Library:Notify(...)
 
     function Data:ChangeDescription(Text)
         if Desc then
-            Data.Description = tostring(Text)
+            Data.Description = Brand.Clean(Text)
             Desc.Text = Data.Description
             Data:Resize()
         end
@@ -17521,7 +17525,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.44 | FTAP")
+                                warn("Astral v4.45 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -17879,9 +17883,9 @@ do
 							LagLines = 11,
 							BlackHoles = 0,
 							Packets = 0.35,
-							PacketPrefix = "RSC | ",
+							PacketPrefix = "ASTRAL | ",
 							PacketDelay = 0.1,
-							LoboStrength = 166.6,
+
 							AutoServerHopTime = 30,
 							ServerHopMinPlayers = 0,
 							ServerHopMaxPlayers = Players.MaxPlayers,
@@ -35123,7 +35127,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.44"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.45"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -35224,7 +35228,7 @@ Escape Timer: %*]]
         end
 
 		tbl15 = {
-			Home = v19:AddTab("<b>Home</b>", UIStyle.Icons.Home, "Profile, statistics"),
+			Home = v19:AddTab("<b>Home</b>", UIStyle.Icons.Home, "Welcome to Astral"),
 			Player = v19:AddTab("<b>Player</b>", UIStyle.Icons.Player, "Things you can apply to yourself"),
 			Combat = v19:AddTab("<b>Combat</b>", UIStyle.Icons.Combat, "Grab/Line/Auras stuff"),
 			Invincibility = v19:AddTab("<b>Defense</b>", UIStyle.Icons.Invincibility, "Defense"),
@@ -35239,84 +35243,15 @@ Escape Timer: %*]]
 			Settings = v19:AddTab("<b>Settings</b>", UIStyle.Icons.Settings, "GUI Settings"),
 		}
 
-	do
-		local Greetings = tbl15.Home:AddLeftGroupbox("Greetings", "chess-queen")
-		local thumbnail = string.format("rbxthumb://type=AvatarBust&id=%d&w=180&h=180", localPlayer.UserId)
-		local avatar = Greetings:AddImage("MyIcon", {
-			Image = thumbnail,
-			Height = 180,
-			Color = Color3.new(1, 1, 1),
-			Transparency = 0,
-			BackgroundTransparency = 1,
-			ScaleType = Enum.ScaleType.Fit,
-		})
-
-		task.spawn(function()
-			local holder = avatar and avatar.Holder
-			local image = holder and holder:FindFirstChildWhichIsA("ImageLabel", true)
-			if not image then return end
-			for attempt = 1, 6 do
-				if flag11 or avatar.Destroyed or not image.Parent then return end
-				local ok, content, ready = pcall(function()
-					return Players:GetUserThumbnailAsync(localPlayer.UserId, Enum.ThumbnailType.AvatarBust, Enum.ThumbnailSize.Size180x180)
-				end)
-				if flag11 or avatar.Destroyed or not image.Parent then return end
-				if ok and ready and type(content) == "string" and content ~= "" then
-					image.Image = content
-					image.ImageColor3 = Color3.new(1, 1, 1)
-					image.ImageTransparency = 0
-					image.ImageRectOffset = Vector2.zero
-					image.ImageRectSize = Vector2.zero
-					avatar.Image = content
-				end
-				task.wait(math.min(attempt * 0.5, 2))
-				if flag11 or avatar.Destroyed or not image.Parent then return end
-				if image.IsLoaded then return end
-			end
-			if not flag11 and image.Parent then
-				image.Image = thumbnail
-				avatar.Image = thumbnail
-			end
-		end)
-
-		local hour = tonumber(os.date("%H")) or 12
-		local greeting = "Night"
-		if hour >= 5 and hour < 12 then
-			greeting = "Morning"
-		elseif hour >= 12 and hour < 17 then
-			greeting = "Afternoon"
-		elseif hour >= 17 and hour < 21 then
-			greeting = "Evening"
-		end
-		Greetings:AddLabel({ Text = ("%s, <b>%s</b> "):format(greeting, localPlayer.DisplayName), DoesWrap = true })
-		Greetings:AddDivider()
-		Greetings:AddLabel({ Text = "Welcome to <b><font color=\"#cdcdcd\">astral</font></b>", DoesWrap = true })
-		Greetings:AddLabel({ Text = "script made by:robokop", DoesWrap = true })
-	end
-
         do
-            local box=tbl15.Home:AddRightGroupbox("Kick Monitor","activity")
-            local build=box:AddLabel("Astral v4.44 · visible capture",true)
-            local state=box:AddLabel("Kick idle",true)
-            local network=box:AddLabel("Network: waiting for samples",true)
-            local capture=box:AddLabel("Capture: idle",true)
-            local rates=box:AddLabel("Native requests: 0/s",true)
-            local rig=box:AddLabel("Held targets: 0",true)
-            local elapsed,at,last=0,os.clock(),0
-            lib:GiveSignal(RunService.Heartbeat:Connect(function(dt)
-                elapsed+=dt;if elapsed<.25 then return end;elapsed=0
-                local loop=tbl12.KickLoop;local cap=tbl12.VisibleCapture
-                local total=loop.Calls+loop.Released+(cap and cap.Requests or 0)
-                local now=os.clock();local rate=(total-last)/math.max(now-at,.001);at=now;last=total
-                local held,count=0,0
-                for player in pairs(loop.Sessions)do count+=1;if loop:IsHolding(player)then held+=1 end end
-                state:SetText(loop.Status)
-                local observed=tbl12.TryKickPingSeconds()
-                network:SetText(observed and string.format("Observed RTT: %.0f ms",observed*1000)or "Observed RTT: unavailable")
-                capture:SetText(cap and cap.Status or "Capture unavailable")
-                rates:SetText(string.format("Kick requests: %.1f/s · Grab/RNO",rate))
-                rig:SetText(string.format("Held: %d / %d · server kick result unverified",held,count))
-            end))
+            local box=tbl15.Home:AddRightGroupbox("Welcome","chess-queen")
+            box:AddLabel(("Привет, %s!"):format(localPlayer.DisplayName),true)
+            box:AddDivider()
+            box:AddLabel("Рады видеть тебя в Astral.",true)
+            box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
+            box:AddLabel("Удачной игры!",true)
+            box:AddDivider()
+            box:AddLabel("Astral v4.45",true)
         end
 
         do
@@ -35969,56 +35904,6 @@ Escape Timer: %*]]
 			end,
 		})
 
-		local Lobotomy = v20:AddTab("Lobotomy", "flask-conical")
-		local v21 = nil
-
-		v21 = Lobotomy:AddButton({
-			Text = "Break Server (Lobotomy)",
-			Tooltip = "This requires GUCCI Anti-Grab to be on! Breaks the server's grabs, casinos, etc.",
-			Func = function()
-				if not tbl8.GucciAntiGrab then
-					return fn18("Turn on GUCCI Anti-Grab in the Shield Tab for this to work!", "Lobotomy")
-				end
-				local v22, v23, v24 = tbl12.Char()
-				if not v23 or not v24 or v24.Health == 0 then
-					return fn18("Can't do lobotomy because of your character being unavailable!", "Lobotomy")
-				end
-				local loboStrength = tbl9.LoboStrength
-				v21:SetDisabled(true)
-				toggles.GucciAntiGrab:SetDisabled(true)
-				fn18("This will take some time, please wait...", "Lobotomy")
-
-				for i = 0, loboStrength * 45 do
-					if i % 5 == 0 then
-						task.wait()
-					end
-
-					tbl11.RagdollRemote:FireServer(v23, 0)
-				end
-
-				toggles.GucciAntiGrab:SetDisabled(false)
-				toggles.GucciAntiGrab:SetValue(false)
-				v24.Sit = true
-				task.wait(0.1)
-				v24.Sit = false
-				fn18("Lobotomy has been done! Now you can't spawn anything, and when you grab someone, they get frozen in animation! Keep in mind that if you die, it will stop.", "Lobotomy")
-				v21:SetDisabled(false)
-			end,
-		})
-
-		Lobotomy:AddDivider()
-
-		Lobotomy:AddSlider("LoboStrengthSl", {
-			Text = "Length",
-			Default = 500,
-			Min = 450,
-			Max = 1500,
-			Rounding = 0,
-			Compact = true,
-			Callback = function(arg)
-				tbl9.LoboStrength = arg / 3
-			end,
-		})
 	end
 
 	do
@@ -36991,7 +36876,8 @@ Escape Timer: %*]]
         tbl12.KickInterval=requireModule("KickInterval").Install({RunService=RunService,Clock=os.clock,
             ReadPingMs=function()return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()end})
         lib:OnUnload(function()tbl12.KickInterval:Dispose()end)
-        local targetGroup=tbl15.Target:AddLeftGroupbox("Target Control", "circle-user-round")
+        local targetGroup=tbl15.Target:AddLeftGroupbox("Target Config", "circle-user-round")
+        tbl12.KickControls=targetGroup
         tbl12.CreatePlayerDropdown(targetGroup,"Target",selectedPlayers)
         requireModule("TargetActions").Install({Group=targetGroup,Tab=tbl15.Target,Library=lib,API=tbl12,Data=tbl7,Settings=tbl9,Notify=fn18})
         tbl12.HoldableActions=requireModule("HoldableActions").Install({API=tbl12,Data=tbl7,Library=lib,Clock=os.clock,Notify=fn18})
@@ -37166,15 +37052,16 @@ Escape Timer: %*]]
 	end
 
 	do
-		local Apply = tbl15.Target:AddLeftGroupbox("Apply", "dock")
+        local Apply=tbl12.KickControls
+        Apply:AddDivider("Kick")
 		tbl12.CreateLoopToggle(Apply, "LoopApplyMethodTSel", "LoopApplyMethodT", false, false, tbl7.SelectedPlayers)
 		tbl12.CreateLoopToggle(Apply, "LoopApplyMethodTServ", "LoopApplyMethodTServer", true, false, tbl7.SelectedPlayers)
-		tbl12.CreateApplyButton(Apply, false, false, tbl7.SelectedPlayers)
-		tbl12.CreateApplyButton(Apply, true, false, tbl7.SelectedPlayers)
+        Apply:AddButton({Text="Kick Selected",Func=function()toggles.LoopApplyMethodTSel:SetValue(true)end})
+        Apply:AddButton({Text="Kick Server",Func=function()toggles.LoopApplyMethodTServ:SetValue(true)end})
 	end
 
 	do
-		local v20 = tbl15.Target:AddLeftGroupbox("Kick Settings", "sliders-horizontal")
+		local v20 = tbl15.Target:AddRightGroupbox("Kick Settings", "sliders-horizontal")
 
 		local methodControl=v20:AddDropdown("MethodSettingsTargets", {
             Values={"Kick"},Multi=true,AllowNull=true,Text="Methods",Visible=false,
@@ -37200,7 +37087,7 @@ Escape Timer: %*]]
         -- ASTRAL_HOLDABLE_SETTINGS_END
         -- ASTRAL_FREEZE_SETTINGS_BEGIN
         local freeze=v20:AddDependencyBox();freeze:SetupDependencies({{options.MethodSettingsTargets,"Kick"}})
-        freeze:AddToggle("FreezePCLD",{Text="Freeze PCLD",Default=false,Tooltip="Only freezes an owned, unanchored detector in a separate assembly while Loop Kick is active.",
+        freeze:AddToggle("FreezePCLD",{Text="Freeze PCLD",Default=false,Tooltip="Only freezes an owned, unanchored detector in a separate assembly while Kick is active.",
             Callback=function(value)tbl8.FreezePCLD=value;tbl12.PCLDFreeze:SetEnabled(value);tbl12.WakeRuntimeGate("PCLDTracking")end})
         local freezeStatus=freeze:AddLabel("Owned separate detectors only; server markers cannot be frozen by client physics.",true)
         local freezeElapsed=0
@@ -37212,15 +37099,6 @@ Escape Timer: %*]]
 		v21:SetupDependencies({ { options.MethodSettingsTargets, "Kick" } })
 		v21:AddDivider("Kick Settings")
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
-        v21:AddLabel("Automatic Ultra Kick: pallet follows every available physics frame, with early preparation.",true)
-        v21:AddLabel("Kick core is based on the supplied Resonance 2.9 source. Targets are held directly overhead. Food, Desync, Anti-Kick and other Destroy methods remain independent. Native calls and local touches are diagnostics, not confirmed kicks.",true)
-        local kickStatus=v21:AddLabel("Kick idle",true)
-        local kickStatusElapsed=0
-        lib:GiveSignal(RunService.Heartbeat:Connect(function(dt)
-            kickStatusElapsed+=dt;if kickStatusElapsed<.2 then return end;kickStatusElapsed=0
-            local pallet=tbl12.KickLoop:RagdollRequired()and tbl12.PalletRagdoll:Describe() or "Pallet ragdoll disabled"
-            kickStatus:SetText(tbl12.KickLoop.Status.."\n"..pallet)
-        end))
         v21:AddButton({Text="Prepare Pallet",Func=function()tbl12.PalletRagdoll:Warm()end})
 
 		v21:AddToggle("RagdollNK", {
@@ -40410,6 +40288,297 @@ Escape Timer: %*]]
 	end
 
 	do
+		local v20 = tbl15.Aim:AddRightGroupbox("Aim Assist", "crosshair")
+
+		v20:AddToggle("AimbotToggle", {
+			Text = "Toggle",
+			Default = false,
+			Tooltip = "Aims for you smoothly",
+			Callback = function(aimbotEnabled)
+				tbl7.AimSettings.AimbotEnabled = aimbotEnabled
+				tbl12.UpdateAimConnection()
+			end,
+		})
+
+		if not lib.IsMobile then
+			toggles.AimbotToggle:AddKeyPicker("AimbotKeybind", {
+				Text = "Aim Key",
+				Default = "X",
+				Mode = "Hold",
+				NoUI = false,
+				ChangedCallback = function(aimKey)
+					tbl7.AimSettings.AimKey = aimKey
+				end,
+			})
+		end
+
+		v20:AddDivider("Configuration")
+
+		v20:AddDropdown("TargetPartDD", {
+			Values = { "Torso", "Head", "Left Arm", "Right Arm", "Right Leg", "Left Leg" },
+			Text = "Target Part",
+			Default = "Head",
+			Callback = function(targetPart)
+				tbl7.AimSettings.TargetPart = targetPart
+			end,
+		})
+
+		v20:AddToggle("AlwaysOnToggleAB", {
+			Text = "Always On",
+			Default = lib.IsMobile,
+			Tooltip = "Aimbot is always on instead of being on-bind",
+			Callback = function(arg)
+				tbl7.AimSettings.AlwaysOn = lib.IsMobile or arg
+			end,
+		})
+
+		if lib.IsMobile then
+			toggles.AlwaysOnToggleAB:SetDisabled(true)
+		end
+
+		v20:AddToggle("FovCircle", {
+			Text = "FOV Circle",
+			Default = false,
+			Tooltip = "Shows the actual aim radius: at the cursor on desktop, at screen center on mobile.",
+			Callback = function(fovEnabled)
+				tbl7.AimSettings.FOVEnabled = fovEnabled
+				tbl12.UpdateAimConnection()
+			end,
+		}):AddColorPicker("FovCircColor", {
+			Default = Color3.new(1, 1, 1),
+			Title = "Circle Color",
+			Callback = function(color)
+				tbl6.Stroke.Color = color
+			end,
+		})
+
+		v20:AddSlider("AimDistance", {
+			Text = "Distance",
+			Default = 40,
+			Min = 10,
+			Max = 150,
+			Rounding = 0,
+			Compact = true,
+			Suffix = " studs",
+			Callback = function(saDist)
+				tbl7.AimSettings.SADist = saDist
+			end,
+		})
+
+		v20:AddSlider("AimSmoothness", {
+			Text = "Smoothness",
+			Default = 0.15,
+			Min = 0,
+			Max = 1,
+			Rounding = 2,
+			Compact = true,
+			Callback = function(smoothness)
+				tbl7.AimSettings.Smoothness = smoothness
+			end,
+		})
+
+		v20:AddSlider("FOVSize", {
+			Text = "FOV Radius",
+			Default = 150,
+			Min = 10,
+			Max = 1000,
+			Rounding = 0,
+			Compact = true,
+			Callback = function(fovRadius)
+				tbl7.AimSettings.FOVRadius = fovRadius
+			end,
+		})
+	end
+
+	do
+		local Triggerbot = tbl15.Aim:AddLeftGroupbox("Triggerbot", "mouse-left")
+
+		Triggerbot:AddToggle("TriggerToggle", {
+			Text = "Toggle",
+			Default = false,
+			Tooltip = "Clicks when you are aiming at a target",
+			Callback = function(triggerbotEnabled)
+				local aimSettings = tbl7.AimSettings
+
+				if aimSettings.TriggerbotEnabled ~= triggerbotEnabled then
+					aimSettings.TriggerVersion = aimSettings.TriggerVersion + 1
+				end
+
+				aimSettings.TriggerbotEnabled = triggerbotEnabled
+				tbl12.UpdateAimConnection()
+			end,
+		})
+
+		if not lib.IsMobile then
+			toggles.TriggerToggle:AddKeyPicker("TriggerKeybind", {
+				Text = "Triggerbot",
+				Default = nil,
+				Mode = "Toggle",
+				NoUI = false,
+				SyncToggleState = true,
+			})
+		end
+
+		Triggerbot:AddDivider("Configuration")
+
+		Triggerbot:AddSlider("TriggerDelay", {
+			Text = "Delay",
+			Default = 0.05,
+			Min = 0,
+			Max = 1,
+			Suffix = " seconds",
+			Rounding = 2,
+			Compact = true,
+			Callback = function(triggerDelay)
+				tbl7.AimSettings.TriggerDelay = triggerDelay
+			end,
+		})
+
+		Triggerbot:AddSlider("TriggerDistance", {
+			Text = "Distance",
+			Default = 33,
+			Min = 1,
+			Max = 40,
+			Rounding = 0,
+			Compact = true,
+			Suffix = " studs",
+			Callback = function(triggerDist)
+				tbl7.AimSettings.TriggerDist = triggerDist
+			end,
+		})
+
+		Triggerbot:AddSlider("TriggerCooldown", {
+			Text = "Cooldown",
+			Default = 0.4,
+			Min = 0,
+			Max = 2,
+			Rounding = 2,
+			Compact = true,
+			Suffix = " seconds",
+			Callback = function(triggerCooldown)
+				tbl7.AimSettings.TriggerCooldown = triggerCooldown
+			end,
+		})
+
+		local TriggerTricks = Triggerbot:AddToggle("TriggerTricks", {
+			Text = "Camera Tricks",
+			Default = false,
+			Callback = function(triggerTricks)
+				tbl7.AimSettings.TriggerTricks = triggerTricks
+			end,
+		})
+
+		local v20 = Triggerbot:AddDependencyBox()
+		v20:SetupDependencies({ { TriggerTricks, true } })
+
+		v20:AddDropdown("TriggerTrick", {
+			Text = "Trick",
+			Values = { "360 Spin", "720 Spin", "180 Flick" },
+			Default = "360 Spin",
+			Multi = false,
+			Callback = function(triggerTrick)
+				tbl7.AimSettings.TriggerTrick = triggerTrick
+			end,
+		})
+
+		v20:AddSlider("TriggerTrickSpeed", {
+			Text = "Trick Speed",
+			Default = 1,
+			Min = 0.75,
+			Max = 2,
+			Rounding = 2,
+			Compact = true,
+			Suffix = "x",
+			Callback = function(triggerTrickSpeed)
+				tbl7.AimSettings.TriggerTrickSpeed = triggerTrickSpeed
+			end,
+		})
+	end
+
+	do
+		local v20 = tbl15.Aim:AddRightGroupbox("Silent Aim", "crosshair")
+
+		v20:AddToggle("SilentAim", {
+			Text = "Silent Aim",
+			Default = false,
+			Tooltip = "Uses the game's raycast when supported, with a hitbox fallback",
+			Callback = tbl12.SetSilentAim,
+		}):AddKeyPicker("SAIMKeybind", {
+			Text = "Silent Aim",
+			Default = nil,
+			Mode = "Toggle",
+			NoUI = false,
+			SyncToggleState = true,
+		})
+
+		v20:AddToggle("SilentAimIgnoreWhitelist", {
+			Text = "Ignore Whitelisted",
+			Default = true,
+			Callback = function(silentAimIgnoreWhitelist)
+				tbl8.SilentAimIgnoreWhitelist = silentAimIgnoreWhitelist
+				tbl12.RefreshSilentAim()
+			end,
+		})
+
+		local SilentAimTargetsOnly = v20:AddToggle("SilentAimTargetsOnly", {
+			Text = "Selected Targets Only",
+			Default = false,
+			Callback = function(silentAimTargetsOnly)
+				tbl8.SilentAimTargetsOnly = silentAimTargetsOnly
+				tbl12.RefreshSilentAim()
+			end,
+		})
+
+		local v21 = v20:AddDependencyBox()
+		v21:SetupDependencies({ { SilentAimTargetsOnly, true } })
+		tbl12.CreatePlayerDropdown(v21, "SilentAimTargets", tbl7.SelectedSilentAimPlayers, true, false, tbl12.RefreshSilentAim)
+
+		v20:AddToggle("SilentAimFOV", {
+			Text = "Show FOV Circle",
+			Default = false,
+			Callback = function(silentAimFOV)
+				tbl8.SilentAimFOV = silentAimFOV
+				tbl12.UpdateSilentAimFOV()
+			end,
+		})
+
+		v20:AddLabel("SilentAimMethod", { Text = "Method: Hitbox (Compatibility)", DoesWrap = true })
+
+		v20:AddSlider("SilentAimRadius", {
+			Text = "Aim Radius",
+			Default = tbl9.SAIMRadius,
+			Min = 10,
+			Max = 400,
+			Rounding = 0,
+			Compact = true,
+			Suffix = " px",
+			Callback = function(saimRadius)
+				tbl9.SAIMRadius = saimRadius
+				tbl12.UpdateSilentAimFOV()
+			end,
+		})
+
+		v20:AddSlider("SilentAimSize", {
+			Text = "Hitbox Size",
+			Default = 10,
+			Min = 1,
+			Max = 30,
+			Rounding = 0,
+			Compact = true,
+			Suffix = " studs",
+			Callback = function(saimHitbox)
+				tbl9.SAIMHitbox = saimHitbox
+
+				if tbl8.SilentAim then
+					tbl12.RefreshSilentAim()
+				end
+			end,
+		})
+	end
+
+	tbl12.SetSilentAim(tbl8.SilentAim)
+
+	do
 		local Menu = tbl15.Settings:AddLeftGroupbox("Menu", "wrench")
         Menu:AddButton({Text = "Unload astral", Func = function() lib:Unload() end})
 		Menu:AddLabel("Menu Keybind"):AddKeyPicker("menukey", { Text = "Menu Keybind", Mode = "Toggle", Default = "RightShift", NoUI = false })
@@ -41325,9 +41494,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.44: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.45: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.44 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.45 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -44276,11 +44445,9 @@ function Panel.Install(context)
     local self=setmetatable({Context=context,Closed=false,Enabled={},Busy={},Tokens={},Elapsed=0},Panel)
     local api=context.API
     self.Methods={
-        Void=api.Void,Kill=api.Kill,Bring=api.BringPlayer,
         Food=api.EatAntiInput,Seatables=api.DeleteSeatables,Gucci=api.RemoveGucci,
         Invisible=function(player)local _,root=api.Char(player);if root then root.Massless=false end end,
         AntiKick=function(player)local character=api.Char(player);if character then api.RemoveSticky(character)end end,
-        Ragdoll=function(player)local character=api.Char(player);if character then api.Ragdoll(character)end end,
         Holdable=function(player)api.HoldableActions:Apply(player)end,
     }
     self.Connection=context.RunService.Heartbeat:Connect(function(dt)
@@ -44351,12 +44518,7 @@ function Panel:AddLoop(group,key,id,text,settings)
     return toggle
 end
 function Panel:BuildUI(tab)
-    local loops=tab:AddRightGroupbox("Loop","repeat-2")
-    self:AddLoop(loops,"Void","TargetLoopVoid","Void Selected")
-    self:AddLoop(loops,"Kill","TargetLoopKill","Loop Kill")
-    self:AddLoop(loops,"Bring","TargetLoopBring","Loop Bring")
-    self:AddLoop(loops,"Ragdoll","TargetLoopRagdoll","Pallet Ragdoll")
-    local destroy=tab:AddRightGroupbox("Destroy","trash-2")
+    local destroy=tab:AddLeftGroupbox("Destroy","trash-2")
     self:AddLoop(destroy,"Food","TargetDestroyFood","Destroy Food")
     self:AddLoop(destroy,"Seatables","TargetDeleteSeatables","Delete Seatables")
     self:AddLoop(destroy,"AntiKick","AntiKickRemoverNK","Destroy Anti-Kick")
@@ -44375,7 +44537,7 @@ function Panel:BuildUI(tab)
     end
     self:AddLoop(destroy,"Holdable","TargetBreakHoldable","Break Holdable")
     if self.Context.Decoy then self.Context.Decoy:BuildUI(destroy)end
-    return loops,destroy
+    return destroy
 end
 function Panel:Dispose()
     if self.Closed then return end
@@ -44999,7 +45161,7 @@ return Glyphs
 
 ]========]
 sources.AssetCatalog = [========[
--- Game image asset IDs already present in the supplied Savitar source.
+-- Game image asset IDs already present in the supplied source.
 local Catalog={}
 Catalog.Items={
     Train="rbxassetid://8989324783",
@@ -45698,7 +45860,7 @@ local function _playNotifSound() end
 local function _doPlayNotifAudio() end
 local function _fixNotifWrap() end
 local function _applyCornerRadius() end
-local function _getGreeting() return "Savitar" end
+local function _getGreeting() return "Astral" end
 do
 local RunService = game:GetService("RunService")
 local localPlayer = game:GetService("Players").LocalPlayer
@@ -45987,7 +46149,7 @@ end
 end
 end))
 
-_savitar_isSpectating = false
+_astral_isSpectating = false
 _scriptStartTime = math.huge
 
 -- Astral owns this UI section.
@@ -48782,7 +48944,7 @@ if seatPart ~= nil and seatPart ~= v49 then
 _playNotifSound()
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "GUCCI ON Remember?",
 BigIcon = "rbxassetid://136256756383193",
 Time = 1.7,
@@ -49845,7 +50007,7 @@ _clearAllGrabParts()
 _playNotifSound()
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Anti Lag Enabled",
 BigIcon = "rbxassetid://136256756383193",
 Time = 4,
@@ -51090,7 +51252,7 @@ end
 _playNotifSound()
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Kick Frame Detected!",
 BigIcon = "rbxassetid://136256756383193",
 Time = 4,
@@ -51986,7 +52148,7 @@ bridge:TrackThread(task.spawn(function()
 _playNotifSound("Break PCLD")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Break PCLD: Death Detected",
 BigIcon = "rbxassetid://136256756383193",
 Time = 3,
@@ -52010,7 +52172,7 @@ local cFrame = humanoidRootPart3.CFrame
 _playNotifSound("Break PCLD")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Break PCLD 1/2",
 BigIcon = "rbxassetid://136256756383193",
 Time = 3,
@@ -52039,7 +52201,7 @@ humanoid5.Health = 0
 _playNotifSound("Break PCLD")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Break PCLD 2/2",
 BigIcon = "rbxassetid://136256756383193",
 Time = 3,
@@ -52052,7 +52214,7 @@ task.wait(0.3)
 _playNotifSound("Break PCLD")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "PCLD Broken",
 BigIcon = "rbxassetid://136256756383193",
 Time = 4,
@@ -52096,7 +52258,7 @@ local cFrame = saviHRP.CFrame
 _playNotifSound()
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Break PCLD 1/2",
 BigIcon = "rbxassetid://136256756383193",
 Time = 3,
@@ -52123,7 +52285,7 @@ humanoid3.Health = 0
 _playNotifSound()
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Break PCLD 2/2",
 BigIcon = "rbxassetid://136256756383193",
 Time = 3,
@@ -52136,7 +52298,7 @@ task.wait(0.3)
 _playNotifSound()
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "PCLD Broken",
 BigIcon = "rbxassetid://136256756383193",
 Time = 4,
@@ -54565,7 +54727,7 @@ bridge:TrackThread(task.spawn(function()
 fn30(v62)
 end))
 else
-lib:Notify({ Title = "<b>SAVITAR</b>", Description = "No plot found for current location!", Time = 3 })
+lib:Notify({ Title = "<b>ASTRAL</b>", Description = "No plot found for current location!", Time = 3 })
 end
 end,
 })
@@ -55188,7 +55350,7 @@ character4 = character4 and character4:FindFirstChildOfClass("Humanoid")
 if currentCamera and character4 then
 bridge:SetProperty(currentCamera, "CameraSubject", character4)
 end
-elseif _savitar_isSpectating then
+elseif _astral_isSpectating then
 local currentCamera = workspace.CurrentCamera
 cameraSubject = cameraSubject and cameraSubject.Character
 cameraSubject = cameraSubject and cameraSubject:FindFirstChildOfClass("Humanoid")
@@ -55239,7 +55401,7 @@ connection4 = nil
 end
 
 if arg then
-_savitar_isSpectating = true
+_astral_isSpectating = true
 local currentCamera = workspace.CurrentCamera
 
 if currentCamera and currentCamera.CameraType ~= Enum.CameraType.Custom then
@@ -55269,7 +55431,7 @@ end
 end
 end))
 else
-_savitar_isSpectating = false
+_astral_isSpectating = false
 local currentCamera = workspace.CurrentCamera
 local character4 = localPlayer2.Character
 character4 = character4 and character4:FindFirstChildOfClass("Humanoid")
@@ -55669,7 +55831,7 @@ _playNotifSound()
 end
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Successfully Spun the Slot",
 BigIcon = "rbxassetid://136256756383193",
 Time = 2.5,
@@ -55717,7 +55879,7 @@ _playNotifSound()
 end
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "All Slots Are Broken, Couldn't Farm Coin",
 BigIcon = "rbxassetid://136256756383193",
 Time = 3,
@@ -56503,7 +56665,7 @@ end
 _playNotifSound("Anti Lag")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Anti Lag Enabled",
 BigIcon = "rbxassetid://136256756383193",
 Time = 4,
@@ -56530,7 +56692,7 @@ end
 _playNotifSound("Line Lag")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = str7 .. " <b>|</b> <font color='#ff0000'><b>Line Lag Detected</b></font>",
 BigIcon = "rbxassetid://136256756383193",
 Time = 5,
@@ -65797,7 +65959,7 @@ _pose_destroyAlign(player)
 _playNotifSound("Pose Target Left / Rejoin")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Pose Target <u>" .. (player.DisplayName or player.Name) .. "</u> (<u>@" .. player.Name .. "</u>) left the server",
 Time = 6,
 BigIcon = "rbxassetid://136256756383193",
@@ -65836,7 +65998,7 @@ end)
 _playNotifSound("Pose Target Left / Rejoin")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Pose Target <u>" .. (v67.displayName or player.Name) .. "</u> (<u>@" .. player.Name .. "</u>) Rejoined, Autoselected",
 Time = 6,
 BigIcon = "rbxassetid://136256756383193",
@@ -66062,7 +66224,7 @@ fn32(value)
 _playNotifSound("Pose Presets")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Loaded preset: <u>" .. (value or "?") .. "</u>",
 Time = 3,
 BigIcon = "rbxassetid://136256756383193",
@@ -66126,7 +66288,7 @@ local str6 = "Astral/PosePresets/" .. presetNotFound .. ".json"
 
 if not isfile(str6) then
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Preset not found: " .. presetNotFound,
 Time = 2,
 BigIcon = "rbxassetid://136256756383193",
@@ -66141,7 +66303,7 @@ end)
 
 if not ok or not result then
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Failed to load preset",
 Time = 2,
 BigIcon = "rbxassetid://136256756383193",
@@ -66154,7 +66316,7 @@ fn34(result)
 _playNotifSound("Pose Presets")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Loaded custom preset: <u>" .. presetNotFound .. "</u>",
 Time = 3,
 BigIcon = "rbxassetid://136256756383193",
@@ -66251,7 +66413,7 @@ end
 _playNotifSound("Pose Presets")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Saved preset: <u>" .. value .. "</u>",
 Time = 3,
 BigIcon = "rbxassetid://136256756383193",
@@ -66325,7 +66487,7 @@ end)
 _playNotifSound("Pose Presets")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Deleted preset: <u>" .. value .. "</u>",
 Time = 2,
 BigIcon = "rbxassetid://136256756383193",
@@ -67339,7 +67501,7 @@ v68 = nil
 
 fn32 = function()
 v68 = nil
-_savitar_isSpectating = false
+_astral_isSpectating = false
 
 for _, v69 in ipairs(tbl24) do
 v69.IsSpectating = false
@@ -67826,7 +67988,7 @@ if v68 == v69 then
 fn32()
 else
 v68 = v69
-_savitar_isSpectating = true
+_astral_isSpectating = true
 
 for _, v74 in ipairs(tbl24) do
 local isSpectating = v74.Player == v69
@@ -67909,7 +68071,7 @@ if v68 then
 if v68.Parent ~= Players3 or not tbl20[v68] then
 fn32()
 else
-_savitar_isSpectating = true
+_astral_isSpectating = true
 local character5 = v68.Character
 character5 = character5 and character5:FindFirstChildOfClass("Humanoid")
 
@@ -68093,7 +68255,7 @@ end)
 _playNotifSound("Target Left / Rejoin")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Target <u>" .. player.DisplayName .. "</u> (<u>@" .. player.Name .. "</u>) Rejoined, Autoselected",
 Time = 6,
 BigIcon = "rbxassetid://136256756383193",
@@ -68113,7 +68275,7 @@ tbl25[player.Name] = { displayName = player.DisplayName }
 _playNotifSound("Target Left / Rejoin")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Target <u>" .. player.DisplayName .. "</u> (<u>@" .. player.Name .. "</u>) left the server",
 Time = 6,
 BigIcon = "rbxassetid://136256756383193",
@@ -71696,7 +71858,7 @@ if v69 and not flag36 then
 _playNotifSound("House Barrier Broken")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "House Barrier Broken!",
 BigIcon = "rbxassetid://136256756383193",
 Time = 5.4,
@@ -72031,7 +72193,7 @@ _home_kickCount = (_home_kickCount or 0) + 1
 _playNotifSound("Player Kicked")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = arg.DisplayName .. " (<u>@" .. arg.Name .. "</u>) has been kicked",
 BigIcon = "rbxassetid://136256756383193",
 Time = 5.4,
@@ -72319,7 +72481,6 @@ MeltDuration = 1.4,
 GhostVFXAlpha = 0.95,
 GlassColor = Color3.fromRGB(255, 255, 255),
 TargetSize = UDim2.fromScale(0.85, 0.75),
-LogoId = "rbxassetid://125209698949144",
 Keywords = {
 "color",
 "picker",
@@ -72557,23 +72718,21 @@ end
 end
 
 _liqLogo = function()
-local savitarCustomLogo = menu:FindFirstChild("SavitarCustomLogo")
+local astralCustomLogo = menu:FindFirstChild("AstralCustomLogo")
 
-if savitarCustomLogo then
-savitarCustomLogo:Destroy()
+if astralCustomLogo then
+astralCustomLogo:Destroy()
 end
 
-local imageLabel2 = bridge:TrackInstance(Instance.new("ImageLabel"))
-imageLabel2.Name = "SavitarCustomLogo"
-imageLabel2.Size = UDim2.fromOffset(105, 105)
-imageLabel2.Position = UDim2.new(1, -55, 0, 10)
-imageLabel2.AnchorPoint = Vector2.new(1, 0)
-imageLabel2.BackgroundTransparency = 1
-imageLabel2.Image = tbl34.LogoId
-imageLabel2.ImageColor3 = Color3.fromRGB(255, 255, 255)
-imageLabel2.ImageTransparency = 0.3
-imageLabel2.ZIndex = 10000
-imageLabel2.Parent = menu
+local label=bridge:TrackInstance(Instance.new("TextLabel"))
+label.Name="AstralCustomLogo"
+label.Size=UDim2.fromOffset(105,105)
+label.Position=UDim2.new(1,-55,0,10)
+label.AnchorPoint=Vector2.new(1,0)
+label.BackgroundTransparency=1
+label.Text="ASTRAL";label.Font=Enum.Font.GothamBold;label.TextSize=20
+label.TextColor3=Color3.fromRGB(255,255,255);label.TextTransparency=.3
+label.ZIndex=10000;label.Parent=menu
 end
 
 _liqRejoin = function()
@@ -72743,10 +72902,10 @@ if rejoinContainer then
 rejoinContainer:Destroy()
 end
 
-local savitarCustomLogo = menu:FindFirstChild("SavitarCustomLogo")
+local astralCustomLogo = menu:FindFirstChild("AstralCustomLogo")
 
-if savitarCustomLogo then
-savitarCustomLogo:Destroy()
+if astralCustomLogo then
+astralCustomLogo:Destroy()
 end
 
 local nucleusWorldBlur = game:GetService("Lighting"):FindFirstChild("Nucleus_World_Blur")
@@ -72812,7 +72971,6 @@ pcall(function()
 local topRight = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("MenuGui"):WaitForChild("TopRight")
 
 local tbl35 = {
-CustomCoin = "rbxassetid://125209698949144",
 TankerFont = Enum.Font.FredokaOne,
 MaxSoftness = UDim.new(0, 999),
 GlassTrans = 1,
@@ -72846,7 +73004,6 @@ end
 
 if isImageLabel then
 tbl34[descendant] = tbl34[descendant] or { img = descendant.Image }
-descendant.Image = tbl35.CustomCoin
 descendant.BackgroundTransparency = 1
 descendant.ZIndex = 5
 end
@@ -74575,7 +74732,7 @@ end
 _buildRedShaderInstances = function()
 local Lighting = game:GetService("Lighting")
 local sky = bridge:TrackInstance(Instance.new("Sky"))
-sky.Name = "SavitarShaderSky"
+sky.Name = "AstralShaderSky"
 sky.SkyboxUp = "rbxassetid://323493360"
 sky.SkyboxLf = "rbxassetid://323494252"
 sky.SkyboxBk = "rbxassetid://323494035"
@@ -74586,19 +74743,19 @@ sky.SkyboxRt = "rbxassetid://323494067"
 sky.Parent = Lighting
 table.insert(tbl34, sky)
 local bloomEffect = bridge:TrackInstance(Instance.new("BloomEffect"))
-bloomEffect.Name = "SavitarShaderBloom"
+bloomEffect.Name = "AstralShaderBloom"
 bloomEffect.Parent = Lighting
 table.insert(tbl34, bloomEffect)
 local blurEffect = bridge:TrackInstance(Instance.new("BlurEffect"))
-blurEffect.Name = "SavitarShaderBlur"
+blurEffect.Name = "AstralShaderBlur"
 blurEffect.Parent = Lighting
 table.insert(tbl34, blurEffect)
 local colorCorrectionEffect = bridge:TrackInstance(Instance.new("ColorCorrectionEffect"))
-colorCorrectionEffect.Name = "SavitarShaderCC"
+colorCorrectionEffect.Name = "AstralShaderCC"
 colorCorrectionEffect.Parent = Lighting
 table.insert(tbl34, colorCorrectionEffect)
 local sunRaysEffect = bridge:TrackInstance(Instance.new("SunRaysEffect"))
-sunRaysEffect.Name = "SavitarShaderSunRays"
+sunRaysEffect.Name = "AstralShaderSunRays"
 sunRaysEffect.Parent = Lighting
 table.insert(tbl34, sunRaysEffect)
 end
@@ -74606,7 +74763,7 @@ end
 _buildGenericShaderInstances = function()
 local Lighting = game:GetService("Lighting")
 local sky = bridge:TrackInstance(Instance.new("Sky"))
-sky.Name = "SavitarShaderSky"
+sky.Name = "AstralShaderSky"
 sky.SunAngularSize = 11
 sky.MoonAngularSize = 11
 sky.StarCount = 1200
@@ -74615,25 +74772,25 @@ table.insert(tbl34, sky)
 
 if not Lighting:FindFirstChildOfClass("Atmosphere") then
 local atmosphere = bridge:TrackInstance(Instance.new("Atmosphere"))
-atmosphere.Name = "SavitarShaderAtm"
+atmosphere.Name = "AstralShaderAtm"
 atmosphere.Parent = Lighting
 table.insert(tbl34, atmosphere)
 end
 
 local bloomEffect = bridge:TrackInstance(Instance.new("BloomEffect"))
-bloomEffect.Name = "SavitarShaderBloom"
+bloomEffect.Name = "AstralShaderBloom"
 bloomEffect.Parent = Lighting
 table.insert(tbl34, bloomEffect)
 local blurEffect = bridge:TrackInstance(Instance.new("BlurEffect"))
-blurEffect.Name = "SavitarShaderBlur"
+blurEffect.Name = "AstralShaderBlur"
 blurEffect.Parent = Lighting
 table.insert(tbl34, blurEffect)
 local colorCorrectionEffect = bridge:TrackInstance(Instance.new("ColorCorrectionEffect"))
-colorCorrectionEffect.Name = "SavitarShaderCC"
+colorCorrectionEffect.Name = "AstralShaderCC"
 colorCorrectionEffect.Parent = Lighting
 table.insert(tbl34, colorCorrectionEffect)
 local sunRaysEffect = bridge:TrackInstance(Instance.new("SunRaysEffect"))
-sunRaysEffect.Name = "SavitarShaderSunRays"
+sunRaysEffect.Name = "AstralShaderSunRays"
 sunRaysEffect.Parent = Lighting
 table.insert(tbl34, sunRaysEffect)
 end
@@ -76093,145 +76250,145 @@ cframe = CFrame.fromMatrix(Vector3.new(-873.8541, -12.176599, -92.306755), Vecto
 }
 
 local tbl48 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-135.99847, 48.15421, -696.5093), Vector3.new(0.8192, 0, 0.5736), Vector3.new(0, 1, 0), Vector3.new(-0.5736, 0, 0.8192)),
 }
 
 local tbl49 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-1013.5383, 45.542057, -361.37296), Vector3.new(0.9063, 0, -0.4226), Vector3.new(0, 1, 0), Vector3.new(0.4226, 0, 0.9063)),
 }
 
 local tbl50 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-1269.1105, 47.283695, -310.23096), Vector3.new(0.5736, 0, -0.8192), Vector3.new(0, 1, 0), Vector3.new(0.8192, 0, 0.5736)),
 }
 
 local tbl51 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-298.02835, 48.15421, -809.964), Vector3.new(0.8191, 0, 0.5736), Vector3.new(0, 1, 0), Vector3.new(-0.5736, 0, 0.8191)),
 }
 
 local tbl52 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-782.11285, 44.236027, -502.80032), Vector3.new(0.4226, 0, 0.9063), Vector3.new(0, 1, 0), Vector3.new(-0.9063, 0, 0.4226)),
 }
 
 local tbl53 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-833.2545, 19.662569, -758.3734), Vector3.new(0.8191, 0, 0.5736), Vector3.new(0, 1, 0), Vector3.new(-0.5736, 0, 0.8191)),
 }
 
 local tbl54 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-971.36127, 20.533297, -756.1913), Vector3.new(0.5736, 0, -0.8192), Vector3.new(0, 1, 0), Vector3.new(0.8192, 0, 0.5736)),
 }
 
 local tbl55 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-856.7683, 166.51154, -228.75546), Vector3.new(0.5736, 0, -0.8192), Vector3.new(0, 1, 0), Vector3.new(0.8192, 0, 0.5736)),
 }
 
 local tbl56 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-521.63074, 163.89938, 648.78644), Vector3.new(-0.4226, 0, -0.9063), Vector3.new(0, 1, 0), Vector3.new(0.9063, 0, -0.4226)),
 }
 
 local tbl57 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-470.4884, 165.64102, 904.35913), Vector3.new(-0.8192, 0, -0.5736), Vector3.new(0, 1, 0), Vector3.new(0.5736, 0, -0.8192)),
 }
 
 local tbl58 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-970.2225, 166.51152, -66.725624), Vector3.new(0.5736, 0, -0.8192), Vector3.new(0, 1, 0), Vector3.new(0.8192, 0, 0.5736)),
 }
 
 local tbl59 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-663.05835, 162.59335, 417.36038), Vector3.new(0.9063, 0, -0.4226), Vector3.new(0, 1, 0), Vector3.new(0.4226, 0, 0.9063)),
 }
 
 local tbl60 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-918.6309, 138.01988, 468.5016), Vector3.new(0.5736, 0, -0.8192), Vector3.new(0, 1, 0), Vector3.new(0.8192, 0, 0.5736)),
 }
 
 local tbl61 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-916.4483, 138.89061, 606.6085), Vector3.new(-0.8192, 0, -0.5736), Vector3.new(0, 1, 0), Vector3.new(0.5736, 0, -0.8192)),
 }
 
 local tbl62 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-844.84546, 49.49753, 22.97348), Vector3.new(0.866, 0, -0.5), Vector3.new(0, 1, 0), Vector3.new(0.5, 0, 0.866)),
 }
 
 local tbl63 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-911.9752, 57.403233, 166.02487), Vector3.new(0, 0, -1), Vector3.new(0, 1, 0), Vector3.new(1, 0, 0)),
 }
 
 local tbl64 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-973.63464, 59.14487, 419.26566), Vector3.new(-0.5, 0, -0.866), Vector3.new(0, 1, 0), Vector3.new(0.866, 0, -0.5)),
 }
 
 local tbl65 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-1251.9766, 32.394463, -39.0575), Vector3.new(-0.5, 0, -0.866), Vector3.new(0, 1, 0), Vector3.new(0.866, 0, -0.5)),
 }
 
 local tbl66 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-844.84644, 60.015385, -770.93134), Vector3.new(0.866, 0, -0.5), Vector3.new(0, 1, 0), Vector3.new(0.5, 0, 0.866)),
 }
 
 local tbl67 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-1016.14795, 60.01537, -672.0302), Vector3.new(0.866, 0, -0.5), Vector3.new(0, 1, 0), Vector3.new(0.5, 0, 0.866)),
 }
 
 local tbl68 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-1195.5878, 31.523737, -165.14702), Vector3.new(0.866, 0, -0.5), Vector3.new(0, 1, 0), Vector3.new(0.5, 0, 0.866)),
 }
 
 local tbl69 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-762.90607, 47.755993, 183.53406), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), Vector3.new(0, 0, 1)),
 }
 
 local tbl70 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-942.3469, 56.09721, -103.48757), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), Vector3.new(0, 0, 1)),
 }
 
 local tbl71 = {
-name = "SAVITAR1N",
+name = "ASTRAL1N",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-762.90704, 49.497288, -610.3707), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), Vector3.new(0, 0, 1)),
 }
@@ -76731,16 +76888,16 @@ return
 end
 local v75 = result[1]
 v75.Name = arg.name
-local savitarmap = workspace:FindFirstChild("SAVITARMAP")
+local astralmap = workspace:FindFirstChild("ASTRALMAP")
 
-if not savitarmap then
+if not astralmap then
 local folder2 = bridge:TrackInstance(Instance.new("Folder"))
-folder2.Name = "SAVITARMAP"
+folder2.Name = "ASTRALMAP"
 folder2.Parent = workspace
-savitarmap = folder2
+astralmap = folder2
 end
 
-v75.Parent = savitarmap
+v75.Parent = astralmap
 v75:SetAttribute("_isBeachModel", true)
 table.insert(tbl25, v75)
 
@@ -76767,7 +76924,7 @@ if arg.name == "Boat Spawner" then
 _beachUnanchorBoatSpawner(v75)
 end
 
-if arg.name == "SAVITAR1N" then
+if arg.name == "ASTRAL1N" then
 _beachStartHawkFlight(v75, arg.cframe, arg2)
 end
 
@@ -76963,7 +77120,7 @@ _beachApplyColors()
 _beachNormalizeYHeights()
 
 for i, v75 in ipairs(tbl33) do
-if v75.name == "SAVITAR1N" then
+if v75.name == "ASTRAL1N" then
 bridge:TrackThread(task.spawn(function()
 _beachLoadModel(v75, i)
 end))
@@ -77535,79 +77692,79 @@ cframe = CFrame.new(-350.424377, 151.6, -1376.97949, -0.965929627, 0, -0.2588048
 }
 
 local tbl43 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-396, 73, -638), Vector3.new(0.866, 0, 0.5), Vector3.new(0, 1, 0), Vector3.new(-0.5, 0, 0.866)),
 }
 
 local tbl44 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-55, 71, -723), Vector3.new(0.5736, 0, 0.8192), Vector3.new(0, 1, 0), Vector3.new(-0.8192, 0, 0.5736)),
 }
 
 local tbl45 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-271, 83, -812), Vector3.new(0, 0, 1), Vector3.new(0, 1, 0), Vector3.new(-1, 0, 0)),
 }
 
 local tbl46 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-116, 78, -903), Vector3.new(-0.5, 0, 0.866), Vector3.new(0, 1, 0), Vector3.new(-0.866, 0, -0.5)),
 }
 
 local tbl47 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-220, 79, -954), Vector3.new(-0.8192, 0, 0.5736), Vector3.new(0, 1, 0), Vector3.new(-0.5736, 0, -0.8192)),
 }
 
 local tbl48 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-386, 96, -862), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), Vector3.new(0, 0, 1)),
 }
 
 local tbl49 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-601, 105, -1452), Vector3.new(0.7071, 0, 0.7071), Vector3.new(0, 1, 0), Vector3.new(-0.7071, 0, 0.7071)),
 }
 
 local tbl50 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-335, 103, -1299), Vector3.new(0.4226, 0, 0.9063), Vector3.new(0, 1, 0), Vector3.new(-0.9063, 0, 0.4226)),
 }
 
 local tbl51 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-349, 127, -1268), Vector3.new(-0.4226, 0, 0.9063), Vector3.new(0, 1, 0), Vector3.new(-0.9063, 0, -0.4226)),
 }
 
 local tbl52 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-763, 121, -1265), Vector3.new(0.9063, 0, 0.4226), Vector3.new(0, 1, 0), Vector3.new(-0.4226, 0, 0.9063)),
 }
 
 local tbl53 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-469, 177, -1580), Vector3.new(-0.7071, 0, 0.7071), Vector3.new(0, 1, 0), Vector3.new(-0.7071, 0, -0.7071)),
 }
 
 local tbl54 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(2, 151, -1384), Vector3.new(0.5, 0, 0.866), Vector3.new(0, 1, 0), Vector3.new(-0.866, 0, 0.5)),
 }
 
 local tbl55 = {
-name = "SAVITAR",
+name = "ASTRAL",
 assetId = "102653559929681",
 cframe = CFrame.fromMatrix(Vector3.new(-92, 146, -1629), Vector3.new(0.8192, 0, 0.5736), Vector3.new(0, 1, 0), Vector3.new(-0.5736, 0, 0.8192)),
 }
@@ -77941,7 +78098,7 @@ v75:PivotTo(arg.cframe)
 end)
 end))
 
-if arg.name == "SAVITAR" then
+if arg.name == "ASTRAL" then
 _forestStartHawkFlight(v75, arg.cframe, arg2)
 end
 
@@ -78604,7 +78761,7 @@ do
 local humanoidRootPart3 = character5:FindFirstChild("HumanoidRootPart")
 
 if character5 then
-local TweenService3, vector, tbl41, flag45, tbl42, savitar, flag46, kureSistemi, tbl43, fn44
+local TweenService3, vector, tbl41, flag45, tbl42, astral, flag46, kureSistemi, tbl43, fn44
 local flag47, color, fn45
 
 do
@@ -79017,7 +79174,7 @@ end
 end
 
 updateCam = function()
-if _savitar_isSpectating then
+if _astral_isSpectating then
 return
 end
 localPlayer6.CameraMode = Enum.CameraMode.Classic
@@ -79573,8 +79730,8 @@ sound2:Stop()
 sound3:Stop()
 tbl44.Active = false
 
-if _mainSavitar then
-_mainSavitar.Active = false
+if _mainAstral then
+_mainAstral.Active = false
 end
 
 local flag55 = _stopTP
@@ -79685,8 +79842,8 @@ boostFlashTimer = 0
 n58 = 0
 tbl44.Active = false
 
-if _mainSavitar then
-_mainSavitar.Active = false
+if _mainAstral then
+_mainAstral.Active = false
 end
 
 local v77 = _stopTP
@@ -79719,8 +79876,8 @@ end
 bridge:TrackThread(task.defer(function()
 tbl44.Active = false
 
-if _mainSavitar then
-_mainSavitar.Active = false
+if _mainAstral then
+_mainAstral.Active = false
 end
 
 local flag56 = _stopTP
@@ -80018,12 +80175,12 @@ end
 
 flag45 = false
 tbl42 = {}
-savitar = Workspace:FindFirstChild("SAVITAR")
+astral = Workspace:FindFirstChild("ASTRAL")
 
-if not savitar then
-savitar = bridge:TrackInstance(Instance.new("Folder"))
-savitar.Name = "SAVITAR"
-savitar.Parent = Workspace
+if not astral then
+astral = bridge:TrackInstance(Instance.new("Folder"))
+astral.Name = "ASTRAL"
+astral.Parent = Workspace
 end
 
 at_rndInBounds = function()
@@ -80086,7 +80243,7 @@ Vector3.new(0.5, -2, 0),
 at_buildDummy = function(position)
 local v77 = at_getDummyColor()
 local model = bridge:TrackInstance(Instance.new("Model"))
-model.Name = "SAVITAR"
+model.Name = "ASTRAL"
 local humanoid3 = bridge:TrackInstance(Instance.new("Humanoid"))
 humanoid3.MaxHealth = 100
 humanoid3.Health = 100
@@ -80122,7 +80279,7 @@ weldConstraint.Part1 = part3
 weldConstraint.Parent = part2
 end
 
-model.Parent = savitar
+model.Parent = astral
 local attachment = bridge:TrackInstance(Instance.new("Attachment"))
 attachment.Position = Vector3.zero
 attachment.Parent = part2
@@ -80316,7 +80473,7 @@ if not flag45 then
 return
 end
 
-if tbl41.maxDummy <= #savitar:GetChildren() then
+if tbl41.maxDummy <= #astral:GetChildren() then
 return
 end
 local v77, v78, v79, v80, v81 = at_buildDummy(at_rndInBounds())
@@ -80361,7 +80518,7 @@ if not flag45 then
 return
 end
 
-if tbl41.maxDummy <= #savitar:GetChildren() then
+if tbl41.maxDummy <= #astral:GetChildren() then
 return
 end
 local v77, v78, v79, v80, v81 = at_buildDummy(at_rndInBounds())
@@ -80396,13 +80553,13 @@ end
 tbl42 = {}
 
 bridge:TrackThread(task.delay(0.05, function()
-for _, child in ipairs(savitar:GetChildren()) do
+for _, child in ipairs(astral:GetChildren()) do
 child:Destroy()
 end
 end))
 end
 
-bridge:TrackConnection(savitar.ChildAdded:Connect(function(child)
+bridge:TrackConnection(astral.ChildAdded:Connect(function(child)
 local humanoid3 = child:FindFirstChildOfClass("Humanoid")
 
 if humanoid3 then
@@ -80776,11 +80933,11 @@ end
 
 at_stopDummies()
 
-if savitar and savitar.Parent then
-savitar:Destroy()
-savitar = bridge:TrackInstance(Instance.new("Folder"))
-savitar.Name = "SAVITAR"
-savitar.Parent = Workspace
+if astral and astral.Parent then
+astral:Destroy()
+astral = bridge:TrackInstance(Instance.new("Folder"))
+astral.Name = "ASTRAL"
+astral.Parent = Workspace
 end
 
 for _, v77 in ipairs(tbl44) do
@@ -80845,10 +81002,10 @@ end
 connection6 = bridge:TrackConnection(RunService8.Heartbeat:Connect(function(deltaTime)
 n35 = (n35 + deltaTime * 0.28) % 1
 
-if tbl41.colorMode == "Rainbow" and flag45 and savitar and savitar.Parent then
+if tbl41.colorMode == "Rainbow" and flag45 and astral and astral.Parent then
 local color2 = Color3.fromHSV(n35, 0.85, 1)
 
-for _, child in ipairs(savitar:GetChildren()) do
+for _, child in ipairs(astral:GetChildren()) do
 for _, descendant in ipairs(child:GetDescendants()) do
 if descendant:IsA("BasePart") and descendant.Transparency < 0.9 then
 descendant.Color = color2
@@ -81001,14 +81158,14 @@ Callback = function(maxDummy)
 tbl41.maxDummy = maxDummy
 
 if flag45 then
-local n35 = #savitar:GetChildren()
+local n35 = #astral:GetChildren()
 
 if n35 < maxDummy then
 for i = 1, maxDummy - n35 do
 bridge:TrackThread(task.delay(i * 0.15, at_spawnOneDummy))
 end
 elseif maxDummy < n35 then
-local children = savitar:GetChildren()
+local children = astral:GetChildren()
 
 for i = maxDummy + 1, #children do
 local v81 = tbl42[children[i]]
@@ -81061,14 +81218,14 @@ Multi = false,
 Callback = function(colorMode)
 tbl41.colorMode = colorMode
 fn45()
-if not flag45 or not savitar or not savitar.Parent then
+if not flag45 or not astral or not astral.Parent then
 return
 end
 
 if colorMode == "Custom Color" then
 local customColor = tbl41.customColor
 
-for _, child in ipairs(savitar:GetChildren()) do
+for _, child in ipairs(astral:GetChildren()) do
 for _, descendant in ipairs(child:GetDescendants()) do
 if descendant:IsA("BasePart") and descendant.Transparency < 0.9 then
 descendant.Color = customColor
@@ -81085,8 +81242,8 @@ Title = "<b>Custom Dummy Color</b>",
 Callback = function(customColor)
 tbl41.customColor = customColor
 
-if tbl41.colorMode == "Custom Color" and flag45 and savitar and savitar.Parent then
-for _, child in ipairs(savitar:GetChildren()) do
+if tbl41.colorMode == "Custom Color" and flag45 and astral and astral.Parent then
+for _, child in ipairs(astral:GetChildren()) do
 for _, descendant in ipairs(child:GetDescendants()) do
 if descendant:IsA("BasePart") and descendant.Transparency < 0.9 then
 descendant.Color = customColor
@@ -81547,7 +81704,7 @@ if flag48 and _isWhitelisted(player) then
 _playNotifSound("Whitelisted Player Joined")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Whitelisted Player <u>" .. player.Name .. "</u> (<u>@" .. (player.DisplayName or player.Name) .. "</u>) joined the server",
 Time = 3,
 BigIcon = "rbxassetid://136256756383193",
@@ -81585,7 +81742,7 @@ if _isWhitelisted(player) then
 _playNotifSound("Whitelisted Player Left")
 
 lib:Notify({
-Title = "<b>SAVITAR</b>",
+Title = "<b>ASTRAL</b>",
 Description = "Whitelisted Player <u>" .. player.Name .. "</u> (<u>@" .. (player.DisplayName or player.Name) .. "</u>) left the server",
 Time = 3,
 BigIcon = "rbxassetid://136256756383193",
@@ -82802,7 +82959,7 @@ do
 -- Astral owns this UI section.
 
 if true then
-(function() local TweenService4, UserInputService6, Players6, localPlayer9, commandPanel, fn55, screenGui, TextService, savitarCommandBlur, textButton
+(function() local TweenService4, UserInputService6, Players6, localPlayer9, commandPanel, fn55, screenGui, TextService, astralCommandBlur, textButton
 local frame3, uiScale, frame4, uiGradient2, uiStroke, uiGradient3
 
 -- Astral owns this UI section.
@@ -85448,7 +85605,7 @@ end
 local n41 = textSize + 4
 local n42 = math.max(11, textSize - 3) + 4
 local billboardGui = bridge:TrackInstance(Instance.new("BillboardGui"))
-billboardGui.Name = "_SavitarNameTag"
+billboardGui.Name = "_AstralNameTag"
 billboardGui.AlwaysOnTop = true
 billboardGui.SizeOffset = Vector2.new(0, 0.5)
 billboardGui.StudsOffset = Vector3.new(0, n40, 0)
@@ -88356,7 +88513,7 @@ end
 function FeatureHost:PrepareInfo(id, info, kind)
     local result = copy(info)
     for _, field in ipairs({"Text", "Title", "Tooltip", "DisabledTooltip"}) do
-        if type(result[field]) == "string" then result[field] = result[field]:gsub("Resonance", "astral"):gsub("Savitar", "astral"):gsub("RESONANCE", "astral"):gsub("SAVITAR", "astral") end
+        if type(result[field]) == "string" then result[field] = result[field]:gsub("Resonance", "astral"):gsub("Astral", "astral"):gsub("RESONANCE", "astral"):gsub("ASTRAL", "astral") end
     end
     if type(result.Text) == "string" and kind ~= "AddKeyPicker" then result.Text = result.Text .. " [astral]" end
     if kind == "AddKeyPicker" and type(result.Text) == "string" then
@@ -88507,7 +88664,7 @@ function FeatureHost:NewLibrary()
         if bridge.Disposed then return end
         if type(info) == "table" then
             info = copy(info)
-            info.Title = plain(info.Title or "astral") .. " [astral]"
+            info.Title = "Astral"
             info.BigIcon = "sparkle"
         end
         return bridge.Context.Library:Notify(info, ...)
@@ -88592,7 +88749,7 @@ function FeatureHost:Dispose()
             desync._requestActive = true
             pcall(desync.CancelRequest, desync)
         end
-        for _, name in ipairs({"_SAVITAR_ACTION_WHEEL_CLEANUP", "_SAVITAR_COMMAND_PANEL_CLEANUP", "_AP_unanchorAll"}) do
+        for _, name in ipairs({"_ASTRAL_ACTION_WHEEL_CLEANUP", "_ASTRAL_COMMAND_PANEL_CLEANUP", "_AP_unanchorAll"}) do
             if type(env[name]) == "function" then pcall(env[name]) end
         end
     end
@@ -89296,7 +89453,7 @@ return Builds
 
 ]========]
 sources.PalletRagdoll = [========[
--- Adapter around the user-supplied Resonance 2.9 ragdoll body.
+-- Adapter around the user-supplied Astral ragdoll body.
 local requireModule=...
 local Source=requireModule("Resonance29Ragdoll")
 local Pallet={};Pallet.__index=Pallet
@@ -89309,7 +89466,7 @@ local function state(character)
 end
 function Pallet.Install(context)
     local self=setmetatable({Context=context,Queue={},Entries={},Passes=0,Contacts=0,Confirmed=0,Misses=0,
-        MaximumSpeed=context.MaximumSpeed==true,FrameSeconds=1/60,IntervalSeconds=.1,Status="Resonance 2.9 ragdoll idle",
+        MaximumSpeed=context.MaximumSpeed==true,FrameSeconds=1/60,IntervalSeconds=.1,Status="Astral ragdoll idle",
         RateAt=context.Clock(),RatePasses=0,RateContacts=0,PassRate=0,TouchRate=0,Pauses={}},Pallet)
     self.States=context.States or {}
     local function valid()
@@ -89360,7 +89517,7 @@ function Pallet.Install(context)
             if now>=(self.NextPlacementStatus or 0)then
                 self.NextPlacementStatus=now+.2
                 self.Status=self.MaximumSpeed and string.format("Ultra pallet | every available physics frame | %.0f studs/s",self:GetImpactSpeed())
-                    or string.format("Resonance 2.9 pallet | %.0f ms interval",self.IntervalSeconds*1000)
+                    or string.format("Astral pallet | %.0f ms interval",self.IntervalSeconds*1000)
             end
             local entry=self.Active;if entry and entry.Character==character then entry.Passes=(entry.Passes or 0)+1 end
         end,
@@ -89567,9 +89724,7 @@ return Pallet
 
 ]========]
 sources.KickLoop = [========[
--- Resonance kick order with captured-session cleanup and Gucci pauses.
--- Local movers update before physics where supported. Native Grab/RNO cycles
--- use a bounded RTT-aware cadence independently of the rendering frame rate.
+-- Astral kick: keep acknowledged ownership and hold the root with constraints.
 local Loop={};Loop.__index=Loop
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
 function Loop.Install(context)
@@ -89579,7 +89734,6 @@ function Loop.Install(context)
     self.Connection=frameSignal:Connect(function(dt)
         self.Frame+=1
         self:FlushCleanup()
-        self:FlushReleases()
         if self.Closed then
             if not next(self.Cleanup)and self.InFlight==0 or context.Clock()>=self.CloseDeadline then self.Connection:Disconnect()end
             return
@@ -89590,11 +89744,6 @@ function Loop.Install(context)
     return self
 end
 function Loop:RagdollRequired()return self.Context.RagdollEnabled()end
-function Loop:Compatibility()return self.Context.FastMode()end
-function Loop:CycleInterval(ping)
-    -- Bound native traffic independently of local simulation FPS.
-    return math.clamp(ping*.25,1/30,.15)
-end
 function Loop:BeginExcursion(token)
     if self.Closed or self.Excursion then return false end
     for _,session in pairs(self.Sessions)do if session.Acquiring then return false end end
@@ -89659,6 +89808,7 @@ function Loop:Remove(player)
     local restores={};session.Restores=restores
     restores.Position=function()if session.Position and session.Position.Parent then session.Position:Destroy()end end
     restores.Orientation=function()if session.Orientation and session.Orientation.Parent then session.Orientation:Destroy()end end
+    restores.Attachment=function()if session.Attachment and session.Attachment.Parent then session.Attachment:Destroy()end end
     if session.EKI then restores.EKI=function()if session.Root.Parent then self.Context.ReplicationRoot(session.Root,nil)end end end
     if session.Weld then restores.Weld=function()if session.Weld.Parent then session.Weld.Enabled=session.WeldEnabled end end end
     if session.Physics then
@@ -89683,27 +89833,30 @@ function Loop:Create(player,character,root,humanoid)
         if not taken then break end;slot+=1
     end
     session.StackIndex=slot
-    local position=root:FindFirstChild("KickAP");local orientation=root:FindFirstChild("KickAO")
-    if position then position:Destroy()end;if orientation then orientation:Destroy()end
-    position=Instance.new("BodyPosition");position.Name="KickAP";position.D=200;position.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
-    position.Position=root.Position;position.Parent=root
-    orientation=Instance.new("BodyGyro");orientation.Name="KickAO";orientation.MaxTorque=Vector3.new(math.huge,math.huge,math.huge);orientation.D=200
-    orientation.CFrame=CFrame.new();orientation.Parent=root
-    session.Position,session.Orientation=position,orientation
+    for _,name in ipairs({"KickAP","KickAO","AstralKickAttachment"})do
+        local old=root:FindFirstChild(name);if old then old:Destroy()end
+    end
+    local attachment=Instance.new("Attachment");attachment.Name="AstralKickAttachment";attachment.Parent=root
+    local position=Instance.new("AlignPosition");position.Name="KickAP"
+    position.Mode=Enum.PositionAlignmentMode.OneAttachment;position.Attachment0=attachment
+    position.ApplyAtCenterOfMass=true;position.ReactionForceEnabled=false
+    position.MaxForce=math.huge;position.MaxVelocity=math.huge
+    position.Position=root.Position;position.Enabled=false;position.Parent=root
+    local orientation=Instance.new("AlignOrientation");orientation.Name="KickAO"
+    orientation.Mode=Enum.OrientationAlignmentMode.OneAttachment;orientation.Attachment0=attachment
+    orientation.MaxTorque=math.huge;orientation.ReactionTorqueEnabled=false
+    orientation.CFrame=root.CFrame;orientation.Enabled=false;orientation.Parent=root
+    session.Position,session.Orientation,session.Attachment=position,orientation,attachment
     self:ConfigureMovers(session)
     if self.Context.WarmRagdoll and self:RagdollRequired()then self.Context.WarmRagdoll()end
     self.Sessions[player]=session;return session
 end
 function Loop:ConfigureMovers(session)
-    local fast=self.MaximumSpeed==true
-    if session.FastMovers==fast then return end
-    -- Scaling P by 4 and D by 2 preserves the relative damping while increasing
-    -- the response frequency. Toggle changes also apply to existing sessions.
-    session.Position.P=fast and 40000 or 10000
-    session.Position.D=fast and 400 or 200
-    session.Orientation.P=fast and 12000 or 3000
-    session.Orientation.D=fast and 400 or 200
-    session.FastMovers=fast
+    -- Rigid positional alignment avoids an underdamped BodyPosition spring.
+    -- Rotation is damped and bounded instead of snapping to the world origin.
+    session.Position.RigidityEnabled=true;session.Position.Responsiveness=200
+    session.Orientation.RigidityEnabled=false;session.Orientation.Responsiveness=60
+    session.Orientation.MaxAngularVelocity=6
 end
 function Loop:Physics(session)
     if not session.Physics then
@@ -89719,7 +89872,7 @@ end
 function Loop:Acquire(session,now)
     local ctx=self.Context
     if session.Acquiring or now<session.NextGrab or ctx.OwnershipBusy()then return end
-    session.Requested=true;session.NextGrab=now+.15;session.Acquiring=true
+    session.Requested=true;session.NextGrab=now+.15;session.Acquiring=true;session.HoldPlaced=nil
     local _,actorRoot=self.Context.LocalCharacter()
     self.CaptureAnchor=actorRoot and actorRoot.Position or nil
     self.InFlight+=1
@@ -89743,72 +89896,53 @@ function Loop:Acquire(session,now)
         end
     end)
 end
--- Native order from the supplied Resonance 2.9 cycle: Grab; delayed RNO;
--- independent Ragdoll/RemoveSticky; intact-joint collisions; delayed EKI. Scheduling
--- is token-guarded so a stopped/respawned session cannot release a new root.
-function Loop:FlushReleases()
-    if self.Excursion or self.CaptureAnchor then return end
-    local now=self.Context.Clock()
-    for _,session in pairs(self.Sessions)do
-        local queue=session.Releases
-        local first=queue and queue[1]
-        local due=first and(first.Frame and self.Frame>=first.Frame or first.Time and now>=first.Time)
-        if due then
-            if self:Valid(session)then
-                if self:Release(session)then
-                    table.remove(queue,1)
-                    -- After a deliberate Gucci pause, discard overdue release
-                    -- callbacks instead of replaying them as a same-frame burst.
-                    while queue[1]and(queue[1].Frame and self.Frame>=queue[1].Frame or queue[1].Time and now>=queue[1].Time)do table.remove(queue,1)end
-                end
-            else session.Releases={}end
-        end
-    end
-end
 function Loop:Update(session,position,now,ping)
     local ctx=self.Context;local root=session.Root
     self:ConfigureMovers(session)
     session.Position.Position=position
-    if self.Excursion or self.CaptureAnchor then return end
-    if session.Acquiring then return end
+    if self.Excursion or self.CaptureAnchor or session.Acquiring then return end
     local _,localRoot=ctx.LocalCharacter();if not localRoot then return end
-    if not ctx.Owned(root)then self:Acquire(session,now);return end
-    if(root.Position-localRoot.Position).Magnitude>33 then ctx.Teleport(root,position)end
-    local repeatReady=(self.MaximumSpeed or not ctx.IntervalReady or ctx.IntervalReady(session.Player,session.Character))
-        and now+1e-6>=(session.NextCycle or 0)
-    if repeatReady then
-        session.Requested=true;ctx.Grab(root);self.Calls+=1
-        session.NextCycle=now+self:CycleInterval(ping)
-        session.Releases=session.Releases or {}
-        if self:Compatibility()then
-            session.Releases[#session.Releases+1]={Time=now+.2}
-        else session.Releases[#session.Releases+1]={Frame=self.Frame+1}end
+    local owned=ctx.Owned(root)
+    if not owned or root.Anchored then
+        session.Position.Enabled=false;session.Orientation.Enabled=false;session.OwnedAt=nil
+        if root.Anchored then return end
+        session.OwnershipLostAt=session.OwnershipLostAt or now
+        -- Let transient acknowledgement gaps settle without moving the real
+        -- character away from an otherwise steady overhead hold every frame.
+        local grace=math.clamp(ping*.5,.15,.75)
+        if not session.HoldPlaced or now-session.OwnershipLostAt>=grace then self:Acquire(session,now)end
+        return
     end
-    if self.MaximumSpeed and not session.HoldPlaced and not root.Anchored and ctx.Owned(root)
-        and not session.Humanoid.SeatPart and session.Humanoid.Sit~=true then
-        local distance=(root.Position-position).Magnitude
-        if finite(distance)then
-            local placed=distance<=6 or ctx.Teleport(root,position)~=false
-            if placed then session.HoldPlaced=true end
-        end
+    session.OwnershipLostAt=nil;session.Requested=true
+    if session.Humanoid.SeatPart or session.Humanoid.Sit==true then
+        session.Position.Enabled=false;session.Orientation.Enabled=false
+        if self:RagdollRequired()then ctx.RequestRagdoll(session.Character,function()return self:Valid(session)and self:RagdollRequired()end)end
+        return
     end
+    local distance=(root.Position-position).Magnitude
+    if not finite(distance)then return end
+    if not session.HoldPlaced or distance>33 then
+        if distance>6 and ctx.Teleport(root,position)==false then return end
+        session.HoldPlaced=true
+    end
+    session.Position.Enabled=true;session.Orientation.Enabled=true
     self:Physics(session)
     if self:RagdollRequired()then
         ctx.RequestRagdoll(session.Character,function()return self:Valid(session)and self:RagdollRequired()end)
     end
-    if ctx.StickyEnabled()and not session.StickyBusy then
-        session.StickyBusy=true
+    if ctx.StickyEnabled()and not session.StickyBusy and now>=(session.NextSticky or 0)then
+        session.StickyBusy=true;session.NextSticky=now+.25
         ctx.SpawnThread(function()
             if self:Valid(session)then pcall(ctx.RemoveSticky,session.Character)end
             session.StickyBusy=false
         end)
     end
     session.EKIAt=session.EKIAt or now+.6
-    local networkOwned=ctx.NetworkOwned and ctx.NetworkOwned(root)or not ctx.NetworkOwned and ctx.Owned(root)
+    local networkOwned=ctx.NetworkOwned and ctx.NetworkOwned(root)or not ctx.NetworkOwned and owned
     if ctx.EKIEnabled()and now>=session.EKIAt and networkOwned and not(ctx.SuppressEKI and ctx.SuppressEKI(session.Player))then
-        session.EKI=ctx.ReplicationRoot(root,root)==true
+        if not session.EKI then session.EKI=ctx.ReplicationRoot(root,root)==true end
     elseif session.EKI then ctx.ReplicationRoot(root,nil);session.EKI=nil end
-    session.OwnedAt=ctx.Owned(root)and(session.OwnedAt or now)or nil
+    session.OwnedAt=session.OwnedAt or now
 end
 function Loop:Step(dt)
     local ctx=self.Context
@@ -89822,9 +89956,6 @@ function Loop:Step(dt)
     for _,player in ipairs(targets)do allowed[player]=true end
     local remove={};for player,session in pairs(self.Sessions)do if not allowed[player]or not self:Valid(session)then remove[#remove+1]=player end end
     for _,player in ipairs(remove)do self:Remove(player)end
-    -- Source Normal mode has two waits per outer cycle. Fast mode removes
-    -- that extra frame; compatibility mode retains its source one-frame loop.
-    if not self.MaximumSpeed and not self:Compatibility()and self.Frame%2==0 then return end
     local now=ctx.Clock();local ping=ctx.PingSeconds()
     ping=finite(ping)and math.clamp(ping,0,30)or .1
     local held,waiting=0,0
@@ -89843,7 +89974,7 @@ function Loop:Step(dt)
     end
     if next(self.Cleanup)then self.Status="Kick cleanup retry: "..(self.CleanupError or "waiting")
     elseif #targets==0 then self.Status="Select a target"
-    else self.Status=string.format("Resonance 2.9 %s | held: %d | awaiting: %d\nNative Grab calls: %d | RNO calls: %d",self.MaximumSpeed and "adaptive native cadence"or "source timing",held,waiting,self.Calls,self.Released)end
+    else self.Status=string.format("Kick: holding %d · waiting %d",held,waiting)end
 end
 function Loop:Dispose()
     if self.Closed then return end
@@ -90563,7 +90694,7 @@ return Destroy
 
 ]========]
 sources.Resonance29Ragdoll = [========[
--- Resonance ragdoll with checks after every yielding operation.
+-- Astral ragdoll with checks after every yielding operation.
 -- Movement is limited to the cached pallet; Record counts local placements.
 local Native={}
 function Native.new(context)
