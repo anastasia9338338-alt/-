@@ -1,7 +1,296 @@
--- Astral v4.45 | continuous overhead hold, restored Aim and compact Target UI.
--- Ownership is released on stop/cleanup, not on each physics frame.
--- Original authorship/license notices remain in the embedded sources.
+-- Astral v4.46 | revised capture, rocket flight, coconut poses and gameplay effects.
+-- Gucci ESP uses frame-based smoothing. Original authorship/license notices remain.
 local sources = {}
+sources.GameplayEffects = [========[
+-- Physical avatar effects. Existing toy actions (Campfire, limbs, etc.) remain
+-- in their native handlers. These movers run only on acknowledged owned roots.
+local Effects={};Effects.__index=Effects
+Effects.Names={"Lift and Lower","Upside Down"}
+local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
+local function bounded(n,default,min,max)return finite(n)and math.clamp(n,min,max)or default end
+function Effects.Install(context)
+    local self=setmetatable({Context=context,Records={},Retries={},Duration=10,Height=12,Period=4,Limit=6,Generation=0,Status="Ready"},Effects)
+    local ok,signal=pcall(function()return context.RunService.PreSimulation end)
+    self.Connection=(ok and signal or context.RunService.Heartbeat):Connect(function()
+        local ran,message=pcall(self.Update,self)
+        if not ran then self:Clear();self.Status="Physical effects stopped: "..tostring(message)end
+    end)
+    return self
+end
+function Effects:KickBusy(player)return self.Context.KickHeld and self.Context.KickHeld(player)==true end
+function Effects:Owned(root)
+    local ok,owned=pcall(self.Context.Owned,root)
+    return ok and owned==true
+end
+function Effects:Current(record)
+    if self.Closed or self.Records[record.Player]~=record or self:KickBusy(record.Player)
+        or not record.Player.Parent or not record.Root.Parent or record.Root.Anchored
+        or self.Context.Clock()>=record.Expires then return false end
+    if self.Context.Allowed and not self.Context.Allowed(record.Player)then return false end
+    if self.Context.Protected and self.Context.Protected(record.Player)then return false end
+    local character,root,humanoid=self.Context.Character(record.Player)
+    return character==record.Character and root==record.Root and humanoid==record.Humanoid
+        and humanoid and humanoid.Parent==character and humanoid.Health>0
+        and not humanoid.SeatPart and humanoid.Sit~=true
+end
+function Effects:RestoreRotation(record)
+    if record.AutoRotate~=nil and record.Humanoid.Parent==record.Character then
+        pcall(function()record.Humanoid.AutoRotate=record.AutoRotate end)
+        record.AutoRotate=nil
+    end
+    if record.Rotated and self.Context.RestoreOrientation and self:Owned(record.Root)
+        and record.Root.Parent==record.Character and not self:KickBusy(record.Player)then
+        local ok,message=pcall(self.Context.RestoreOrientation,record.Character,record.Root,record.Heading)
+        if not ok then self.LastError="Orientation restore: "..tostring(message)end
+    end
+    record.Rotated=nil
+end
+function Effects:RemoveMode(record,name)
+    record.Modes[name]=nil
+    local mover=name=="Lift and Lower"and record.Lift or record.Rotation
+    if mover then pcall(mover.Destroy,mover)end
+    if name=="Lift and Lower"then record.Lift=nil
+    else record.Rotation=nil;self:RestoreRotation(record)end
+end
+function Effects:ClearRecord(record)
+    if self.Records[record.Player]==record then self.Records[record.Player]=nil end
+    for _,name in ipairs(self.Names)do self:RemoveMode(record,name)end
+    if record.Attachment then pcall(record.Attachment.Destroy,record.Attachment);record.Attachment=nil end
+    -- Do not release ownership borrowed by an active Kick or another operation.
+    if record.Acquired and self.Context.Release and self.Context.CanRelease
+        and self.Context.CanRelease(record.Player)and not self:KickBusy(record.Player)
+        and record.Root.Parent==record.Character then
+        local replacement=self.Records[record.Player]
+        if not replacement or replacement.Root~=record.Root then
+            local ok,message=pcall(self.Context.Release,record.Root)
+            if not ok then self.LastError="Ownership release: "..tostring(message)end
+        end
+    end
+end
+function Effects:ClearPlayer(player)local r=self.Records[player];if r then self:ClearRecord(r)end end
+function Effects:Clear()
+    self.Generation+=1
+    local records={};for _,r in pairs(self.Records)do records[#records+1]=r end
+    for _,r in ipairs(records)do self:ClearRecord(r)end
+    table.clear(self.Retries)
+end
+function Effects:Select(names)
+    self.Selected={}
+    for _,name in ipairs(self.Names)do if names and names[name]then self.Selected[name]=true end end
+    local remove={}
+    for _,r in pairs(self.Records)do
+        for _,name in ipairs(self.Names)do if r.Modes[name]and not self.Selected[name]then self:RemoveMode(r,name)end end
+        if not next(r.Modes)then remove[#remove+1]=r end
+    end
+    for _,r in ipairs(remove)do self:ClearRecord(r)end
+end
+function Effects:CreateModes(record)
+    if not record.Attachment then
+        local a=Instance.new("Attachment");a.Name="AstralGameplayEffect";a.Parent=record.Root;record.Attachment=a
+    end
+    if record.Modes["Lift and Lower"]and not record.Lift then
+        local force=Instance.new("VectorForce");force.Name="AstralLiftLower"
+        force.Attachment0=record.Attachment;force.RelativeTo=Enum.ActuatorRelativeTo.World
+        force.ApplyAtCenterOfMass=true;force.Force=Vector3.zero;force.Parent=record.Root
+        record.Lift=force;record.BaseY=record.Root.Position.Y;record.Started=self.Context.Clock()
+    end
+    if record.Modes["Upside Down"]and not record.Rotation then
+        local look=record.Root.CFrame.LookVector
+        local flat=Vector3.new(look.X,0,look.Z)
+        record.Heading=flat.Magnitude>.01 and flat.Unit or Vector3.new(0,0,-1)
+        local turn=Instance.new("AlignOrientation");turn.Name="AstralUpsideDown"
+        turn.Mode=Enum.OrientationAlignmentMode.OneAttachment;turn.Attachment0=record.Attachment
+        turn.RigidityEnabled=false;turn.Responsiveness=35;turn.MaxAngularVelocity=5
+        turn.MaxTorque=1e7;turn.ReactionTorqueEnabled=false
+        turn.CFrame=CFrame.lookAt(Vector3.zero,record.Heading)*CFrame.Angles(0,0,math.pi)
+        turn.Parent=record.Root;record.Rotation=turn
+        record.AutoRotate=record.Humanoid.AutoRotate;record.Humanoid.AutoRotate=false
+        record.Rotated=true
+    end
+end
+function Effects:Apply(player,name)
+    if self.Closed or not table.find(self.Names,name)or not player or not player.Parent
+        or self.Selected and not self.Selected[name]then return false end
+    if self:KickBusy(player)then self:ClearPlayer(player);self.Status="Target is controlled by Kick";return false end
+    if self.Context.Protected and self.Context.Protected(player)then return false end
+    if self.Context.Allowed and not self.Context.Allowed(player)then return false end
+    local character,root,humanoid=self.Context.Character(player)
+    if not character or not root or not root.Parent or root.Anchored or not humanoid or humanoid.Health<=0
+        or humanoid.SeatPart or humanoid.Sit==true then return false end
+    local now=self.Context.Clock();local record=self.Records[player]
+    if record and(record.Character~=character or record.Root~=root or record.Humanoid~=humanoid)then self:ClearRecord(record);record=nil end
+    if record then
+        record.Modes[name]=true;record.Expires=now+bounded(self.Duration,10,2,30)
+        if not record.Pending and self:Owned(root)then
+            local ok,message=pcall(self.CreateModes,self,record)
+            if not ok then self:ClearRecord(record);self.Status=tostring(message);return false end
+        end
+        return true
+    end
+    if now<(self.Retries[player]or 0)then return false end
+    local count=0;for _ in pairs(self.Records)do count+=1 end
+    if count>=bounded(self.Limit,6,1,12)then self.Status="Physical target limit reached";return false end
+    record={Player=player,Character=character,Root=root,Humanoid=humanoid,Modes={[name]=true},
+        Pending=true,Expires=now+bounded(self.Duration,10,2,30)}
+    self.Records[player]=record
+    local ok,message=pcall(function()
+        if not self:Owned(root)then
+            self.Status="Waiting for physical ownership"
+            local acquired=self.Context.Acquire(root,function()return self:Current(record)end)
+            record.Acquired=acquired==true and self:Owned(root)
+        end
+        if not self:Current(record)or not self:Owned(root)then return end
+        record.Pending=false;self:CreateModes(record)
+    end)
+    if not ok or record.Pending or not self:Current(record)then
+        self:ClearRecord(record);self.Retries[player]=self.Context.Clock()+.65
+        self.Status=ok and "No physical ownership acknowledgement"or tostring(message)
+        return false
+    end
+    self.Status="Physical effects active";return true
+end
+function Effects:Update()
+    local now=self.Context.Clock();local remove={}
+    for _,r in pairs(self.Records)do
+        if not self:Current(r)then remove[#remove+1]=r
+        elseif not r.Pending then
+            if not self:Owned(r.Root)then remove[#remove+1]=r
+            else
+                if r.Lift then
+                    local period=bounded(self.Period,4,2,12);local height=bounded(self.Height,12,2,24)
+                    local phase=(now-r.Started)*2*math.pi/period
+                    local y=r.BaseY+(1-math.cos(phase))*height*.5
+                    local velocity=math.sin(phase)*height*math.pi/period
+                    local mass=r.Root.AssemblyMass;mass=bounded(mass,1,.01,10000)
+                    local gravity=self.Context.Gravity and self.Context.Gravity()or 196.2;gravity=bounded(gravity,196.2,0,1000)
+                    local vy=r.Root.AssemblyLinearVelocity.Y
+                    local force=mass*(gravity+64*(y-r.Root.Position.Y)+16*(velocity-vy))
+                    r.Lift.Force=Vector3.new(0,math.clamp(force,-mass*1500,mass*1500),0)
+                end
+                if r.Rotation then
+                    local move=r.Humanoid.MoveDirection
+                    if move then local flat=Vector3.new(move.X,0,move.Z);if flat.Magnitude>.05 then r.Heading=flat.Unit end end
+                    r.Rotation.CFrame=CFrame.lookAt(Vector3.zero,r.Heading)*CFrame.Angles(0,0,math.pi)
+                end
+            end
+        end
+    end
+    for _,r in ipairs(remove)do self:ClearRecord(r)end
+end
+function Effects:Dispose()
+    if self.Closed then return end
+    self.Closed=true;self:Clear()
+    if self.Connection then self.Connection:Disconnect()end
+end
+return Effects
+
+]========]
+sources.CoconutPoses = [========[
+-- Coordinates feed the native FoodCoconut spawn/ownership/movement pipeline.
+-- Every complete pose fits the existing thirteen-coconut budget.
+local Poses={}
+Poses.Names={"Halo","Crown","Heart","Star","Orbit","Spiral","Butterfly","Scorpion","Robot","Buddy"}
+Poses.Counts={Halo=8,Crown=9,Heart=12,Star=10,Orbit=10,Spiral=12,Butterfly=12,Scorpion=10,Robot=12,Buddy=13}
+
+local function points(values)
+    local result={}
+    for _,p in ipairs(values)do result[#result+1]=CFrame.new(p[1],p[2],p[3])end
+    return result
+end
+local builders={}
+function builders.Halo()
+    local result={}
+    for i=0,7 do
+        local a=i*math.pi/4
+        result[#result+1]=CFrame.new(math.cos(a)*1.8,3.1,math.sin(a)*1.8)
+    end
+    return result
+end
+function builders.Crown()
+    local result={}
+    for i=0,8 do
+        local a=i*math.pi*2/9
+        result[#result+1]=CFrame.new(math.cos(a)*1.45,2.65+(i%3==0 and .85 or 0),math.sin(a)*1.45)
+    end
+    return result
+end
+function builders.Heart()
+    return points({
+        {-1.6,1.6,-1.6},{-.8,2.3,-1.6},{0,1.65,-1.6},{.8,2.3,-1.6},
+        {1.6,1.6,-1.6},{1.8,.7,-1.6},{1.3,-.2,-1.6},{.65,-.95,-1.6},
+        {0,-1.65,-1.6},{-.65,-.95,-1.6},{-1.3,-.2,-1.6},{-1.8,.7,-1.6},
+    })
+end
+function builders.Star()
+    local result={}
+    for i=0,9 do
+        local a=math.pi/2+i*math.pi/5
+        local radius=i%2==0 and 2.8 or 1.25
+        result[#result+1]=CFrame.new(math.cos(a)*radius,math.sin(a)*radius+.45,-1.55)
+    end
+    return result
+end
+function builders.Orbit()
+    local result={}
+    for i=0,9 do
+        local a=i*math.pi/5
+        result[#result+1]=CFrame.new(math.cos(a)*3,.45+math.sin(a)*1.45,math.sin(a)*2.25)
+    end
+    return result
+end
+function builders.Spiral()
+    local result={}
+    for i=0,11 do
+        local a=i*math.pi*3/11
+        result[#result+1]=CFrame.new(math.cos(a)*2,-2.15+i*.5,math.sin(a)*2)
+    end
+    return result
+end
+function builders.Butterfly()
+    local result={}
+    local wing={{1.2,1.1,.8},{2.2,2,.8},{3.3,1.35,.8},{3.1,.1,.8},{2.6,-1.25,.8},{1.35,-.85,.8}}
+    for _,side in ipairs({-1,1})do
+        for _,p in ipairs(wing)do result[#result+1]=CFrame.new(p[1]*side,p[2],p[3])end
+    end
+    return result
+end
+function builders.Scorpion()
+    return points({
+        {0,-.9,.95},{0,-.4,2},{0,.55,2.75},{0,1.65,2.9},
+        {0,2.65,2.3},{0,3,1.15},{0,2.5,.1},
+        {-1.5,.5,-1.3},{1.5,.5,-1.3},{0,1.75,-.55},
+    })
+end
+function builders.Robot()
+    return points({
+        {0,2.4,-.1},{-1.8,.9,0},{1.8,.9,0},{-2.5,-.1,0},{2.5,-.1,0},
+        {-2.5,-1.2,-.25},{2.5,-1.2,-.25},{-.8,-1.55,0},{.8,-1.55,0},
+        {-.8,-3,-.25},{.8,-3,-.25},{0,.25,-1.05},
+    })
+end
+function builders.Buddy()
+    return points({
+        {4,2.35,0},{4,1.1,0},{4,-.3,0},
+        {2.85,1.15,0},{1.95,1.75,0},{1.45,2.65,0},
+        {5.15,1.15,0},{6.05,.55,0},{6.45,-.35,0},
+        {3.2,-1.4,0},{2.6,-2.5,0},{4.8,-1.4,0},{5.4,-2.5,0},
+    })
+end
+
+function Poses.Build(name)
+    local builder=builders[name]
+    return builder and builder()or nil
+end
+function Poses.Extend(state)
+    for _,name in ipairs(Poses.Names)do
+        if not table.find(state.Names,name)then state.Names[#state.Names+1]=name end
+        state.Counts[name]=Poses.Counts[name]
+    end
+    return state
+end
+return Poses
+
+]========]
 sources.Branding = [========[
 local Brand={}
 function Brand.Clean(value)
@@ -17,14 +306,20 @@ local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.hu
 function Capture.Install(context)
     return setmetatable({Context=context,Busy=false,Generation=0,Requests=0,Status="Capture: idle"},Capture)
 end
+function Capture:Acknowledged(target)
+    -- Game acknowledgement and physics ownership may arrive on different
+    -- frames. A pending ReceiveAge update must not start another excursion.
+    return (self.Context.Acknowledged or self.Context.Owned)(target)==true
+end
 function Capture:Acquire(target,valid)
     local ctx=self.Context
-    if self.Closed or self.Busy or ctx.OperationBusy()or not target or not target.Parent or target.Anchored or not valid()then return false end
-    if ctx.Owned(target)then return true end
+    if self.Closed or not target or not target.Parent or target.Anchored or not valid()then return false,"cancelled"end
+    if self.Busy or ctx.OperationBusy()then return false,"busy"end
+    if self:Acknowledged(target)then return true,"acknowledged"end
     self.Generation+=1;local generation=self.Generation
     self.Busy=true;self.LastError=nil
     local actor,root,humanoid,returnFrame,restoreMovement
-    local owned=false;local started=ctx.Clock()
+    local owned=false;local outcome="cancelled";local started=ctx.Clock()
     local function wanted()return not self.Closed and self.Generation==generation and target.Parent~=nil and not target.Anchored and valid()end
     local function current()
         if not wanted()then return false end
@@ -36,31 +331,53 @@ function Capture:Acquire(target,valid)
         self.Status="Capture: preparing real character"
         local settle
         restoreMovement,settle=ctx.PrepareMovement()
-        if settle then ctx.WaitFrame()end
+        local ping=ctx.PingSeconds();ping=finite(ping)and math.max(ping,0)or .1
+        if settle then
+            -- Gucci may still be unseating, and anti-grab/desync may still be
+            -- replacing the local root after their toggles turn off. Snapshot
+            -- the return pose only after the same free root stays ready.
+            local untilReady=ctx.Clock()+math.clamp(.6+2*ping,1,4)
+            local previous,stableAt,ready
+            repeat
+                if not wanted()then return end
+                local c,r,h=ctx.Character()
+                ready=c and r and r.Parent and not r.Anchored and h and h.Health>0
+                    and not h.SeatPart and h.Sit~=true and(not ctx.MovementReady or ctx.MovementReady())
+                if ready then
+                    if previous~=r then previous=r;stableAt=ctx.Clock()end
+                    if ctx.Clock()-stableAt>=.1 then break end
+                else previous=nil;stableAt=nil end
+                ctx.WaitFrame()
+            until ctx.Clock()>=untilReady
+            if not ready or not stableAt or ctx.Clock()-stableAt<.1 then
+                outcome="movement";return
+            end
+        end
         if not wanted()then return end
         actor,root,humanoid=ctx.Character()
-        if not actor or not root or not humanoid or humanoid.Health<=0 then return end
+        if not actor or not root or root.Anchored or not humanoid or humanoid.Health<=0
+            or humanoid.SeatPart or humanoid.Sit==true then outcome="movement";return end
         returnFrame=root.CFrame
         if ctx.Anchor then ctx.Anchor(returnFrame.Position)end
-        local ping=ctx.PingSeconds();ping=finite(ping)and math.max(ping,0)or .1
-        local timeout=math.clamp(.35+2*ping,.65,2.5)
-        local cadence=math.clamp(.25*ping,1/30,.15)
+        local timeout=math.clamp(.6+2*ping,1,5)
+        local cadence=math.clamp(.25*ping,1/20,.2)
         local deadline,nextRequest=ctx.Clock()+timeout,0
         -- Stay physically below the target for a rendered/physics step first.
         self.Status="Capture: moving below target"
         if ctx.Teleport(root,ctx.Approach(target))==false then return end
         ctx.WaitFrame()
         while current()and ctx.Clock()<=deadline do
-            if ctx.Owned(target)then owned=true;break end
-            ctx.Teleport(root,ctx.Approach(target))
+            if self:Acknowledged(target)then owned=true;break end
+            if ctx.Teleport(root,ctx.Approach(target))==false then outcome="movement";return end
             local now=ctx.Clock()
             if now>=nextRequest then
                 self.Status="Capture: requesting ownership"
-                ctx.Grab(target);self.Requests+=1;nextRequest=now+cadence
+                ctx.Grab(target,root.CFrame);self.Requests+=1;nextRequest=now+cadence
             end
             ctx.WaitFrame()
         end
-        owned=current()and ctx.Owned(target)or false
+        owned=current()and self:Acknowledged(target)or false
+        outcome=owned and "acknowledged"or(current()and "timeout"or "cancelled")
     end)
     self.Status="Capture: returning real character"
     if returnFrame then
@@ -82,9 +399,12 @@ function Capture:Acquire(target,valid)
     if not cleared then self.LastError="Capture lock restore: "..tostring(message)end
     self.Busy=false;self.LastDuration=ctx.Clock()-started
     if not ok then self.LastError=tostring(err)end
+    self.LastOutcome=self.LastError and "error"or outcome
     self.Status=self.LastError and("Capture error: "..self.LastError)
-        or(owned and string.format("Capture: ownership acknowledged in %.2f s",self.LastDuration)or "Capture: no ownership acknowledgement; bounded retry")
-    return owned and ok and not self.Closed
+        or(owned and string.format("Capture: game acknowledged in %.2f s",self.LastDuration)
+            or(outcome=="movement"and "Capture: waiting for your character to leave its seat/restore its root"
+                or "Capture: no game acknowledgement; retry delayed"))
+    return owned and ok and not self.Closed,self.LastOutcome
 end
 function Capture:Dispose()self.Closed=true;self.Generation+=1 end
 return Capture
@@ -252,7 +572,6 @@ function Intro.Play()
 end
 
 return Intro
-
 
 ]========]
 sources.Library = [========[
@@ -3584,10 +3903,10 @@ function Library:AddDraggableMenu(Name: string)
         Parent = Container,
     })
     New("UIPadding", {
-        PaddingBottom = UDim.new(0, 7),
-        PaddingLeft = UDim.new(0, 7),
-        PaddingRight = UDim.new(0, 7),
-        PaddingTop = UDim.new(0, 7),
+        PaddingBottom = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 8),
+        PaddingRight = UDim.new(0, 8),
+        PaddingTop = UDim.new(0, 8),
         Parent = Container,
     })
 
@@ -8037,14 +8356,14 @@ do
 
         local Holder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, Info.Compact and 32 or 36),
+            Size = UDim2.new(1, 0, 0, Info.Compact and 36 or 40),
             Visible = Slider.Visible,
             Parent = Container,
         })
 
         local SliderLabel = New("TextLabel", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(.58, -6, 0, 14),
+            Size = UDim2.new(.60, -6, 0, 14),
             Text = Slider.Text,TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
@@ -8054,17 +8373,18 @@ do
         local Bar = New("TextButton", {
             Active = not Slider.Disabled,AnchorPoint = Vector2.new(0,1),
             BackgroundTransparency = 1,Position = UDim2.fromScale(0,1),
-            Size = UDim2.new(1,0,0,18),Text = "",Parent = Holder,
+            Size = UDim2.new(1,0,0,22),Text = "",Parent = Holder,
         })
         local Track = New("Frame", {
             AnchorPoint = Vector2.new(0,.5),BackgroundColor3 = "MainColor",
-            Position = UDim2.fromScale(0,.5),Size = UDim2.new(1,0,0,10),Parent = Bar,
+            Position = UDim2.fromScale(0,.5),Size = UDim2.new(1,0,0,8),Parent = Bar,
         })
-        New("UIStroke",{Color="OutlineColor",Transparency=.3,Parent=Track})
+        New("UIStroke",{Color="OutlineColor",Transparency=.55,Parent=Track})
         local DisplayLabel = New("TextLabel", {
             AnchorPoint = Vector2.new(1,0),BackgroundTransparency = 1,
-            Position = UDim2.fromScale(1,0),Size = UDim2.new(.42,0,0,14),
+            Position = UDim2.fromScale(1,0),Size = UDim2.new(.40,0,0,14),
             Text = "",TextSize = 13,TextXAlignment = Enum.TextXAlignment.Right,
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = Bar.ZIndex+2,Parent = Holder,
         })
         Library:FunctionIcon(SliderLabel,Slider.Text)
@@ -8077,7 +8397,7 @@ do
                 BackgroundColor3 = "MainColor",
                 AnchorPoint = Vector2.new(1,0),
                 Position = UDim2.fromScale(1,0),
-                Size = UDim2.new(.42,0,0,14),
+                Size = UDim2.new(.40,0,0,14),
                 TextXAlignment = Enum.TextXAlignment.Right,
                 Text = "",
                 TextSize = 14,
@@ -8102,10 +8422,11 @@ do
         New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Fill})
         local Thumb = New("Frame", {
             AnchorPoint = Vector2.new(.5,.5),BackgroundColor3 = "WhiteColor",
-            Position = UDim2.fromScale(.5,.5),Size = UDim2.fromOffset(14,14),
+            Position = UDim2.fromScale(.5,.5),Size = UDim2.fromOffset(16,16),
             ZIndex = Bar.ZIndex+2,Parent = Track,
         })
         New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Thumb})
+        New("UIStroke",{Color="OutlineColor",Transparency=.15,Thickness=1,Parent=Thumb})
 
         function Slider:UpdateColors()
             if Library.Unloaded then
@@ -9052,8 +9373,8 @@ do
                 Parent = Container,
             })
             New("UIPadding", {
-                PaddingLeft = UDim.new(0, 7),
-                PaddingRight = UDim.new(0, 7),
+                PaddingLeft = UDim.new(0, 8),
+                PaddingRight = UDim.new(0, 8),
                 Parent = Button,
             })
 
@@ -10439,10 +10760,10 @@ do
                 Parent = DepGroupboxContainer,
             })
             New("UIPadding", {
-                PaddingBottom = UDim.new(0, 7),
-                PaddingLeft = UDim.new(0, 7),
-                PaddingRight = UDim.new(0, 7),
-                PaddingTop = UDim.new(0, 7),
+                PaddingBottom = UDim.new(0, 8),
+                PaddingLeft = UDim.new(0, 8),
+                PaddingRight = UDim.new(0, 8),
+                PaddingTop = UDim.new(0, 8),
                 Parent = DepGroupboxContainer,
             })
         end
@@ -12365,10 +12686,10 @@ function Library:CreateWindow(WindowInfo)
                     Parent = Container,
                 })
                 New("UIPadding", {
-                    PaddingBottom = UDim.new(0, 7),
-                    PaddingLeft = UDim.new(0, 7),
-                    PaddingRight = UDim.new(0, 7),
-                    PaddingTop = UDim.new(0, 7),
+                    PaddingBottom = UDim.new(0, 8),
+                    PaddingLeft = UDim.new(0, 8),
+                    PaddingRight = UDim.new(0, 8),
+                    PaddingTop = UDim.new(0, 8),
                     Parent = Container,
                 })
 
@@ -12433,7 +12754,7 @@ function Library:CreateWindow(WindowInfo)
                         return
                     end
 
-                    local ContentSize = (List.AbsoluteContentSize.Y / Library.DPIScale) + 14
+                    local ContentSize = (List.AbsoluteContentSize.Y / Library.DPIScale) + 16
                     if Tabbox.PoppedOut then
                         ContentSize = math.min(ContentSize, GetPopOutBodyMaxHeight(Tabbox, 35))
                     end
@@ -12729,10 +13050,10 @@ function Library:CreateWindow(WindowInfo)
                     Parent = GroupboxContainer,
                 })
                 New("UIPadding", {
-                    PaddingBottom = UDim.new(0, 7),
-                    PaddingLeft = UDim.new(0, 7),
-                    PaddingRight = UDim.new(0, 7),
-                    PaddingTop = UDim.new(0, 7),
+                    PaddingBottom = UDim.new(0, 8),
+                    PaddingLeft = UDim.new(0, 8),
+                    PaddingRight = UDim.new(0, 8),
+                    PaddingTop = UDim.new(0, 8),
                     Parent = GroupboxContainer,
                 })
             end
@@ -12768,7 +13089,7 @@ function Library:CreateWindow(WindowInfo)
                 end
 
                 local TopSize = (GroupboxTop.AbsoluteSize.Y / Library.DPIScale)
-                local ContainerSize = (GroupboxList.AbsoluteContentSize.Y / Library.DPIScale) + 14
+                local ContainerSize = (GroupboxList.AbsoluteContentSize.Y / Library.DPIScale) + 16
                 if Groupbox.PoppedOut then
                     ContainerSize = math.min(ContainerSize, GetPopOutBodyMaxHeight(Groupbox, TopSize + 1))
                 end
@@ -15152,7 +15473,6 @@ end
 
 return Library
 
-
 ]========]
 sources.ThemeManager = [========[
 local requireModule = ...
@@ -16302,7 +16622,6 @@ end
 Identity.Runtime(getgenv()).ThemeManager = ThemeManager
 return ThemeManager
 
-
 ]========]
 sources.SaveManager = [========[
 local requireModule = ...
@@ -17366,7 +17685,6 @@ end
 SaveManager:BuildFolderTree()
 return SaveManager
 
-
 ]========]
 sources.Icons = [========[
 local Lucide = {}
@@ -17451,15 +17769,13 @@ end
 
 return Lucide
 
-
-
-
 ]========]
 sources.Main = [========[
 local requireModule, reloadPath, registerCleanup = ...
 local Identity = requireModule("AppIdentity")
 local app = Identity.Runtime(getgenv())
 local Aim = requireModule("AimSupport")
+local CoconutPoses = requireModule("CoconutPoses")
 local UIStyle = requireModule("UIStyle")
 local cloneref = cloneref or clonereference or function(value) return value end
 local gethui = gethui or get_hidden_gui or function() return game:GetService("CoreGui") end
@@ -17525,7 +17841,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.45 | FTAP")
+                                warn("Astral v4.46 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -19333,6 +19649,11 @@ do
 								return
 							end
 							local assemblyRootPart = arg.AssemblyRootPart or arg
+							if assemblyRootPart.Anchored then return false end
+							if typeof(isnetworkowner)=="function"then
+								local ok,owned=pcall(isnetworkowner,assemblyRootPart)
+								if ok and type(owned)=="boolean"then return owned end
+							end
 							return not assemblyRootPart.Anchored and assemblyRootPart.ReceiveAge == 0
 						end
 
@@ -20843,7 +21164,7 @@ end
                     Spawn=function()return tbl12.SpawnToy("PalletLightBrown",nil,0,true)end,
                     Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value and true or nil end,
                     Owned=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
-                    Acquire=function(part,valid)if not tbl12.VisibleCapture then return false end;return tbl12.VisibleCapture:Acquire(part,valid)end,
+                    Acquire=function(part,valid)if not tbl12.AcquireVisiblePhysics then return false end;return tbl12.AcquireVisiblePhysics(part,valid)end,
                     Destroy=function(model)if model and model.Parent==v17 then tbl12.DestroyToy(model)end end,
                     CanPrepare=function()local _,root,hum=tbl12.Char();return not flag11 and root and root.Parent and hum and hum.Health>0 end,
                     ParkPosition=function()local _,root=tbl12.Char();return root and root.Position+Vector3.new(0,12,0)end,
@@ -25495,6 +25816,7 @@ end
 						return rigidConstraint.Parent and rigidConstraint.Attachment1 ~= leftGripAttachment
 					end
 
+					CoconutPoses.Extend(tbl7.CoconutForms)
 					tbl12.SpawnCoconutForms = function()
 						local coconutForms = tbl7.CoconutForms
 						if coconutForms.Spawning or not tbl8.CoconutForms or #coconutForms.Models >= #coconutForms.Offsets then
@@ -25914,6 +26236,10 @@ end
 										end
 
 										offsets[#offsets + 1] = CFrame.new((v23.X + n38 * coconutForms.Spacing67 * 0.5) * n37, v23.Y, 0.75)
+									end
+								elseif CoconutPoses.Counts[v22] then
+									for _,offset in ipairs(CoconutPoses.Build(v22))do
+										offsets[#offsets+1]=offset
 									end
 								end
 							end
@@ -31695,10 +32021,10 @@ end
 			if toyEffects.Fling then
 				tbl12.RunPlayerMethod("ToyEffect_Fling", tbl12.Fling, arg, arg2, arg5)
 			end
-            local visuals=tbl12.AstralFunEffects
-            if visuals then for _,name in ipairs(visuals.Names)do
+            local mechanics=tbl12.AstralGameplayEffects
+            if mechanics then for _,name in ipairs(mechanics.Names)do
                 if toyEffects[name]then local effect=name
-                    tbl12.RunPlayerMethod("AstralVisual_"..effect,function(player)visuals:Apply(player,effect)end,arg,arg2,arg5)
+                    tbl12.RunPlayerMethod("AstralPhysical_"..effect,function(player)mechanics:Apply(player,effect)end,arg,arg2,arg5)
                 end
             end end
 
@@ -35026,7 +35352,9 @@ Escape Timer: %*]]
                 WaitFrame=function()RunService.RenderStepped:Wait();return RunService.Heartbeat:Wait()end,
                 PingSeconds=tbl12.KickPingSeconds,Grab=tbl12.Grab,
                 Owned=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
-                Approach=function(part)return CFrame.new(part.Position-Vector3.new(0,22,0))end,
+                Acknowledged=function(part)return tbl12.IsPartOwner(part)==true end,
+                MovementReady=function()return not tbl7.States["Anti Grab"]end,
+                Approach=function(part)return CFrame.new(part.Position-Vector3.new(0,6,0))end,
                 Teleport=function(root,frame)
                     local _,current,h=tbl12.Char()
                     if current~=root or not h or h.Health<=0 then return false end
@@ -35048,12 +35376,24 @@ Escape Timer: %*]]
                 end,
             })
             lib:OnUnload(function()tbl12.VisibleCapture:Dispose()end)
+            tbl12.AcquireVisiblePhysics=function(part,valid)
+                local acknowledged=tbl12.VisibleCapture:Acquire(part,valid)
+                if not acknowledged then return false end
+                local deadline=os.clock()+math.clamp(.4+2*tbl12.KickPingSeconds(),.6,3)
+                repeat
+                    if not valid()or not part.Parent or part.Anchored then return false end
+                    if tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)then return true end
+                    RunService.Heartbeat:Wait()
+                until os.clock()>=deadline
+                return false
+            end
             tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,
                 Enabled=function()return not flag11 and tbl8.LoopApplyMethodT and tbl7.TargetMethods.Kick and not localPlayer.InPlot.Value end,
                 Selected=function(player)return player and player.Parent and tbl7.SelectedPlayers[player]==true and not tbl12.IsProtectedPlayer(player)end,
                 Targets=function()return tbl12.GetTargets(false,tbl7.SelectedPlayers)end,
                 LocalCharacter=function()return tbl12.Char()end,Character=tbl12.Char,
                 Owned=function(root)return tbl12.IsNetworkOwner(root)and tbl12.IsPartOwner(root)end,
+                Acknowledged=function(root)return tbl12.IsPartOwner(root)==true end,
                 NetworkOwned=tbl12.IsNetworkOwner,
                 OwnershipBusy=function()return tbl7.States.Owning==true end,
                 Grab=tbl12.Grab,Release=tbl12.RNO,
@@ -35127,14 +35467,14 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.45"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.46"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
 			EnableSidebarResize = true,
 			Icon = UIStyle.BrandIcon,
 			IconSize = UDim2.fromOffset(32, 32),
-			CornerRadius = 10,
+			CornerRadius = 12,
             BackgroundImage = "",
             SidebarCompactWidth = 52,
 			Compact = true,
@@ -35149,7 +35489,7 @@ Escape Timer: %*]]
 			TabButtonsStyle = {
 				Gap = 4,
 				Padding = 7,
-				CornerRadius = 8,
+				CornerRadius = 10,
 				Indicator = true,
 				IndicatorWidth = 2,
 				IndicatorHeight = 20,
@@ -35251,7 +35591,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.45",true)
+            box:AddLabel("Astral v4.46",true)
         end
 
         do
@@ -36878,7 +37218,7 @@ Escape Timer: %*]]
         lib:OnUnload(function()tbl12.KickInterval:Dispose()end)
         local targetGroup=tbl15.Target:AddLeftGroupbox("Target Config", "circle-user-round")
         tbl12.KickControls=targetGroup
-        tbl12.CreatePlayerDropdown(targetGroup,"Target",selectedPlayers)
+        tbl12.CreatePlayerDropdown(targetGroup,"Target",selectedPlayers,nil,nil,nil,"Select Player")
         requireModule("TargetActions").Install({Group=targetGroup,Tab=tbl15.Target,Library=lib,API=tbl12,Data=tbl7,Settings=tbl9,Notify=fn18})
         tbl12.HoldableActions=requireModule("HoldableActions").Install({API=tbl12,Data=tbl7,Library=lib,Clock=os.clock,Notify=fn18})
         tbl12.PCLDFreeze=requireModule("FreezePCLD").Install({RunService=RunService,Detector=tbl12.DetectPCLD,Owned=tbl12.IsNetworkOwner,
@@ -37095,9 +37435,8 @@ Escape Timer: %*]]
         -- ASTRAL_FREEZE_SETTINGS_END
 
 
-		local v21 = v20:AddDependencyBox()
-		v21:SetupDependencies({ { options.MethodSettingsTargets, "Kick" } })
-		v21:AddDivider("Kick Settings")
+        local v21=v20
+        v21:AddDivider("Hold")
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddButton({Text="Prepare Pallet",Func=function()tbl12.PalletRagdoll:Warm()end})
 
@@ -37480,20 +37819,35 @@ Escape Timer: %*]]
 
 	do
 		local Effects = tbl15.Fun:AddRightGroupbox("Effects", "flask-conical")
-        tbl12.AstralFunEffects=requireModule("FunEffects").Install({Workspace=workspace,RunService=RunService,Players=Players,Clock=os.clock,Character=function(player)return tbl12.Char(player)end})
-        lib:OnUnload(function()tbl12.AstralFunEffects:Dispose()end)
+        tbl12.AstralGameplayEffects=requireModule("GameplayEffects").Install({RunService=RunService,Clock=os.clock,
+            Character=function(player)return tbl12.Char(player)end,
+            Owned=function(root)return tbl12.IsNetworkOwner(root)and tbl12.IsPartOwner(root)end,
+            Acquire=function(root,valid)return tbl12.AcquireVisiblePhysics(root,valid)end,
+            Protected=tbl12.IsProtectedPlayer,
+            Allowed=function()return not flag11 and not localPlayer.InPlot.Value and(not tbl12.AstralDrone or not tbl12.AstralDrone.IsActive())end,
+            KickHeld=function(player)return tbl12.KickLoop.Sessions[player]~=nil end,
+            Gravity=function()return workspace.Gravity end,
+            Release=tbl12.RNO,
+            CanRelease=function(player)return not tbl7.States.Owning and tbl12.KickLoop.Sessions[player]==nil end,
+            RestoreOrientation=function(character,root,heading)
+                if not root.Parent or not tbl12.IsNetworkOwner(root)or not tbl12.IsPartOwner(root)then return end
+                local frame=CFrame.lookAt(root.Position,root.Position+heading)
+                character:PivotTo(frame*root.CFrame:Inverse()*character:GetPivot())
+            end,
+        })
+        lib:OnUnload(function()tbl12.AstralGameplayEffects:Dispose()end)
 
 		tbl12.CreatePlayerDropdown(Effects, "Toy Effects", tbl7.SelectedPlayersEffect)
 		Effects:AddDivider("Method")
 
 		Effects:AddDropdown("MethodSettingsTEf", {
-			Values = { "Oven", "Microwave", "Campfire", "Banana", "Delete Limbs", "Fling", "Aurora Aura", "Electric Crown", "Orbit Sparks", "Pulse Shell", "Comet Trail", "Confetti" },
+			Values = { "Oven", "Microwave", "Campfire", "Banana", "Delete Limbs", "Fling", "Lift and Lower", "Upside Down" },
 			Multi = true,
 			AllowNull = true,
 			Text = "Effects",
 			Callback = function(toyEffects)
 				tbl7.ToyEffects = toyEffects
-                tbl12.AstralFunEffects:Select(toyEffects)
+                tbl12.AstralGameplayEffects:Select(toyEffects)
 
 				if not toyEffects.Fling then
 					tbl12.ClearFling()
@@ -37505,16 +37859,12 @@ Escape Timer: %*]]
 		tbl12.CreateLoopToggle(Effects, "LoopApplyMethodEFServ", "LoopApplyMethodEFServer", true, false, tbl7.SelectedPlayersEffect, tbl12.ProcessToyEffects)
 		tbl12.CreateApplyButton(Effects, false, false, tbl7.SelectedPlayersEffect, tbl12.ProcessToyEffects)
 		tbl12.CreateApplyButton(Effects, true, false, tbl7.SelectedPlayersEffect, tbl12.ProcessToyEffects)
-        Effects:AddDivider("Visual Effect Settings")
-        Effects:AddLabel("Aurora, Crown, Sparks, Shell, Trail and Confetti are local visuals on the chosen characters. Apply lasts for the duration; Loop refreshes it.",true)
-        Effects:AddSlider("AstralEffectDuration",{Text="Visual Effect Duration",Default=12,Min=2,Max=60,Rounding=0,Compact=true,Suffix=" s",Callback=function(v)tbl12.AstralFunEffects.Duration=v end})
-        Effects:AddSlider("AstralEffectTargets",{Text="Max Visual Targets",Default=8,Min=1,Max=24,Rounding=0,Compact=true,Callback=function(v)tbl12.AstralFunEffects.Limit=v end})
-        Effects:AddLabel("Visual Effect Color"):AddColorPicker("AstralEffectColor",{Default=Color3.fromRGB(110,190,255),Title="Visual Effect Color",Callback=function(v)tbl12.AstralFunEffects.Color=v end})
-        Effects:AddButton({Text="Clear Visual Effects",Func=function()tbl12.AstralFunEffects:Clear()end})
-        Effects:AddButton({Text="Preview Visuals On Self",Func=function()
-            local any=false;for _,name in ipairs(tbl12.AstralFunEffects.Names)do if tbl7.ToyEffects[name]then any=true;tbl12.AstralFunEffects:Apply(localPlayer,name)end end
-            if not any then fn18("Choose a visual effect first")end
-        end})
+        Effects:AddDivider("Physical Effects")
+        Effects:AddSlider("AstralEffectDuration",{Text="Effect Duration",Default=10,Min=2,Max=30,Rounding=0,Compact=true,Suffix=" s",Callback=function(v)tbl12.AstralGameplayEffects.Duration=v end})
+        Effects:AddSlider("AstralEffectHeight",{Text="Lift Height",Default=12,Min=2,Max=24,Rounding=0,Compact=true,Callback=function(v)tbl12.AstralGameplayEffects.Height=v end})
+        Effects:AddSlider("AstralEffectPeriod",{Text="Lift Cycle",Default=4,Min=2,Max=12,Rounding=1,Compact=true,Suffix=" s",Callback=function(v)tbl12.AstralGameplayEffects.Period=v end})
+        Effects:AddSlider("AstralEffectTargets",{Text="Max Targets",Default=6,Min=1,Max=12,Rounding=0,Compact=true,Callback=function(v)tbl12.AstralGameplayEffects.Limit=v end})
+        Effects:AddButton({Text="Stop Physical Effects",Func=function()tbl12.AstralGameplayEffects:Clear()end})
 
 		local v20 = Effects:AddDependencyBox()
 		v20:SetupDependencies({ { options.MethodSettingsTEf, "Delete Limbs" } })
@@ -38216,10 +38566,10 @@ Escape Timer: %*]]
         local Flags=requireModule("GameFlags")
         tbl12.AstralDrone=requireModule("Drone").Install({
             Character=function()return tbl12.Char()end,
-            -- Flight only needs PHYSICS ownership (ReceiveAge==0): that is what
-            -- lets the client's LinearVelocity actually move the rocket. The
-            -- PartOwner StringValue is the game's claim tag and is not required.
+            -- Require both the game's claim and the physics handover. A newly
+            -- spawned stationary part can otherwise look owned too early.
             Owned=function(root)return tbl12.IsNetworkOwner(root)==true end,
+            Acknowledged=function(root)return tbl12.IsPartOwner(root)==true end,
             Notify=function(msg)if type(fn18)=="function"then pcall(fn18,"Flight stopped: "..tostring(msg),"Rocket Flight")end end,
             RequestOwner=function(root)
                 local _,avatar,h=tbl12.Char()
@@ -38230,7 +38580,7 @@ Escape Timer: %*]]
             SpawnRocket=function()
                 local ready,reason=Flags.CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue);if not ready then return nil,reason end
                 local _,root=tbl12.Char();if not root then return nil,"Waiting for character"end
-                return tbl12.SpawnToy("BombMissile",root.CFrame*CFrame.new(0,4,-8)+Vector3.new(0,0,-20),0,true)
+                return tbl12.SpawnToy("BombMissile",root.CFrame*CFrame.new(0,4,-16),0,true)
             end,
             DestroyRocket=function(model)if model and model.Parent==v17 then tbl12.DestroyToy(model)end end,
             Detonate=function(rocket,position)
@@ -38242,10 +38592,17 @@ Escape Timer: %*]]
                 if model and (model:IsA("Model")or model:IsA("BasePart"))then return model end
                 if model then model:Destroy()end
             end,
+            MovementReady=function()return not tbl7.States["Anti Grab"]end,
             BeforeFlight=function()
-                for _,id in ipairs({"FlyT","DesyncT","AstralLockPosition","AstralWallClimb","LoopTP","LoopTPToLoc","LoopTPToPlayer","LoopSpectatePlayer"})do
-                    if toggles[id]and toggles[id].Value then toggles[id]:SetValue(false)end
+                local paused={}
+                for _,id in ipairs({"AntiGrab","GucciAntiGrab","FlyT","DesyncT","AstralLockPosition","AstralWallClimb","LoopTP","LoopTPToLoc","LoopTPToPlayer","LoopSpectatePlayer","AstralSpiderEnabled","LoopApplyMethodTSel","LoopApplyMethodTServ"})do
+                    local control=toggles[id]
+                    if control and control.Value then paused[#paused+1]=control;control:SetValue(false)end
                 end
+                return function()
+                    if flag11 or lib.Unloaded then return end
+                    for i=#paused,1,-1 do local control=paused[i];if not control.Value then pcall(control.SetValue,control,true)end end
+                end,#paused>0
             end,
         })
         lib:OnUnload(function()tbl12.AstralDrone.Shutdown()end)
@@ -38260,7 +38617,7 @@ Escape Timer: %*]]
         drone:AddSlider("AstralRocketCameraDistance",{Text="Chase Camera Distance",Default=12,Min=6,Max=24,Rounding=0,Callback=function(v)tbl12.AstralDrone.Config.CameraDistance=v end})
         local status=drone:AddLabel("Disabled",true);local elapsed=0
         lib:GiveSignal(RunService.Heartbeat:Connect(function(dt)elapsed+=dt;if elapsed<.2 then return end;elapsed=0;local s=tbl12.AstralDrone.GetStatus();status:SetText(s.Reason or "Ready")end))
-        drone:AddLabel("Rocket is the default. WASD + mouse, Space up, Ctrl/C down, Shift boost, X exit. Drone is an optional local skin after flight starts.",true)
+        drone:AddLabel("WASD + mouse · Space/Ctrl: height · Shift: boost · X: exit",true)
     end
 
 	do
@@ -39573,50 +39930,6 @@ Escape Timer: %*]]
 			AllowNull = true,
 			Callback = tbl12.SetBoostFPSOptions,
 		})
-	end
-
-	do
-		local Character = tbl15.Visual:AddRightGroupbox("Character", "person-standing")
-
-		Character:AddToggle("ForcefieldChar", {
-			Text = "Highlight Your Character",
-			Default = false,
-			Callback = tbl12.SetCharacterHighlight,
-		}):AddColorPicker("ForcefieldColor", {
-			Default = tbl9.ForcefieldColor,
-			Title = "Highlight Color",
-			Callback = function(forcefieldColor)
-				tbl9.ForcefieldColor = forcefieldColor
-				tbl12.UpdateCharacterHighlight()
-			end,
-		})
-
-		tbl12.AddRainbowToggle(Character, "RGBForcefieldChar", "RGB Highlight", "ForcefieldColor")
-
-		Character:AddDropdown("CharacterHighlightAffect", {
-			Text = "Affect",
-			Values = { "Character", "Coconut Forms", "China Hat", "Anti Kick" },
-			Default = { "Character", "Coconut Forms", "China Hat", "Anti Kick" },
-			Multi = true,
-			AllowNull = true,
-			Callback = function(characterHighlightAffects)
-				tbl7.CharacterHighlightAffects = characterHighlightAffects
-				tbl12.SetCharacterHighlight(tbl8.ForcefieldChar)
-			end,
-		})
-
-		Character:AddDivider("China Hat")
-
-		Character:AddToggle("ChinaHat", { Text = "China Hat", Default = false, Callback = tbl12.SetChinaHat }):AddColorPicker("ChinaHatColor", {
-			Default = tbl9.ChinaHatColor,
-			Title = "Hat Color",
-			Callback = function(chinaHatColor)
-				tbl9.ChinaHatColor = chinaHatColor
-				tbl12.UpdateChinaHat()
-			end,
-		})
-
-		tbl12.AddRainbowToggle(Character, "RGBChinaHat", "RGB China Hat", "ChinaHatColor")
 	end
 
 	do
@@ -41463,7 +41776,6 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 	}
 end
 
-
 ]========]
 sources.Bootstrap = [========[
 local sources = ...
@@ -41494,9 +41806,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.45: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.46: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.45 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.46 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -41541,7 +41853,6 @@ if not ok then
     return nil, result
 end
 return result
-
 
 ]========]
 sources.Notices = [========[
@@ -41591,8 +41902,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-
 
 ]========]
 sources.AimSupport = [========[
@@ -41657,7 +41966,6 @@ function Aim.isCameraRay(camera, origin, direction)
         and direction.Unit:Dot(camera.CFrame.LookVector) > 0.999
 end
 return Aim
-
 
 ]========]
 sources.UIStyle = [========[
@@ -41728,7 +42036,6 @@ end
 
 return Style
 
-
 ]========]
 sources.AppIdentity = [========[
 -- Astral owns its runtime state and storage. Legacy folders are not scanned.
@@ -41761,7 +42068,6 @@ function Identity.Environment(host,state)
     return environment
 end
 return Identity
-
 
 ]========]
 sources.FunIcon = [========[
@@ -41825,7 +42131,6 @@ function Icon.Install(library)
     return true
 end
 return Icon
-
 
 ]========]
 sources.Drone = [========[
@@ -42064,7 +42369,6 @@ function Items:Dispose()
 end
 return Items
 
-
 ]========]
 sources.SparklerForms = [========[
 -- Free-toy body-attached formations. Independent from CoconutForms / ToyRig.
@@ -42134,7 +42438,6 @@ function Forms:Step(dt)
 end
 function Forms:Dispose()if self.Closed then return end;self.Closed=true;self.Enabled=false;self.Pool:Dispose();self.Models={};self.Connection:Disconnect()end
 return Forms
-
 
 ]========]
 sources.FigureLayouts = [========[
@@ -42318,7 +42621,6 @@ function Layouts.Frame(segment,axis)
     return CFrame.lookAt((segment.A+segment.B)*.5,(segment.A+segment.B)*.5+d,up)*(axis==1 and CFrame.Angles(0,math.pi/2,0)or axis==2 and CFrame.Angles(-math.pi/2,0,0)or CFrame.Angles(0,math.pi,0))
 end
 return Layouts
-
 
 ]========]
 sources.FormationRig = [========[
@@ -42530,7 +42832,6 @@ end
 function Formation:Dispose()if self.Closed then return end;self.Active=false;self:Clear();self.Closed=true end
 return Formation
 
-
 ]========]
 sources.GameFlags = [========[
 -- Read live markers through Player; never capture an out-of-scope Main local.
@@ -42550,7 +42851,6 @@ function Flags.CanBuild(player,states,queue)
     return true
 end
 return Flags
-
 
 ]========]
 sources.ToyRig = [========[
@@ -42761,7 +43061,6 @@ end
 function Rig:Dispose()self.Active=false;self:Clear();self.Closed=true end
 return Rig
 
-
 ]========]
 sources.SpiderWalker = [========[
 -- Standard character movement pilots a real pallet/ladder walker; no avatar teleport.
@@ -42929,7 +43228,6 @@ end
 function Spider:Dispose()if self.Closed then return end;self.Closed=true;self.Enabled=false;self:ReleaseRider();self.Decor:Dispose();self.Pool:Dispose();self.Connection:Disconnect()end
 return Spider
 
-
 ]========]
 sources.ObjectESP = [========[
 -- Local visual markers only; event-indexed models, bounded nearest-first rendering.
@@ -42937,6 +43235,18 @@ sources.ObjectESP = [========[
 local requireModule=...;local Catalog=requireModule("AssetCatalog")
 local ESP={};ESP.__index=ESP
 local vehicles={CreatureBlobman=true,TractorGreen=true,TractorOrange=true,TractorRed=true,SantaSleigh=true,Train=true}
+local function finite(value)return type(value)=="number"and value==value and math.abs(value)<math.huge end
+local function blend(dt)return 1-math.exp(-32*(finite(dt)and math.max(dt,0)or 0))end
+local function screenPoint(record,key,target,dt,reset)
+    local previous=record[key]
+    if reset or not previous then record[key]=target;return target end
+    local result=previous:Lerp(target,blend(dt))
+    local gap=target-result
+    -- A marker may ease through small replication changes, but never trail a
+    -- fast target/camera by more than 14 pixels or fly across the whole screen.
+    if gap.Magnitude>14 then result=target-gap.Unit*14 end
+    record[key]=result;return result
+end
 local function settings(color)return {Enabled=false,FillColor=color,OutlineColor=Color3.new(1,1,1),NameColor=Color3.new(1,1,1),NameOutlineColor=Color3.new(0,0,0),
     FillTransparency=.5,OutlineTransparency=0,NameEnabled=true,NameSize=12,Distance=1500,ThroughWalls=true,ShowPicture=true}end
 function ESP.Install(context)
@@ -42959,6 +43269,8 @@ function ESP.Install(context)
         local ok,message=pcall(self.Update,self)
         if not ok then self:Clear();self.Error=tostring(message)end
     end)
+    local hasRender,render=pcall(function()return context.RunService.RenderStepped end)
+    self.Connections[#self.Connections+1]=(hasRender and render or context.RunService.Heartbeat):Connect(function(dt)self:Render(dt)end)
     return self
 end
 function ESP:SetSelected(values)
@@ -43036,11 +43348,20 @@ function ESP:Create(model,root)
     label.Font=Enum.Font.Code;label.TextStrokeTransparency=0;label.Parent=b
     record.Highlight,record.Billboard,record.Label,record.Picture=h,b,label,image;self.Records[model]=record;return record
 end
-function ESP:EdgeMarker(record,kind,name,distance,conf)
-    local camera=self.Context.Camera and self.Context.Camera()
-    if kind~="Gucci"or not self.GucciArrows or not camera then if record.Edge then record.Edge.Visible=false end;return end
+function ESP:ResetSmoothing(record,hide)
+    record.SmoothLabel=nil;record.SmoothEdge=nil;record.SmoothCamera=nil;record.SmoothViewport=nil;record.LastWorld=nil
+    record.BoxSmoothing=false
+    if hide then
+        if record.Screen then record.Screen.Visible=false end
+        if record.Edge then record.Edge.Visible=false end
+    end
+end
+function ESP:EdgeMarker(record,kind,name,distance,conf,dt,camera,reset)
+    camera=camera or self.Context.Camera and self.Context.Camera()
+    if kind~="Gucci"or not self.GucciArrows or not camera then if record.Edge then record.Edge.Visible=false end;record.SmoothEdge=nil;return end
     local point,visible=camera:WorldToViewportPoint(record.Root.Position)
-    if visible and distance<=10000 then if record.Edge then record.Edge.Visible=false end;return end
+    if not finite(point.X)or not finite(point.Y)or not finite(point.Z)then if record.Edge then record.Edge.Visible=false end;record.SmoothEdge=nil;return end
+    if visible and distance<=10000 then if record.Edge then record.Edge.Visible=false end;record.SmoothEdge=nil;return end
     if not record.Edge then
         local label=Instance.new("TextLabel");label.Name="AstralGucciDirection";label.AnchorPoint=Vector2.new(.5,.5);label.Size=UDim2.fromOffset(230,36)
         label.BackgroundTransparency=1;label.BorderSizePixel=0;label.Font=Enum.Font.Code;label.TextSize=12;label.TextStrokeTransparency=1
@@ -43052,21 +43373,34 @@ function ESP:EdgeMarker(record,kind,name,distance,conf)
     if math.abs(dx)+math.abs(dy)<.001 then dy=-1 end
     local sx=math.max(center.X-125,1)/math.max(math.abs(dx),.001);local sy=math.max(center.Y-35,1)/math.max(math.abs(dy),.001)
     local scale=math.min(sx,sy);local arrow=math.abs(dx)>math.abs(dy)and (dx>0 and "→"or "←")or (dy>0 and "↓"or "↑")
+    local target
     if visible then
-        record.Edge.Position=UDim2.fromOffset(math.clamp(point.X,125,math.max(viewport.X-125,125)),math.clamp(point.Y,35,math.max(viewport.Y-35,35)));arrow="◎"
-    else record.Edge.Position=UDim2.fromOffset(center.X+dx*scale,center.Y+dy*scale)end
+        target=Vector2.new(math.clamp(point.X,125,math.max(viewport.X-125,125)),math.clamp(point.Y,35,math.max(viewport.Y-35,35)));arrow="◎"
+    else target=Vector2.new(center.X+dx*scale,center.Y+dy*scale)end
+    local position=screenPoint(record,"SmoothEdge",target,dt,reset)
+    record.Edge.Position=UDim2.fromOffset(position.X,position.Y)
     record.Edge.Text=arrow.." "..name.."\n"..math.floor(distance).." studs · Y "..math.floor(record.Root.Position.Y)
     record.Edge.TextColor3=conf.NameColor;record.Edge.TextStrokeColor3=conf.NameOutlineColor;record.Edge.Visible=true
 end
 function ESP:Style(record,model,id,kind,name,distance)
     local conf=self.Config[kind];local h,b,label=record.Highlight,record.Billboard,record.Label
+    if record.Kind~=kind then self:ResetSmoothing(record,true)end
+    record.Kind,record.Name=kind,name
     h.FillColor=conf.FillColor;h.OutlineColor=conf.OutlineColor;h.FillTransparency=conf.FillTransparency;h.OutlineTransparency=conf.OutlineTransparency
     h.DepthMode=conf.ThroughWalls and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
     b.AlwaysOnTop=conf.ThroughWalls;b.Enabled=conf.NameEnabled
     label.Text=name.." ["..math.floor(distance).."]";label.TextSize=conf.NameSize;label.TextColor3=conf.NameColor;label.TextStrokeColor3=conf.NameOutlineColor
     label.TextStrokeTransparency=kind=="Gucci"and 1 or 0
     record.Picture.Image=self.Images[id]or "";record.Picture.Visible=conf.ShowPicture and self.Images[id]~=nil
-    self:EdgeMarker(record,kind,name,distance,conf)
+    if kind~="Gucci"then
+        if record.Screen then record.Screen.Visible=false end
+        label.Parent=b;record.Picture.Parent=b
+        self:EdgeMarker(record,kind,name,distance,conf)
+    else
+        -- Screen-space labels are animated by RenderStepped. The original
+        -- billboard remains available for native occlusion when requested.
+        b.Enabled=not conf.ThroughWalls and conf.NameEnabled
+    end
     -- Fully invisible Gucci cannot render a normal Highlight: use an adornment
     -- around its actual model bounds. No proxy physics part is created.
     local visible=false
@@ -43074,9 +43408,71 @@ function ESP:Style(record,model,id,kind,name,distance)
     if not visible then
         if not record.Box then local box=Instance.new("BoxHandleAdornment");box.Name="AstralInvisibleGucci";box.Adornee=record.Root;box.ZIndex=1;box.Parent=self.Container;record.Box=box;record.Created[#record.Created+1]=box end
         local ok,frame,size=pcall(model.GetBoundingBox,model)
-        if ok then record.Box.Size=size;record.Box.CFrame=record.Root.CFrame:ToObjectSpace(frame)else record.Box.Size=record.Root.Size end
+        if ok then record.TargetBoxSize=size;record.TargetBoxFrame=record.Root.CFrame:ToObjectSpace(frame)
+        else record.TargetBoxSize=record.Root.Size;record.TargetBoxFrame=CFrame.new()end
+        if not record.BoxSmoothing then record.Box.Size=record.TargetBoxSize;record.Box.CFrame=record.TargetBoxFrame end
         record.Box.Color3=conf.OutlineColor;record.Box.Transparency=math.max(conf.FillTransparency,.55);record.Box.AlwaysOnTop=conf.ThroughWalls;record.Box.Visible=true
     elseif record.Box then record.Box.Visible=false end
+end
+function ESP:RenderGucci(record,model,camera,anchor,dt)
+    local root=record.Root;local conf=self.Config.Gucci
+    local distance=(root.Position-anchor.Position).Magnitude
+    if not finite(distance)or distance<=1000 or self.GucciLimitEnabled and distance>conf.Distance then self:Remove(model);return end
+    local viewport=camera.ViewportSize
+    if not finite(viewport.X)or not finite(viewport.Y)or viewport.X<=0 or viewport.Y<=0 then self:ResetSmoothing(record,true);return end
+    local point,visible=camera:WorldToViewportPoint(root.Position+Vector3.new(0,3,0))
+    if not finite(point.X)or not finite(point.Y)or not finite(point.Z)then self:ResetSmoothing(record,true);return end
+    local target=Vector2.new(point.X,point.Y)
+    local reset=record.SmoothCamera~=camera or not record.SmoothViewport or record.SmoothViewport~=viewport
+    if record.LastWorld and (root.Position-record.LastWorld).Magnitude>math.max(64,distance*.025)then reset=true end
+    if record.SmoothLabel and (target-record.SmoothLabel).Magnitude>math.min(250,viewport.Magnitude*.35)then reset=true end
+    record.SmoothCamera=camera;record.SmoothViewport=viewport;record.LastWorld=root.Position
+    local b,label=record.Billboard,record.Label
+    if conf.ThroughWalls then
+        if not record.Screen then
+            local screen=Instance.new("Frame");screen.Name="AstralGucciScreenLabel";screen.BackgroundTransparency=1
+            screen.AnchorPoint=Vector2.new(.5,.5);screen.Size=UDim2.fromOffset(240,46);screen.Parent=self.Container
+            record.Screen=screen;record.Created[#record.Created+1]=screen
+        end
+        label.Parent=record.Screen;record.Picture.Parent=record.Screen;b.Enabled=false
+        record.Screen.Visible=conf.NameEnabled and visible and point.Z>0
+        if record.Screen.Visible then
+            local position=screenPoint(record,"SmoothLabel",target,dt,reset)
+            record.Screen.Position=UDim2.fromOffset(position.X,position.Y)
+        else record.SmoothLabel=nil end
+    else
+        -- Preserve BillboardGui's exact wall/depth occlusion rather than
+        -- substituting a screen label that could be visible through a wall.
+        if record.Screen then record.Screen.Visible=false end
+        label.Parent=b;record.Picture.Parent=b;b.Enabled=conf.NameEnabled;record.SmoothLabel=nil
+    end
+    local text=record.Name.." ["..math.floor(distance).."]"
+    if label.Text~=text then label.Text=text end
+    self:EdgeMarker(record,"Gucci",record.Name,distance,conf,dt,camera,reset)
+    if record.Box and record.Box.Visible and record.TargetBoxFrame and record.TargetBoxSize then
+        if reset or not record.BoxSmoothing then
+            record.Box.CFrame=record.TargetBoxFrame;record.Box.Size=record.TargetBoxSize
+        else
+            local alpha=blend(dt)
+            record.Box.CFrame=record.Box.CFrame:Lerp(record.TargetBoxFrame,alpha)
+            record.Box.Size=record.Box.Size:Lerp(record.TargetBoxSize,alpha)
+        end
+        record.BoxSmoothing=true
+    end
+end
+function ESP:Render(dt)
+    if self.Closed or not next(self.Records)then return end
+    local camera=self.Context.Camera and self.Context.Camera()
+    local _,anchor=self.Context.Character()
+    for model,record in pairs(self.Records)do if record.Kind=="Gucci"then
+        if not model.Parent or not record.Root.Parent or not model:IsDescendantOf(self.Context.Workspace)or not self.Config.Gucci.Enabled then
+            self:Remove(model)
+        elseif not camera or not anchor or not anchor.Parent then self:ResetSmoothing(record,true)
+        else
+            local ok,message=pcall(self.RenderGucci,self,record,model,camera,anchor,dt)
+            if not ok then self:Remove(model);self.Error=tostring(message)end
+        end
+    end end
 end
 function ESP:Update()
     if self.Closed then return end
@@ -43152,7 +43548,6 @@ function ESP:Dispose()
 end
 return ESP
 
-
 ]========]
 sources.LineStyles = [========[
 -- Real repeating textures plus Beam settings; live edits restore original values on disable.
@@ -43205,7 +43600,6 @@ end
 function Lines:SetEnabled(value)self.Enabled=value==true;if self.Enabled then self:Apply()else self:Restore()end end
 function Lines:Dispose()self.Enabled=false;self:Restore();self.Added:Disconnect();self.Connection:Disconnect();self.Records={}end
 return Lines
-
 
 ]========]
 sources.VisualAssets = [========[
@@ -43262,7 +43656,6 @@ function Assets.Get(name)
 end
 Assets.Decode=decode
 return Assets
-
 
 ]========]
 sources.BlackholeFX = [========[
@@ -43395,7 +43788,6 @@ end
 function FX:Dispose()if self.Closed then return end;self:SetEnabled(false);self.Closed=true;self.Added:Disconnect();self.Connection:Disconnect()end
 return FX
 
-
 ]========]
 sources.VehicleSpeed = [========[
 local Vehicles={};Vehicles.__index=Vehicles
@@ -43507,7 +43899,6 @@ function Vehicles:Dispose()
 end
 return Vehicles
 
-
 ]========]
 sources.CharacterTools = [========[
 -- Local character controls. No anchoring, remote respawn loop or stale spawn position.
@@ -43565,7 +43956,6 @@ function Tools:Dispose()
     self.Closed=true;self:SetLocked(false);self:SetAntiAFK(false)
 end
 return Tools
-
 
 ]========]
 sources.PositionDesync = [========[
@@ -43674,7 +44064,6 @@ function Desync:Dispose()
     self.Closed=true;self:Stop()
 end
 return Desync
-
 
 ]========]
 sources.WallClimb = [========[
@@ -43788,7 +44177,6 @@ function Climb:Dispose()
     self.Closed=true;self.Enabled=false;self:Release();self.Connection:Disconnect();self.Jump:Disconnect()
 end
 return Climb
-
 
 ]========]
 sources.PosePresets = [========[
@@ -43984,7 +44372,6 @@ function Pack.Names(poses,metadata,category)
     return names
 end
 return Pack
-
 
 ]========]
 sources.PacketGuard = [========[
@@ -44392,7 +44779,6 @@ function Guard:Dispose()
 end
 return Guard
 
-
 ]========]
 sources.TargetActions = [========[
 -- UI routing only. Kill, ExplodeMissile and the projectile worker are native
@@ -44401,7 +44787,7 @@ local Actions={}
 function Actions.Install(context)
     local api,data=context.API,context.Data
     local self={Busy=false,Closed=false}
-    data.SelectedPlayersExp=data.SelectedPlayers
+    api.SetRuntimeToggle("AutoExplodeTarget",false)
     context.Group:AddButton({Text="Kill",Icon="skull",Tooltip="Run the original Kill once for each selected, unprotected player.",Func=function()
         if self.Closed or self.Busy then return end
         self.Busy=true
@@ -44416,25 +44802,10 @@ function Actions.Install(context)
         self.Busy=false
         if not ok then context.Notify(tostring(message))end
     end})
-    local group=context.Tab:AddLeftGroupbox("Target Projectiles","bomb")
-    local names={BombMissile="Rocket",BombDarkMatter="Dark Matter",BombBalloon="Balloon",BallSnowball="Snowball",FireworkMissile="Firework"}
-    group:AddLabel("Uses the players selected above and the original projectile handlers.",true)
-    group:AddDropdown("ExplosionType",{Text="Projectile",Values={"BombMissile","BombDarkMatter","BombBalloon","BallSnowball","FireworkMissile"},
-        Default="BallSnowball",Multi=false,AllowNull=false,
-        FormatListValue=function(value)return names[value]or value end,
-        FormatDisplayValue=function(value)return names[value]or value end,
-        Callback=function(value)context.Settings.ExplosionMethod=value end})
-    group:AddSlider("missilesToFire",{Text="How much to fire at once?",Default=1,Min=1,Max=17,Rounding=0,Compact=true,
-        Callback=function(value)context.Settings.MissilesToFire=value end})
-    group:AddLabel('Only go above 8 with the "Raised Toys Limit" Gamepass.',true)
-    group:AddToggle("AutoExpTarget",{Text="Loop Projectiles",Default=false,
-        Tooltip="Original Auto Explode Target. Plot restrictions, network ownership and toy limits still apply.",
-        Callback=function(value)api.SetRuntimeToggle("AutoExplodeTarget",not self.Closed and value==true)end})
     context.Library:OnUnload(function()self.Closed=true;api.SetRuntimeToggle("AutoExplodeTarget",false)end)
     return self
 end
 return Actions
-
 
 ]========]
 sources.TargetPanel = [========[
@@ -44445,6 +44816,8 @@ function Panel.Install(context)
     local self=setmetatable({Context=context,Closed=false,Enabled={},Busy={},Tokens={},Elapsed=0},Panel)
     local api=context.API
     self.Methods={
+        Void=api.Void,Kill=api.Kill,Bring=api.BringPlayer,
+        Ragdoll=function(player)local character=api.Char(player);if character then api.Ragdoll(character)end end,
         Food=api.EatAntiInput,Seatables=api.DeleteSeatables,Gucci=api.RemoveGucci,
         Invisible=function(player)local _,root=api.Char(player);if root then root.Massless=false end end,
         AntiKick=function(player)local character=api.Char(player);if character then api.RemoveSticky(character)end end,
@@ -44518,6 +44891,11 @@ function Panel:AddLoop(group,key,id,text,settings)
     return toggle
 end
 function Panel:BuildUI(tab)
+    local loops=tab:AddLeftGroupbox("Loop","repeat-2")
+    self:AddLoop(loops,"Void","TargetLoopVoid","Void Selected")
+    self:AddLoop(loops,"Kill","TargetLoopKill","Loop Kill")
+    self:AddLoop(loops,"Bring","TargetLoopBring","Loop Bring")
+    self:AddLoop(loops,"Ragdoll","TargetLoopRagdoll","Pallet Ragdoll")
     local destroy=tab:AddLeftGroupbox("Destroy","trash-2")
     self:AddLoop(destroy,"Food","TargetDestroyFood","Destroy Food")
     self:AddLoop(destroy,"Seatables","TargetDeleteSeatables","Delete Seatables")
@@ -44547,7 +44925,6 @@ function Panel:Dispose()
     if self.Connection then self.Connection:Disconnect()end
 end
 return Panel
-
 
 ]========]
 sources.DecoyGucci = [========[
@@ -44953,7 +45330,6 @@ function Decoy:Dispose()
 end
 return Decoy
 
-
 ]========]
 sources.MenuDecor = [========[
 local requireModule=...
@@ -45109,7 +45485,6 @@ function Decor.Icon(value,fallback,context,id)
 end
 return Decor
 
-
 ]========]
 sources.FunctionGlyphs = [========[
 -- Small code-drawn glyphs in the same 24-unit outline style as the existing UI.
@@ -45157,7 +45532,6 @@ function Glyphs.Get(name)
     end}
 end
 return Glyphs
-
 
 ]========]
 sources.AssetCatalog = [========[
@@ -45395,7 +45769,6 @@ Catalog.Locations={
 }
 return Catalog
 
-
 ]========]
 sources.HoldableActions = [========[
 -- Uses the original Hold/Drop protocol, and original physical deletion only
@@ -45476,7 +45849,6 @@ function Holdables:Apply(player)
     if not ok and not self.Closed then self.Context.Notify("Break Holdable: "..tostring(message))end
 end
 return Holdables
-
 
 ]========]
 sources.TeleportMenu = [========[
@@ -45645,7 +46017,6 @@ function Menu:Dispose()
 end
 return Menu
 
-
 ]========]
 sources.ProvidedPhotos = [========[
 local Photos={};local cache={}
@@ -45706,7 +46077,6 @@ end
 function Slide:Dispose()self.Closed=true;self:Cancel()end
 return Slide
 
-
 ]========]
 sources.FreezePCLD = [========[
 local Freeze={};Freeze.__index=Freeze
@@ -45739,7 +46109,6 @@ function Freeze:Step()
 end
 function Freeze:Dispose()self:SetEnabled(false);self.Closed=true;self.Connection:Disconnect()end
 return Freeze
-
 
 ]========]
 sources.KickInterval = [========[
@@ -45847,7 +46216,6 @@ function Interval:Dispose()
     self.ManualSlider,self.Label=nil,nil
 end
 return Interval
-
 
 ]========]
 sources.ExtraFeatures = [========[
@@ -88814,8 +89182,6 @@ end
 
 return FeatureHost
 
-
-
 ]========]
 sources.Watermark = [========[
 -- Read-only HUD telemetry. Currency comes from real value objects or the
@@ -88957,7 +89323,7 @@ return HUD
 ]========]
 sources.RocketFlight = [========[
 -- Actual FTAP rocket flight first; the optional drone is a local visual skin.
--- No SNO, avatar teleport, infinite forces, or fake server explosions.
+-- A real physics controller with finite forces and explicit gravity support.
 -- https://create.roblox.com/docs/reference/engine/classes/LinearVelocity
 local Flight={};Flight.__index=Flight
 local kinds={BombMissile=true,FireworkMissile=true}
@@ -88976,7 +89342,8 @@ function Flight.Install(context)
     local function connect(signal,fn)if signal then local c=signal:Connect(fn);self.Connections[#self.Connections+1]=c end end
     connect(context.Workspace.DescendantAdded,function(v)self:Consider(v)end)
     connect(context.RunService.Heartbeat,function()self:Discover()end)
-    connect(context.RunService.PreSimulation,function(dt)
+    local hasPhysics,physics=pcall(function()return context.RunService.PreSimulation end)
+    connect(hasPhysics and physics or context.RunService.Heartbeat,function(dt)
         if self.Session then local ok,err=pcall(self.Step,self,dt);if not ok then self:Stop("Flight error: "..tostring(err))end end
     end)
     connect(context.RunService.RenderStepped,function(dt)
@@ -89054,26 +89421,59 @@ function Flight:SetEnabled(value)
     self.Status="Ready: spawn a rocket, use Spawn Controlled Rocket, or aim + F"
     local folder=self:OwnFolder();if folder then for _,v in ipairs(folder:GetChildren())do self:Consider(v)end end
 end
+function Flight:PrepareMovement(version)
+    if self.Preparation then return end
+    local preparation={Generation=version};self.Preparation=preparation
+    local settle
+    if self.Context.BeforeFlight then
+        local restore;restore,settle=self.Context.BeforeFlight()
+        preparation.Restore=type(restore)=="function"and restore or nil
+    end
+    local character,root,humanoid=self.Context.Character()
+    settle=settle or not(character and root and root.Parent and not root.Anchored and humanoid and humanoid.Health>0
+        and not humanoid.SeatPart and humanoid.Sit~=true and(not self.Context.MovementReady or self.Context.MovementReady()))
+    if settle then
+        local deadline=self.Clock()+4;local lastRoot,stableAt
+        repeat
+            if self.Closed or version~=self.Generation or not self.Config.Enabled then error("Flight preparation cancelled",0)end
+            local character,root,humanoid=self.Context.Character()
+            local ready=character and root and root.Parent and not root.Anchored and humanoid and humanoid.Health>0
+                and not humanoid.SeatPart and humanoid.Sit~=true and(not self.Context.MovementReady or self.Context.MovementReady())
+            if ready then
+                if root~=lastRoot then lastRoot=root;stableAt=self.Clock()end
+                if self.Clock()-stableAt>=.1 then return end
+            else lastRoot=nil;stableAt=nil end
+            self.Wait()
+        until self.Clock()>=deadline
+        error("Leave the seat and wait for your character to restore before flight",0)
+    end
+end
 function Flight:Start(value)
-    if self.Closed or not self.Config.Enabled or self.Starting or self.Session then return false end
+    if self.Closed or not self.Config.Enabled or self.Spawning or self.Starting or self.Session then return false end
     local model=self:Resolve(value);if not model then self.Status="Aim at your own rocket";return false end
     self.Pending[model]=nil;self.Ignored[model]=nil;self.StartingTarget=model
     self.Generation+=1;local version=self.Generation;self.Starting=true;self.Status="Waiting for streamed rocket / acknowledged ownership";self.NextRequest=0
     self.SpawnThread(function()
         local ok,message=pcall(function()
+            self:PrepareMovement(version)
             local deadline=self.Clock()+3;local root,wedge
+            local firstRequest=true
             repeat
-                if self.Closed or not self.Config.Enabled or version~=self.Generation or not model.Parent then return end
+                if self.Closed or not self.Config.Enabled or version~=self.Generation then return end
+                if not model.Parent then error("Rocket removed while waiting for ownership",0)end
                 local _,_,h=self.Context.Character();if not h or h.Health<=0 then error("Character unavailable",0)end
                 local reason;root,reason=self:Validate(model)
                 if root then
                     wedge=reason
-                    if self.Context.Owned(root)then break end
+                    -- Establish the game's claim once, even when a freshly
+                    -- replicated stationary part reports ReceiveAge == 0.
+                    if firstRequest then self:Request(root);firstRequest=false end
+                    if self:HasControl(root)then break end
                     self:Request(root);self.Status="Waiting for server ownership acknowledgement"
                 else self.Status=reason end
                 self.Wait(.05)
             until self.Clock()>=deadline
-            if not root or not self.Context.Owned(root)then error(self.Status..". Come within 30 studs and retry.",0)end
+            if not root or not self:HasControl(root)then error(self.Status..". Come within 30 studs and retry.",0)end
             if version~=self.Generation then return end
             self:Begin(model,root,wedge)
         end)
@@ -89084,6 +89484,16 @@ function Flight:Start(value)
     end)
     return true
 end
+function Flight:RestorePreparation(preparation)
+    preparation=preparation or self.Preparation
+    if not preparation then return end
+    if self.Preparation==preparation then self.Preparation=nil end
+    local restore=preparation.Restore;preparation.Restore=nil
+    if restore then pcall(restore)end
+end
+function Flight:HasControl(root)
+    return self.Context.Owned(root)==true and(not self.Context.Acknowledged or self.Context.Acknowledged(root)==true)
+end
 function Flight:Isolate(s)
     for _,v in ipairs(s.Model:GetDescendants())do if forceClasses[v.ClassName]and not s.Own[v]then
         if not s.Saved[v]then s.Native[#s.Native+1]={Object=v,Parent=v.Parent};s.Saved[v]=true end;v.Parent=nil
@@ -89091,7 +89501,6 @@ function Flight:Isolate(s)
 end
 function Flight:Begin(model,root,wedge)
     local camera=self.Context.Workspace.CurrentCamera;if not camera then error("Camera unavailable",0)end
-    if self.Context.BeforeFlight then self.Context.BeforeFlight()end
     local look=camera.CFrame.LookVector
     local s={Model=model,Root=root,Wedge=wedge,Created={},Own={},Saved={},Native={},Hidden={},ActiveConnections={},Mouse=Vector2.zero,
         Yaw=math.atan2(-look.X,-look.Z),Pitch=math.asin(math.clamp(look.Y,-1,1)),Velocity=Vector3.zero,Started=self.Clock(),Previous=root.Position,
@@ -89106,15 +89515,16 @@ function Flight:Begin(model,root,wedge)
     velocity.ForceLimitsEnabled=true;velocity.ForceLimitMode=Enum.ForceLimitMode.Magnitude;velocity.VectorVelocity=Vector3.zero;velocity.Parent=root
     local orient=new("AlignOrientation");orient.Name="AstralRocketOrientation";orient.Enabled=false;orient.Attachment0=a;orient.Mode=Enum.OrientationAlignmentMode.OneAttachment
     orient.RigidityEnabled=false;orient.ReactionTorqueEnabled=false;orient.Responsiveness=20;orient.MaxAngularVelocity=6;orient.Parent=root
-    s.VelocityControl,s.Orientation=velocity,orient
-    local dims={wedge.Size.X,wedge.Size.Y,wedge.Size.Z};local axis=1;for i=2,3 do if dims[i]>dims[axis]then axis=i end end
-    local correction=axis==1 and CFrame.Angles(0,math.pi/2,0)or axis==2 and CFrame.Angles(-math.pi/2,0,0)or CFrame.Angles(0,math.pi,0)
-    s.BodyCorrection=correction*wedge.CFrame:ToObjectSpace(root.CFrame)
+    local gravity=new("VectorForce");gravity.Name="AstralRocketGravity";gravity.Enabled=false;gravity.Attachment0=a
+    gravity.RelativeTo=Enum.ActuatorRelativeTo.World;gravity.ApplyAtCenterOfMass=true;gravity.Force=Vector3.zero;gravity.Parent=root
+    s.VelocityControl,s.Orientation,s.Gravity=velocity,orient,gravity
+    s.BodyCorrection,s.NoseAxis=self:OrientationCorrection(model,root,wedge)
+    root.AssemblyLinearVelocity=Vector3.zero;root.AssemblyAngularVelocity=Vector3.zero
     local controls=self.Context.Controls and self.Context.Controls()
     if controls then s.Controls=controls;s.ControlsEnabled=controls.controlsEnabled~=false;controls:Disable()end
     local character,hrp,hum=self.Context.Character()
     if self.Config.FollowAvatar and character and hrp and hum then
-        local a={Root=hrp,Hum=hum,Start=hrp.CFrame,PlatformStand=hum.PlatformStand,Collide={}}
+        local a={Character=character,Root=hrp,Hum=hum,Start=hrp.CFrame,PlatformStand=hum.PlatformStand,Collide={}}
         for _,p in ipairs(character:GetDescendants())do if p:IsA("BasePart")then a.Collide[p]=p.CanCollide;p.CanCollide=false end end
         hum.PlatformStand=true;s.Avatar=a
     end
@@ -89136,6 +89546,29 @@ function Flight:Begin(model,root,wedge)
     self:Step(1/60);self:CameraStep(1, true)
     if self.Config.Visual=="Drone"then self:LoadSkin(s)end
 end
+function Flight:OrientationCorrection(model,root,wedge)
+    local function part(name)
+        local value=model:FindFirstChild(name,true)
+        return value and value:IsA("BasePart")and value or nil
+    end
+    -- Wedge may be a wide fin, so its largest dimension does not identify the
+    -- rocket's nose. Prefer the actual fuselage and a named nose/top marker.
+    local body=part("Body")or part("Hitbox")or wedge
+    local nose=part("Nose")or part("Tip")or part("NoseCone")or part("Warhead")or part("HitboxBodyTop")
+    local tail=part("Engine")or part("Exhaust")or part("Thruster")or part("Tail")or body
+    local forward=nose and nose~=tail and nose.Position-tail.Position
+    if not forward or forward.Magnitude<.1 then
+        local size=body.Size
+        if size.Y>=size.X and size.Y>=size.Z then forward=body.CFrame.UpVector
+        elseif size.X>=size.Z then forward=body.CFrame.RightVector
+        else forward=-body.CFrame.LookVector end
+    end
+    local localForward=root.CFrame:VectorToObjectSpace(forward.Unit)
+    local up=root.CFrame:VectorToObjectSpace(body.CFrame.UpVector)
+    if math.abs(localForward:Dot(up))>.95 then up=root.CFrame:VectorToObjectSpace(body.CFrame.LookVector)end
+    if math.abs(localForward:Dot(up))>.95 then up=root.CFrame:VectorToObjectSpace(body.CFrame.RightVector)end
+    return CFrame.lookAt(Vector3.zero,localForward,up):Inverse(),localForward
+end
 function Flight:Impact(position)
     local s=self.Session;if not s or s.Detonated or self.Clock()-s.Started<.5 then return end
     s.Detonated=true;local requested=false
@@ -89144,21 +89577,24 @@ function Flight:Impact(position)
     self:Stop(requested and "Collision: native explosion requested"or "Collision: explosion unavailable")
 end
 function Flight:Follow(s)
-    local a=s.Avatar;if not a or not alive(a.Root)or not alive(s.Root)then return end
+    local a=s.Avatar;if not a then return true end
+    local character,root,hum=self.Context.Character()
+    if character~=a.Character or root~=a.Root or hum~=a.Hum or not alive(a.Root)or not alive(s.Root)then return false end
     local look=s.Facing and s.Facing.LookVector or Vector3.new(0,0,-1)
     local flat=Vector3.new(look.X,0,look.Z);if flat.Magnitude<.01 then flat=Vector3.new(0,0,-1)end;flat=flat.Unit
     local pos=s.Root.Position-flat*self.Config.FollowBack+Vector3.yAxis*self.Config.FollowUp
     a.Root.CFrame=CFrame.lookAt(pos,pos+flat)
     a.Root.AssemblyLinearVelocity=Vector3.zero;a.Root.AssemblyAngularVelocity=Vector3.zero
     for p in pairs(a.Collide)do if p.Parent and p.CanCollide then p.CanCollide=false end end
+    return true
 end
 function Flight:Step(dt)
     local s=self.Session;if not s then return end
     local root=self:Validate(s.Model)
     local _,_,h=self.Context.Character()
     if root~=s.Root or not h or h.Health<=0 then self:Stop("Rocket/character unavailable");return end
-    self:Follow(s)  -- keep the avatar in grab range before any ownership check
-    if not self.Context.Owned(root)then
+    if not self:Follow(s)then self:Stop("Character root changed during flight");return end
+    if not self:HasControl(root)then
         -- constraints stay on: a brief ownership flap no longer drops the rocket
         s.LostAt=s.LostAt or self.Clock();self:Request(root)
         self.Status="Rocket ownership lost; recovering"
@@ -89177,7 +89613,10 @@ function Flight:Step(dt)
     local speed=key("LeftShift")>0 and self.Config.FastSpeed or self.Config.Speed
     local target=move*speed;s.Velocity=s.Velocity:Lerp(target,alpha(8,dt))
     local mass=root.AssemblyMass;local gravity=math.max(self.Context.Workspace.Gravity,0)
-    s.VelocityControl.MaxForce=mass*(gravity+260)  -- counter gravity + accelerate; Magnitude cap
+    -- Gravity gets its own center-of-mass force. Horizontal acceleration and
+    -- boost no longer consume the force budget that was holding altitude.
+    s.Gravity.Force=Vector3.yAxis*(mass*gravity);s.Gravity.Enabled=true
+    s.VelocityControl.MaxForce=mass*1800
     s.VelocityControl.VectorVelocity=s.Velocity;s.Orientation.MaxTorque=mass*math.clamp(s.Wedge.Size:Dot(s.Wedge.Size),4,400)*160
     s.Orientation.CFrame=facing*s.BodyCorrection;s.VelocityControl.Enabled=true;s.Orientation.Enabled=true
     if self.Clock()-s.Started>.5 then
@@ -89250,11 +89689,17 @@ function Flight:SpawnControlled()
     if not self.Context.SpawnRocket then self.Status="Spawn a rocket from the game menu";return end
     self.Spawning=true;local version=self.Generation
     self.SpawnThread(function()
-        local ok,model,reason=pcall(self.Context.SpawnRocket);self.Spawning=false
+        local ok,model,reason=pcall(function()
+            self:PrepareMovement(version)
+            if self.Closed or not self.Config.Enabled or version~=self.Generation then return nil,"Flight cancelled"end
+            return self.Context.SpawnRocket()
+        end);self.Spawning=false
         if self.Closed or not self.Config.Enabled or version~=self.Generation then
             if ok and model and self.Context.DestroyRocket then pcall(self.Context.DestroyRocket,model)end;return
         end
-        if ok and model then self:Start(model)else self.Status=ok and (reason or "Rocket spawn unavailable")or tostring(model)end
+        if ok and model then
+            if not self:Start(model)then self:Stop(self.Status)end
+        else self:Stop(ok and(reason or "Rocket spawn unavailable")or tostring(model))end
     end)
 end
 function Flight:AttachUnderMouse()
@@ -89277,8 +89722,10 @@ function Flight:Stop(reason)
         if s.Avatar then local a=s.Avatar
             pcall(function()
                 for p,v in pairs(a.Collide)do if p.Parent then p.CanCollide=v end end
-                if alive(a.Hum)then a.Hum.PlatformStand=a.PlatformStand end
-                if alive(a.Root)and self.Config.ReturnAvatar then
+                local character,root,hum=self.Context.Character()
+                local same=character==a.Character and root==a.Root and hum==a.Hum
+                if same and alive(a.Hum)then a.Hum.PlatformStand=a.PlatformStand end
+                if same and alive(a.Root)and self.Config.ReturnAvatar then
                     a.Root.CFrame=a.Start;a.Root.AssemblyLinearVelocity=Vector3.zero;a.Root.AssemblyAngularVelocity=Vector3.zero
                 end
             end)
@@ -89295,6 +89742,7 @@ function Flight:Stop(reason)
         self.Context.Input.MouseBehavior=s.MouseBehavior;self.Context.Input.MouseIconEnabled=s.MouseIcon
     end
     if self.Requested then local root=self.Requested;self.Requested=nil;if root.Parent and self.Context.ReleaseOwner then pcall(self.Context.ReleaseOwner,root)end end
+    self:RestorePreparation()
     self.Pending={}
 end
 function Flight:Shutdown()
@@ -89304,109 +89752,7 @@ function Flight:GetStatus()return {Active=self.Session~=nil,Starting=self.Starti
 return Flight
 
 ]========]
-sources.FunEffects = [========[
--- Explicit local visual effects on selected characters. No remotes or gameplay
--- status changes: the existing native toy effects retain their original paths.
-local Effects={};Effects.__index=Effects
-Effects.Names={"Aurora Aura","Electric Crown","Orbit Sparks","Pulse Shell","Comet Trail","Confetti"}
-local texture="rbxasset://textures/particles/sparkles_main.dds"
-function Effects.Install(context)
-    local self=setmetatable({Context=context,Records={},Color=Color3.fromRGB(110,190,255),Duration=12,Limit=8,Elapsed=0,Phase=0},Effects)
-    self.Folder=Instance.new("Folder");self.Folder.Name="AstralLocalEffects";self.Folder.Parent=context.Workspace
-    self.Connection=context.RunService.Heartbeat:Connect(function(dt)
-        self.Phase+=math.min(dt,.1);self.Elapsed+=dt;if self.Elapsed<1/30 then return end;self.Elapsed=0
-        local ok,message=pcall(self.Update,self);if not ok then self:Clear();self.Status="Visual effects: "..tostring(message)end
-    end)
-    self.Removing=context.Players.PlayerRemoving:Connect(function(player)self:ClearPlayer(player)end)
-    return self
-end
-function Effects:ClearRecord(player,name)
-    local entries=self.Records[player];local record=entries and entries[name];if not record then return end
-    entries[name]=nil;for _,v in ipairs(record.Created)do pcall(v.Destroy,v)end
-    if next(entries)==nil then self.Records[player]=nil end
-end
-function Effects:ClearPlayer(player)local entries=self.Records[player];if entries then for name in pairs(entries)do self:ClearRecord(player,name)end end end
-function Effects:Clear()for player in pairs(self.Records)do self:ClearPlayer(player)end end
-function Effects:Select(names)
-    self.Selected=names or {}
-    for player,entries in pairs(self.Records)do for name in pairs(entries)do if not self.Selected[name]then self:ClearRecord(player,name)end end end
-end
-function Effects:Apply(player,name)
-    if self.Closed or not table.find(self.Names,name)or not player or not player.Parent then return false end
-    local character,root,h=self.Context.Character(player)
-    if not character or not root or not h or h.Health<=0 then return false end
-    local entries=self.Records[player]
-    if entries and entries[name]and entries[name].Character==character then
-        local r=entries[name];r.Expires=self.Context.Clock()+self.Duration
-        if r.Burst and self.Context.Clock()-r.LastBurst>=2 then r.Burst:Emit(35);r.LastBurst=self.Context.Clock()end
-        return true
-    end
-    if entries and entries[name]then self:ClearRecord(player,name)end
-    local n=0;for _ in pairs(self.Records)do n+=1 end
-    if not self.Records[player]and n>=self.Limit then self.Status="Visual target limit reached";return false end
-    entries=self.Records[player]or {};self.Records[player]=entries
-    local r={Character=character,Root=root,Created={},Parts={},Attachments={},Beams={},Emitters={},Trails={},Expires=self.Context.Clock()+self.Duration}
-    entries[name]=r
-    local ok,message=pcall(function()
-        local function new(class,parent)local v=Instance.new(class);r.Created[#r.Created+1]=v;v.Parent=parent;return v end
-        local function attachment(position)local a=new("Attachment",root);a.Name="AstralEffectAnchor";a.Position=position;r.Attachments[#r.Attachments+1]=a;return a end
-        local function orb(size)
-            local p=new("Part",self.Folder);p.Name="AstralEffectOrb";p.Shape=Enum.PartType.Ball;p.Size=Vector3.one*size
-            p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false;p.CastShadow=false;p.Material=Enum.Material.Neon;p.Color=self.Color
-            r.Parts[#r.Parts+1]=p;return p
-        end
-        local function emitter(a)
-            local e=new("ParticleEmitter",a);e.Texture=texture;e.Color=ColorSequence.new(self.Color);e.LightEmission=1;e.Rate=12
-            e.Lifetime=NumberRange.new(.5,1);e.Speed=NumberRange.new(1,3);e.Size=NumberSequence.new(.18);e.SpreadAngle=Vector2.new(60,60)
-            e.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,.2),NumberSequenceKeypoint.new(1,1)});r.Emitters[#r.Emitters+1]=e;return e
-        end
-        if name=="Aurora Aura"then
-            local e=emitter(attachment(Vector3.zero));e.Texture="rbxasset://textures/particles/smoke_main.dds";e.Rate=16;e.Speed=NumberRange.new(.5,1.5);e.Size=NumberSequence.new({NumberSequenceKeypoint.new(0,.6),NumberSequenceKeypoint.new(1,2.3)})
-            e.Lifetime=NumberRange.new(1,1.6);e.Acceleration=Vector3.new(0,2,0);e.SpreadAngle=Vector2.new(180,180)
-        elseif name=="Electric Crown"then
-            for i=1,8 do attachment(Vector3.new(math.cos(i*math.pi/4)*2,2.6,math.sin(i*math.pi/4)*2))end
-            for i=1,8 do local b=new("Beam",root);b.Attachment0=r.Attachments[i];b.Attachment1=r.Attachments[i%8+1]
-                b.FaceCamera=true;b.Width0=.08;b.Width1=.08;b.Color=ColorSequence.new(self.Color);b.LightEmission=1;b.LightInfluence=0;r.Beams[#r.Beams+1]=b
-            end
-        elseif name=="Orbit Sparks"then
-            for i=1,6 do local p=orb(.22);local a=new("Attachment",p);emitter(a).Rate=5 end
-        elseif name=="Pulse Shell"then
-            local p=orb(5);p.Transparency=.85
-        elseif name=="Comet Trail"then
-            local a,b=attachment(Vector3.new(-.8,.5,1)),attachment(Vector3.new(.8,.5,1))
-            local trail=new("Trail",root);trail.Attachment0=a;trail.Attachment1=b;trail.Lifetime=.65;trail.MinLength=.05
-            trail.Color=ColorSequence.new(self.Color);trail.LightEmission=1;trail.FaceCamera=true
-            trail.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,.15),NumberSequenceKeypoint.new(1,1)});r.Trails[#r.Trails+1]=trail
-        elseif name=="Confetti"then
-            local e=emitter(attachment(Vector3.new(0,2,0)));e.Rate=0;e.SpreadAngle=Vector2.new(180,180);e.Speed=NumberRange.new(4,8)
-            e.Lifetime=NumberRange.new(1.2,2);e.Acceleration=Vector3.new(0,-8,0);e.Drag=2;e:Emit(35);r.Burst=e;r.LastBurst=self.Context.Clock()
-        end
-    end)
-    if not ok then self:ClearRecord(player,name);self.Status=tostring(message);return false end
-    self.Status="Local visual effects active";return true
-end
-function Effects:Update()
-    for player,entries in pairs(self.Records)do for name,r in pairs(entries)do
-        local c,root,h=self.Context.Character(player)
-        if not player.Parent or c~=r.Character or root~=r.Root or not root.Parent or not h or h.Health<=0 or self.Context.Clock()>=r.Expires then self:ClearRecord(player,name)
-        else
-            local phase=self.Phase
-            if name=="Orbit Sparks"then for i,p in ipairs(r.Parts)do
-                local angle=phase*1.7+i*math.pi/3;p.CFrame=root.CFrame*CFrame.new(math.cos(angle)*2.7,math.sin(angle*1.5)*1.2,math.sin(angle)*2.7);p.Color=self.Color
-            end elseif name=="Pulse Shell"then local p=r.Parts[1];p.CFrame=root.CFrame;local size=5+math.sin(phase*3)*1.2;p.Size=Vector3.one*size;p.Color=self.Color;p.Transparency=.82+math.sin(phase*3)*.08
-            elseif name=="Electric Crown"then
-                for i,a in ipairs(r.Attachments)do local angle=phase*.9+i*math.pi/4;a.Position=Vector3.new(math.cos(angle)*2,2.6+(i%2)*.4+math.sin(phase*9+i)*.12,math.sin(angle)*2)end
-            end
-            for _,v in ipairs(r.Beams)do v.Color=ColorSequence.new(self.Color);v.Width0=.06+math.abs(math.sin(phase*8))*.08;v.Width1=v.Width0 end
-            for _,v in ipairs(r.Emitters)do v.Color=name=="Confetti"and ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(255,90,130)),ColorSequenceKeypoint.new(.5,Color3.fromRGB(100,210,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(255,220,80))})or ColorSequence.new(self.Color)end
-            for _,v in ipairs(r.Trails)do v.Color=ColorSequence.new(self.Color)end
-        end
-    end end
-end
-function Effects:Dispose()if self.Closed then return end;self.Closed=true;self.Connection:Disconnect();self.Removing:Disconnect();self:Clear();self.Folder:Destroy()end
-return Effects
 
-]========]
 sources.WalkerBuilds = [========[
 -- Real-toy body accessories plus different walking stances. The original
 -- spider remains the default; no decorative part is used as fake physics.
@@ -89877,12 +90223,19 @@ function Loop:Acquire(session,now)
     self.CaptureAnchor=actorRoot and actorRoot.Position or nil
     self.InFlight+=1
     ctx.SpawnThread(function()
-        local ok,err=pcall(ctx.Acquire,session.Root,function()return self:Valid(session)end)
+        local ok,acquired,outcome=pcall(ctx.Acquire,session.Root,function()return self:Valid(session)end)
         session.Acquiring=false
         self.CaptureAnchor=nil
         self.InFlight-=1
-        session.NextGrab=self.Context.Clock()+.15
-        if not ok then session.LastError=tostring(err)end
+        local finished=self.Context.Clock()
+        if ok and acquired then
+            session.CaptureFailures=0;session.AcknowledgedAt=finished;session.NextGrab=finished+.25
+        else
+            session.CaptureFailures=math.min((session.CaptureFailures or 0)+1,4)
+            local delay=outcome=="busy"and .25 or math.min(.4*2^(session.CaptureFailures-1),3.2)
+            session.NextGrab=finished+delay
+        end
+        if not ok then session.LastError=tostring(acquired)end
         -- Stop/respawn may happen while SNO yields. Release only this old root;
         -- never touch a replacement session for the same character/root.
         if not self:Valid(session)then
@@ -89906,6 +90259,14 @@ function Loop:Update(session,position,now,ping)
     if not owned or root.Anchored then
         session.Position.Enabled=false;session.Orientation.Enabled=false;session.OwnedAt=nil
         if root.Anchored then return end
+        local acknowledged=ctx.Acknowledged and ctx.Acknowledged(root)
+        if acknowledged then
+            -- The game's claim tag arrives before the engine's replication
+            -- ownership. Wait in place instead of starting another excursion.
+            session.AcknowledgedAt=session.AcknowledgedAt or now
+            return
+        end
+        session.AcknowledgedAt=nil
         session.OwnershipLostAt=session.OwnershipLostAt or now
         -- Let transient acknowledgement gaps settle without moving the real
         -- character away from an otherwise steady overhead hold every frame.
