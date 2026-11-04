@@ -1,4 +1,4 @@
--- Astral v4.50 | repeated native pallet contact during kick.
+-- Astral v4.51 | reviewed startup, decoy, aim and effect cleanup.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.GameplayEffects = [========[
@@ -17897,7 +17897,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.50 | FTAP")
+                                warn("Astral v4.51 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -31247,7 +31247,7 @@ end
 
 				if v28 == v29 then
 					local flag12 = arg.Country == v24
-					if flag12 ~= arg2.Country == v24 then
+					if flag12 ~= (arg2.Country == v24) then
 						return flag12
 					end
 					return tostring(arg.City) < tostring(arg2.City)
@@ -35522,7 +35522,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.50"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.51"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -35646,7 +35646,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.50",true)
+            box:AddLabel("Astral v4.51",true)
         end
 
         do
@@ -37289,19 +37289,16 @@ Escape Timer: %*]]
             Targets=function()return tbl12.GetTargets(false,tbl7.SelectedPlayers)end,
             Selected=function(player)return tbl7.SelectedPlayers[player]==true end,
             Protected=tbl12.IsProtectedPlayer,Inventory=tbl12.GetInventory,
-            SharedTrain=function()return train end,
+            SharedTrain=function()local map=workspace:FindFirstChild("Map");local objects=map and map:FindFirstChild("AlwaysHereTweenedObjects");return objects and objects:FindFirstChild("Train")end,
             TargetSeat=function(player)local _,_,humanoid=tbl12.Char(player);return humanoid and humanoid.SeatPart end,
             TargetCharacter=function(player)local character,_,humanoid=tbl12.Char(player);return character,humanoid end,
             CanSpawn=function()
                 if flag11 then return false,"Astral is unloading"end
-                if inPlot.Value and not inOwnedPlot.Value then return false,"Leave another player's plot: native spawn would move your real character"end
-                if not localPlayer.CanSpawnToy.Value then return false,"Toy spawning is currently blocked"end
-                if tbl7.States.Spawning or #tbl7.SpawnQueue>0 then return false,"Waiting for the toy spawn queue"end
-                return true
+                return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)
             end,
             SpawnToy=function()
                 -- No queue wait, SNO or foreign-plot spawn path is allowed.
-                if inPlot.Value and not inOwnedPlot.Value or not localPlayer.CanSpawnToy.Value or tbl7.States.Spawning or #tbl7.SpawnQueue>0 then return nil end
+                if flag11 or not requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)then return nil end
                 local model=tbl12.SpawnToy("YouDecoy",nil,0,true)
                 if model and model.Parent==v17 and model~=localPlayer.Character then decoyModels[model]=true end
                 return model
@@ -41862,9 +41859,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.50: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.51: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.50 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.51 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -49144,7 +49141,7 @@ local n20 = 0
 while true do
 RunService3.Heartbeat:Wait()
 n20 += 0.016
-if not (not _abanaRunning or n20 >= 10) then
+if not (not _G._abanaRunning or n20 >= 10) then
 continue
 end
 break
@@ -75589,9 +75586,9 @@ part2.Color = tbl37[math.random(1, #tbl37)]:Lerp(Color3.new(1, 1, 1), 0.4)
 bridge:SetProperty(part2, "Transparency", 0.55)
 part2.Parent = workspace
 local n43 = n42 + (arg3 and 28 or 14) * arg2 + 4
-TweenService3:Create(part2, TweenInfo.new(1.3 + i * 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.01, n43, n43), Transparency = 1 }):Play()
-local v75
-Debris:AddItem(part2, v75 + 0.1)
+local lifetime = 1.3 + i * 0.15
+TweenService3:Create(part2, TweenInfo.new(lifetime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.01, n43, n43), Transparency = 1 }):Play()
+Debris:AddItem(part2, lifetime + 0.1)
 end)
 end))
 end
@@ -80996,7 +80993,7 @@ end
 
 at_startDummies = function()
 flag45 = true
-_at_refreshRainbow()
+if fn45 then fn45() end
 
 for i = 1, tbl41.maxDummy do
 bridge:TrackThread(task.delay(i * 0.15, at_spawnOneDummy))
@@ -81005,7 +81002,7 @@ end
 
 at_stopDummies = function()
 flag45 = false
-_at_refreshRainbow()
+if fn45 then fn45() end
 
 for _, v77 in pairs(tbl42) do
 v77.alive = false
@@ -84038,10 +84035,11 @@ if _G.sa2Pal() then
 return nil
 end
 local character7 = localPlayer2.Character
-if not character7 or not character7:FindFirstChild("saviHRP") or character7:FindFirstChild("HumanoidRootPart") then
+local root = character7 and (character7:FindFirstChild("realHrp") or character7:FindFirstChild("saviHRP") or character7:FindFirstChild("HumanoidRootPart"))
+if not root then
 return nil
 end
-local position = character7.HumanoidRootPart.Position
+local position = root.Position
 local mouseLocation = UserInputService:GetMouseLocation()
 local currentCamera4 = workspace.CurrentCamera
 local huge = math.huge
@@ -84049,7 +84047,7 @@ local v90 = nil
 
 for _, player in ipairs(Players:GetPlayers()) do
 if player ~= localPlayer2 and player.Character then
-local saviHRP3 = player.Character:FindFirstChild("saviHRP") or Character:FindFirstChild("HumanoidRootPart")
+local saviHRP3 = player.Character:FindFirstChild("realHrp") or player.Character:FindFirstChild("saviHRP") or player.Character:FindFirstChild("HumanoidRootPart")
 
 if saviHRP3 then
 if (position - saviHRP3.Position).Magnitude <= tbl46.Distance and not _G.sa2Wall(saviHRP3) then
