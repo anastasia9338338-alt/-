@@ -1,5 +1,5 @@
--- Astral v4.46 | revised capture, rocket flight, coconut poses and gameplay effects.
--- Gucci ESP uses frame-based smoothing. Original authorship/license notices remain.
+-- Astral v4.47 | native kick cycles, upright hold, applied walker figures and coconut objects.
+-- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.GameplayEffects = [========[
 -- Physical avatar effects. Existing toy actions (Campfire, limbs, etc.) remain
@@ -277,6 +277,49 @@ function builders.Buddy()
     })
 end
 
+-- Recognizable objects and creatures, rather than more variations of a ring.
+local objects={
+    Cactus={{0,-2,1.8},{0,-1,1.8},{0,0,1.8},{0,1,1.8},{0,2,1.8},
+        {-1.2,0,1.8},{-2.4,0,1.8},{-2.4,1.3,1.8},{1.2,0,1.8},{2.4,0,1.8},{2.4,1.3,1.8}},
+    ["Rocket Pack"]={{-1.2,-1.5,1.7},{-1.2,-.3,1.7},{-1.2,.9,1.7},{-1.2,2.1,1.7},
+        {1.2,-1.5,1.7},{1.2,-.3,1.7},{1.2,.9,1.7},{1.2,2.1,1.7},
+        {-2.4,-1,1.7},{2.4,-1,1.7},{-1.2,-2.8,1.7},{1.2,-2.8,1.7}},
+    Dinosaur={{-2.5,-1,1.8},{-1.3,-.5,1.8},{0,0,1.8},{1.2,0,1.8},{2.3,.8,1.8},
+        {2.3,2,1.8},{3.4,2,1.8},{-3.7,-1.4,1.8},{-4.9,-1.4,1.8},
+        {-.7,-1.5,1.8},{-.7,-2.7,1.8},{1,-1.5,1.8},{1,-2.7,1.8}},
+    Bicycle={{-2.4,-2,1.8},{-3.6,-.8,1.8},{-2.4,.4,1.8},{-1.2,-.8,1.8},
+        {2.4,-2,1.8},{1.2,-.8,1.8},{2.4,.4,1.8},{3.6,-.8,1.8},
+        {0,-.8,1.8},{-1.2,1.1,1.8},{0,1.1,1.8},{1.2,1.1,1.8},{2.4,2.3,1.8}},
+    Tank={{-2.5,-1.5,.8},{-2.5,-1.5,2.1},{-2.5,-1.5,3.4},
+        {2.5,-1.5,.8},{2.5,-1.5,2.1},{2.5,-1.5,3.4},
+        {-1.2,-.5,1.4},{1.2,-.5,1.4},{-1.2,-.5,2.8},{1.2,-.5,2.8},
+        {0,.8,2},{0,.8,.6},{0,.8,-.8}},
+    Thunderbolt={{1.8,3.6,1.8},{.9,2.4,1.8},{0,1.2,1.8},{-.9,0,1.8},
+        {.4,0,1.8},{1.7,0,1.8},{.8,-1.2,1.8},{-.1,-2.4,1.8},{-1,-3.6,1.8}},
+    ["Pirate Flag"]={{-2.4,-2.5,1.8},{-2.4,-1.2,1.8},{-2.4,.1,1.8},{-2.4,1.4,1.8},{-2.4,2.7,1.8},
+        {-1.1,2.7,1.8},{.2,2.7,1.8},{1.5,2.7,1.8},{2.8,2.7,1.8},
+        {-1.1,1.4,1.8},{.2,1.4,1.8},{1.5,1.4,1.8}},
+    Guitar={{-1.6,-2.1,1.8},{0,-2.7,1.8},{1.6,-2.1,1.8},{-1.6,-.8,1.8},{1.6,-.8,1.8},
+        {-1.1,.5,1.8},{1.1,.5,1.8},{0,-1,1.8},{0,1.6,1.8},{0,2.7,1.8},{0,3.8,1.8},{0,4.9,1.8},{1.1,4.9,1.8}},
+    ["Sofa Throne"]={{-1.2,-1.5,.6},{1.2,-1.5,.6},{-1.2,-1.5,2.2},{1.2,-1.5,2.2},
+        {-1.2,-.2,3.1},{1.2,-.2,3.1},{-1.2,1.1,3.1},{1.2,1.1,3.1},
+        {-2.5,-.2,.6},{-2.5,-.2,2.2},{2.5,-.2,.6},{2.5,-.2,2.2}},
+    Satellite={{-3.8,1,1.8},{-2.5,1,1.8},{-3.8,-.3,1.8},{-2.5,-.3,1.8},
+        {2.5,1,1.8},{3.8,1,1.8},{2.5,-.3,1.8},{3.8,-.3,1.8},
+        {-1.2,.4,1.8},{0,.4,1.8},{1.2,.4,1.8},{0,1.7,1.8},{0,3,1.8}},
+    Samurai={{0,2.5,1.8},{-1.3,1.2,1.8},{1.3,1.2,1.8},{0,0,1.8},
+        {-1.3,-1.4,1.8},{1.3,-1.4,1.8},{-1.3,-2.7,1.8},{1.3,-2.7,1.8},
+        {-2.4,.3,1.8},{2.4,.3,1.8},{3.4,1.2,1.8},{4.3,2.1,1.8},{5.2,3,1.8}},
+    Octopus={{0,1.4,1.8},{-1.1,1.4,1.8},{1.1,1.4,1.8},{0,2.5,1.8},{0,.3,1.8},
+        {-2.4,-.8,.5},{-1.2,-1.6,-.3},{1.2,-1.6,-.3},{2.4,-.8,.5},
+        {-2.4,-.8,3.1},{-1.2,-1.6,3.9},{1.2,-1.6,3.9},{2.4,-.8,3.1}},
+}
+for _,name in ipairs({"Cactus","Rocket Pack","Dinosaur","Bicycle","Tank","Thunderbolt","Pirate Flag","Guitar","Sofa Throne","Satellite","Samurai","Octopus"})do
+    local coordinates=objects[name]
+    Poses.Names[#Poses.Names+1]=name;Poses.Counts[name]=#coordinates
+    builders[name]=function()return points(coordinates)end
+end
+
 function Poses.Build(name)
     local builder=builders[name]
     return builder and builder()or nil
@@ -357,11 +400,24 @@ function Capture:Acquire(target,valid)
         actor,root,humanoid=ctx.Character()
         if not actor or not root or root.Anchored or not humanoid or humanoid.Health<=0
             or humanoid.SeatPart or humanoid.Sit==true then outcome="movement";return end
-        returnFrame=root.CFrame
-        if ctx.Anchor then ctx.Anchor(returnFrame.Position)end
         local timeout=math.clamp(.6+2*ping,1,5)
         local cadence=math.clamp(.25*ping,1/20,.2)
         local deadline,nextRequest=ctx.Clock()+timeout,0
+        if(target.Position-root.Position).Magnitude<=28 then
+            self.Status="Capture: claiming nearby target"
+            local nearUntil=math.min(deadline,ctx.Clock()+math.clamp(.2+1.5*ping,.3,1.5))
+            repeat
+                if not current()then return end
+                if self:Acknowledged(target)then owned=true;outcome="acknowledged";return end
+                local now=ctx.Clock()
+                if now>=nextRequest then ctx.Grab(target,root.CFrame);self.Requests+=1;nextRequest=now+cadence end
+                ctx.WaitFrame()
+            until ctx.Clock()>=nearUntil or(target.Position-root.Position).Magnitude>28
+            if current()and self:Acknowledged(target)then owned=true;outcome="acknowledged";return end
+        end
+        if not current()then return end
+        returnFrame=root.CFrame
+        if ctx.Anchor then ctx.Anchor(returnFrame.Position)end
         -- Stay physically below the target for a rendered/physics step first.
         self.Status="Capture: moving below target"
         if ctx.Teleport(root,ctx.Approach(target))==false then return end
@@ -17841,7 +17897,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.46 | FTAP")
+                                warn("Astral v4.47 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -21161,7 +21217,10 @@ end
                 tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,States=tbl7.States,
                     Find=function()return v17 and v17:FindFirstChild("RagdollRSC")end,
                     CanSpawn=function()return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
-                    Spawn=function()return tbl12.SpawnToy("PalletLightBrown",nil,0,true)end,
+                    Spawn=function()
+                        local _,root=tbl12.Char();if not root then return end
+                        return tbl12.SpawnToy("PalletLightBrown",root.CFrame*CFrame.new(0,6,-6),0,true)
+                    end,
                     Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value and true or nil end,
                     Owned=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
                     Acquire=function(part,valid)if not tbl12.AcquireVisiblePhysics then return false end;return tbl12.AcquireVisiblePhysics(part,valid)end,
@@ -35467,7 +35526,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.46"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.47"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -35591,7 +35650,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.46",true)
+            box:AddLabel("Astral v4.47",true)
         end
 
         do
@@ -37411,7 +37470,7 @@ Escape Timer: %*]]
         local function syncKick()
             local selected=toggles.LoopApplyMethodTSel.Value or toggles.LoopApplyMethodTServ.Value
             methodControl:SetValue(selected and {Kick=true}or {})
-            if selected then tbl12.PalletRagdoll:Warm()else tbl12.PalletRagdoll:CancelWarm()end
+            if not selected then tbl12.PalletRagdoll:CancelWarm()end
         end
         toggles.LoopApplyMethodTSel:SetText("Enable Kick")
         toggles.LoopApplyMethodTServ:SetText("Enable Server Kick")
@@ -37463,8 +37522,8 @@ Escape Timer: %*]]
 		v21:AddSlider("HeightNK", {
 			Text = "Kick Height",
 			Default = 15,
-			Min = 0,
-			Max = 28,
+			Min = 6,
+			Max = 24,
 			Compact = true,
 			Rounding = 0,
 			Callback = function(nkOffset)
@@ -38492,9 +38551,9 @@ Escape Timer: %*]]
         local context={RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,
             Character=function()return tbl12.Char()end,CanSpawn=canBuild,
             SpawnFrame=function(index)local _,root=tbl12.Char();return root and root.CFrame*CFrame.new((index%3-1)*2,2,-7)end,
-            Spawn=function(id,frame)if not canBuild()or not frame then return end;return tbl12.SpawnToy(id,frame+Vector3.new(0,0,-20),0,true)end,
+            Spawn=function(id,frame)if not canBuild()or not frame then return end;return tbl12.SpawnToy(id,frame,0,true)end,
             Destroy=function(model)return tbl12.DestroyToy(model)end,
-            Release=function(model,valid)if valid()then return tbl12.BreakHoldable(model,.6)end;return false end,
+            Release=function(model,valid)if valid()then return tbl12.BreakHoldable(model,.6,false,valid)end;return false end,
             IsOwner=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
             RequestOwner=function(part)
                 local _,root,h=tbl12.Char();local now=os.clock()
@@ -38530,7 +38589,7 @@ Escape Timer: %*]]
         spark:AddSlider("SparklerMotionSpeed",{Text="Form Motion Speed",Default=1,Min=0,Max=3,Rounding=2,Compact=true,Suffix="x",Callback=function(v)forms.MotionSpeed=v end})
         spark:AddButton({Text="Retry Missing Rods",Func=function()forms:Retry()end})
         spark:AddButton({Text="Rebuild Sparkler Rig",Func=function()forms:Rebuild()end})
-        spark:AddLabel("20 forms. Free toys follow body attachments; no coconut hold/drop path. Guard replaces your contested toy after a short grace period. Repair is bounded; it cannot prohibit server grabs.",true)
+        spark:AddLabel("20 forms made from real toys. Choose a form and item, then enable. Retry repairs missing parts.",true)
         local sparkStatus=spark:AddLabel("Disabled",true)
         local walker=tbl15.Fun:AddRightGroupbox("Spider Walker","bug")
         walker:AddToggle("AstralSpiderEnabled",{Text="Spider Walker",Default=false,Callback=function(value)
@@ -38538,6 +38597,7 @@ Escape Timer: %*]]
         end})
         walker:AddDropdown("AstralSpiderConstruction",{Text="Walker Construction",Values=spider.Constructions,Default="Spider",AllowNull=false,Searchable=true,Callback=function(v)
             if spider:SetConstruction(v)and options.AstralSpiderPairs and options.AstralSpiderPairs.Value<spider.Pairs then options.AstralSpiderPairs:SetValue(spider.Pairs)end
+            for _,id in ipairs({"AstralSpiderPairs","AstralSpiderLift"})do if options[id]then options[id]:SetDisabled(spider:IsFigure())end end
         end})
         walker:AddDropdown("AstralSpiderDecorItem",{Text="Walker Accessory Item",Values=spider.DecorItems,ValueImages=requireModule("AssetCatalog").Items,Default="ToolPencil",AllowNull=false,Callback=function(v)spider:SetDecorItem(v)end})
         walker:AddToggle("AstralSpiderDecorMixed",{Text="Mixed Walker Accessories",Default=true,Callback=function(v)spider:SetDecorMixed(v)end})
@@ -38548,7 +38608,7 @@ Escape Timer: %*]]
         walker:AddSlider("AstralSpiderLift",{Text="Spider Step Height",Default=2,Min=.2,Max=5,Rounding=1,Compact=true,Suffix=" studs",Callback=function(v)spider:SetLift(v)end})
         walker:AddButton({Text="Retry Missing Ladders",Func=function()spider:Retry()end})
         walker:AddButton({Text="Rebuild Spider",Func=function()spider:Rebuild()end})
-        walker:AddLabel("WASD / mobile joystick. Default: 1 pallet + 8 ladders, 4 legs. Normal character movement drives the walker. Ride On Top raises your real character above the pallet and restores height on exit.",true)
+        walker:AddLabel("WASD / joystick. Choosing a construction rebuilds its real toys. Each build uses at most 13 toys; Ride On Top is optional.",true)
         local spiderStatus=walker:AddLabel("Disabled",true)
         local drive=tbl15.Fun:AddLeftGroupbox("Vehicle Speed","gauge")
         for _,kind in ipairs({"Tractor","Sleigh"})do
@@ -41806,9 +41866,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.46: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.47: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.46 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.47 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -42624,8 +42684,8 @@ return Layouts
 
 ]========]
 sources.FormationRig = [========[
--- Independent free-toy formations: body-relative attachments, no hold/drop or
--- coconut controller. Foreign grabs suspend a slot; guarded repair replaces
+-- Independent toy formations with a guarded release for newly held items.
+-- Foreign grabs suspend a slot; guarded repair replaces
 -- only our own spawned toy, with bounded retries and real server removals.
 local Formation={};Formation.__index=Formation
 local forces={BodyPosition=true,BodyGyro=true,BodyVelocity=true,BodyAngularVelocity=true,BodyForce=true,BodyThrust=true,
@@ -42687,6 +42747,7 @@ function Formation:Clear()
     self.Failures=0;self.Losses=0;self.Lost={};self.Paused=false;self.CharacterModel=nil;self.NextSpawn=0;self.LastError=nil
 end
 function Formation:Configure(plan)
+    if self.Pending and plan[self.Pending.Index]~=self.Plan[self.Pending.Index]then self:Clear()end
     for i,item in pairs(self.Slots)do if not plan[i]or plan[i]~=item.Id then self:Remove(i,true)end end
     self.Plan=plan
 end
@@ -42782,6 +42843,14 @@ function Formation:StartSpawn()
             if not model then error("Game did not return a toy",0)end
             if not self:Valid(version)then return end
             self.Pending=self.Pending or {Model=model,Index=index}
+            local hold=model:FindFirstChild("HoldPart",true)
+            if not self.Pending.Released and hold and hold:FindFirstChild("HoldItemRemoteFunction")and hold:FindFirstChild("DropItemRemoteFunction")then
+                if not self.Context.Release or not self.Context.Release(model,function()return self:Valid(version)end)then
+                    error("Held formation item was not released",0)
+                end
+            end
+            if not self:Valid(version)then return end
+            self.Pending.Released=true
             local deadline=self.Context.Clock()+3;local last=-1;local stable=self.Context.Clock()
             repeat
                 if not self:Valid(version)or not alive(model)then return end
@@ -43063,9 +43132,9 @@ return Rig
 
 ]========]
 sources.SpiderWalker = [========[
--- Standard character movement pilots a real pallet/ladder walker; no avatar teleport.
+-- One owned toy pool applies the selected walker or figure; no idle accessory pool.
 local requireModule=...;local Rig=requireModule("ToyRig")
-local Formation=requireModule("FormationRig");local Layouts=requireModule("FigureLayouts");local Builds=requireModule("WalkerBuilds")
+local Layouts=requireModule("FigureLayouts");local Builds=requireModule("WalkerBuilds")
 local Spider={};Spider.__index=Spider
 function Spider.Solve(hip,foot,a,b,pole)
     local delta=foot-hip;local d=delta.Magnitude;local unit=d>.0001 and delta.Unit or -Vector3.yAxis
@@ -43080,28 +43149,40 @@ function Spider.RodFrame(a,b,axis)
     local up=math.abs(dir.Unit.Z)>.98 and Vector3.yAxis or Vector3.zAxis
     return CFrame.lookAt((a+b)*.5,(a+b)*.5+dir,up)*(axis==1 and CFrame.Angles(0,math.pi/2,0)or axis==2 and CFrame.Angles(-math.pi/2,0,0)or CFrame.Angles(0,math.pi,0))
 end
+
 function Spider.Install(context)
-    local self=setmetatable({Context=context,Pool=Rig.new(context),Decor=Formation.new(context,Layouts.Measure),Construction="Spider",DecorItem="ToolPencil",DecorMixed=true,
+    local self=setmetatable({Context=context,Pool=Rig.new(context),Construction="Spider",DecorItem="ToolPencil",DecorMixed=true,
         Constructions=Builds.Names,DecorItems=Layouts.Items,Enabled=false,Pairs=2,HeightRatio=.55,Lift=2,Legs={},Group=0,RideEnabled=true,RideClearance=.15},Spider)
     self:Configure()
     self.Connection=context.RunService.PreSimulation:Connect(function(dt)
         local ok,message=pcall(self.Step,self,dt)
-        if not ok then self:SetEnabled(false);self.Status="Spider error: "..tostring(message)end
+        if not ok then self:SetEnabled(false);self.Status="Walker error: "..tostring(message)end
     end)
     return self
 end
-function Spider:Configure()local plan={"PalletLightBrown"};for i=1,self.Pairs*4 do plan[#plan+1]="LadderLightBrown"end;self.Pool:Configure(plan);self:ConfigureDecor()end
-function Spider:ConfigureDecor()self.Decor:Configure(Builds.Plan(self.Construction,self.DecorItem,self.DecorMixed))end
+function Spider:Configure()
+    self.Build=Builds.Prepare(self.Construction,self.Pairs,self.DecorItem,self.DecorMixed,13)
+    self.Pool:Configure(self.Build.Plan)
+end
+function Spider:IsFigure()return self.Build.Figure end
 function Spider:SetConstruction(value)
     if not Builds.Profiles[value]then return false end
-    self.Construction=value;self.Legs={};self.Decor:Clear();self.DecorAnchor=nil
-    self.Pairs=math.max(self.Pairs,Builds.Profiles[value].Pairs);self:Configure();return true
+    if self.Construction==value then return true end
+    self:Reset();self.Construction=value;self.Pairs=math.max(self.Pairs,Builds.Profiles[value].Pairs)
+    self:Configure();self.Status="Applying "..value;return true
 end
-function Spider:SetDecorItem(value)if not table.find(self.DecorItems,value)then return false end;self.DecorItem=value;self:ConfigureDecor();self.Decor:Retry();return true end
-function Spider:SetDecorMixed(value)self.DecorMixed=value==true;self:ConfigureDecor();self.Decor:Retry()end
+function Spider:SetDecorItem(value)
+    if not table.find(self.DecorItems,value)then return false end
+    if value~=self.DecorItem then self:Reset();self.DecorItem=value;self:Configure()end
+    return true
+end
+function Spider:SetDecorMixed(value)
+    value=value==true;if value~=self.DecorMixed then self:Reset();self.DecorMixed=value;self:Configure()end
+end
 function Spider:SetPairs(value)
     if type(value)~="number"or value~=value then return end
-    value=math.clamp(math.floor(value),Builds.Profiles[self.Construction].Pairs,4);if value~=self.Pairs then self.Pairs=value;self.Legs={};self:Configure();self.Pool:Retry()end
+    value=math.clamp(math.floor(value),Builds.Profiles[self.Construction].Pairs,4)
+    if value~=self.Pairs then self:Reset();self.Pairs=value;self:Configure()end
 end
 function Spider:SetHeight(value)if type(value)=="number"and value==value then self.HeightRatio=math.clamp(value,.4,.75)end end
 function Spider:SetLift(value)if type(value)=="number"and value==value then self.Lift=math.clamp(value,.2,5)end end
@@ -43136,96 +43217,116 @@ function Spider:UpdateRider(character,root,h,base,thickness,ready)
     r.Position.MaxAxesForce=Vector3.new(0,mass*((self.Context.Gravity and self.Context.Gravity()or 196.2)+350),0)
     r.Position.Position=Vector3.new(root.Position.X,base.Y+lift+r.Standing,root.Position.Z);r.Position.Enabled=true
 end
-function Spider:Reset()self:ReleaseRider();self.Decor:Clear();self.DecorAnchor=nil;self.Pool:Clear();self.Legs={};self.LastPosition=nil;self.GroundPoint=nil;self.NextGround=0;self.Height=nil end
+
+function Spider:Reset()
+    self:ReleaseRider();self.Pool:Clear();self.Legs={};self.LastPosition=nil;self.GroundPoint=nil;self.NextGround=0;self.Height=nil
+end
 function Spider:SetEnabled(value)
     value=value==true and not self.Closed;if value==self.Enabled then return end
-    self.Enabled=value;self.Pool.Active=value;self:Reset();self.CharacterModel=nil;self.Status=value and "Preparing pallet and ladders"or "Disabled"
+    self.Enabled=value;self.Pool.Active=value;self:Reset();self.CharacterModel=nil
+    self.Status=value and("Preparing "..self.Construction)or "Disabled"
 end
 function Spider:Rebuild()self:Reset();self.Pool:Retry()end
-function Spider:Retry()self.Pool:Retry();self.Decor:Retry()end
-function Spider:UpdateDecor(pallet,body,ready,dt)
-    if #self.Decor.Plan==0 then return end
-    if not ready then for _,item in pairs(self.Decor.Slots)do self.Decor:Suspend(item)end;return end
-    if self.DecorAnchor and self.DecorAnchor~=pallet.Root then self.Decor:Clear()end
-    self.DecorAnchor=pallet.Root;self.Decor.Active=true;self.Decor:Update(pallet.Root)
-    local total,n=0,0;for _,item in pairs(self.Decor.Slots)do total+=item.Geometry.Length;n+=1 end
-    -- Cap layout spacing, not toy dimensions, so long mixed accessories do not
-    -- put their root targets beyond the existing nearby-control range.
-    local frames=Builds.Frames(self.Construction,n>0 and math.min(total/n,4)or 3,self.Context.Clock(),false)
-    for i,item in pairs(self.Decor.Slots)do local spec=frames[i];if spec then
-        local cf=spec.Frame
-        if spec.Flat then
-            local g=item.Geometry;local axis=g.Axis
-            -- Put broad pallet accessories flat using their measured geometry.
-            local turn=axis==2 and CFrame.Angles(0,0,math.pi/2)or CFrame.new();cf=cf*turn
-        elseif spec.Axis~=item.Geometry.Axis then
-            local correction=item.Geometry.Axis==1 and CFrame.Angles(0,0,-math.pi/2)or item.Geometry.Axis==3 and CFrame.Angles(math.pi/2,0,0)or CFrame.new()
-            cf=cf*correction
-        end
-        local behind=Builds.Profiles[self.Construction].Layout and CFrame.new(0,1,3)or CFrame.new()
-        self.Decor:Move(i,pallet.Root.CFrame:ToObjectSpace(body*behind*cf))
-    end end
-end
+function Spider:Retry()self.Pool:Retry()end
 function Spider:Ground(position)return self.Context.Ground(position,(self.Height or 12)+5,(self.Height or 12)*2+15)end
+function Spider:Accessories(body)
+    local count=self.Build.AccessoryCount;if count==0 then return end
+    local total,n=0,0
+    for i=self.Build.Core+1,#self.Pool.Plan do local item=self.Pool.Slots[i];if item then total+=item.Geometry.Length;n+=1 end end
+    local frames=Builds.Frames(self.Construction,n>0 and math.min(total/n,4)or 3,self.Context.Clock(),false,count)
+    for j=1,count do
+        local slot=self.Build.Core+j;local item=self.Pool.Slots[slot];local spec=frames[j]
+        if item and spec then
+            local frame=spec.Frame;local geometry=item.Geometry
+            if spec.Flat then
+                local size=geometry.Size;local dims={size.X,size.Y,size.Z};local thin=1
+                for axis=2,3 do if dims[axis]<dims[thin]then thin=axis end end
+                frame=frame*(thin==1 and CFrame.Angles(0,0,math.pi/2)or thin==3 and CFrame.Angles(math.pi/2,0,0)or CFrame.new())
+            elseif spec.Axis~=geometry.Axis then
+                frame=frame*(geometry.Axis==1 and CFrame.Angles(0,0,-math.pi/2)or geometry.Axis==3 and CFrame.Angles(math.pi/2,0,0)or CFrame.new())
+            end
+            self.Pool:Move(slot,body*frame)
+        end
+    end
+end
 function Spider:Step(dt)
     if not self.Enabled or self.Closed then return end
     local character,root,h=self.Context.Character()
     if not root or not h or h.Health<=0 then if self.CharacterModel then self:Reset();self.CharacterModel=nil end;self.Status="Waiting for character";return end
-    if self.CharacterModel and self.CharacterModel~=character or self.LastPosition and (root.Position-self.LastPosition).Magnitude>40 then self:Reset()end
+    if self.CharacterModel and self.CharacterModel~=character or self.LastPosition and(root.Position-self.LastPosition).Magnitude>40 then self:Reset()end
     self.CharacterModel=character;local previous=self.LastPosition or root.Position;self.LastPosition=root.Position
     self.Pool:Update();dt=math.clamp(dt or 1/60,0,.05)
-    local profile=Builds.Profiles[self.Construction]
-    local dir=Vector3.new(root.CFrame.LookVector.X,0,root.CFrame.LookVector.Z);if dir.Magnitude<.01 then dir=Vector3.new(0,0,-1)else dir=dir.Unit end
+    local build,profile=self.Build,Builds.Profiles[self.Construction]
+    local dir=Vector3.new(root.CFrame.LookVector.X,0,root.CFrame.LookVector.Z);dir=dir.Magnitude<.01 and Vector3.new(0,0,-1)or dir.Unit
     local facing=CFrame.lookAt(Vector3.zero,dir)
-    local total,n=0,0;for i=2,#self.Pool.Plan do local item=self.Pool.Slots[i];if item then total+=item.Geometry.Length;n+=1 end end
-    local length=n>0 and total/n or 8;local target=math.min(length*2*self.HeightRatio*profile.Height,16)
+    local total,n=0,0
+    for i=2,build.Core do local item=self.Pool.Slots[i];if item then total+=item.Geometry.Length;n+=1 end end
+    local length=n>0 and total/n or 8
+    local target=math.min(length*math.max(build.Segments,1)*self.HeightRatio*profile.Height,16)
     self.Height=(self.Height or target)+(target-(self.Height or target))*math.min(dt*4,1)
     if self.Context.Clock()>=(self.NextGround or 0)then self.GroundPoint=self:Ground(root.Position);self.NextGround=self.Context.Clock()+.05 end
-    if not self.GroundPoint then self:ReleaseRider();for _,item in pairs(self.Pool.Slots)do self.Pool:Suspend(item)end;self.Status="Waiting for ground";return end
-    local base=Vector3.new(root.Position.X,self.GroundPoint.Y,root.Position.Z);local body=facing+base+Vector3.yAxis*self.Height
-    local width,depth,turn=4,4,CFrame.new();local pallet=self.Pool.Slots[1];local reason;local thickness,bodyReady=.4,false
+    local floating=build.Figure and(not self.GroundPoint or self.Context.Flying and self.Context.Flying())
+    if not self.GroundPoint and not floating then self:ReleaseRider();for _,item in pairs(self.Pool.Slots)do self.Pool:Suspend(item)end;self.Status="Waiting for ground";return end
+    local base=Vector3.new(root.Position.X,floating and root.Position.Y-self.Height or self.GroundPoint.Y,root.Position.Z)
+    local body=facing+base+Vector3.yAxis*self.Height
+    local width,depth,turn=4,4,CFrame.new();local pallet=self.Pool.Slots[1];local reason;local thickness,ready=.4,false
     if pallet then
-        local s=pallet.Geometry.Size;local dims={s.X,s.Y,s.Z};local thin=1;for i=2,3 do if dims[i]<dims[thin]then thin=i end end
+        local size=pallet.Geometry.Size;local dims={size.X,size.Y,size.Z};local thin=1
+        for i=2,3 do if dims[i]<dims[thin]then thin=i end end
         thickness=dims[thin]
-        if thin==1 then turn=CFrame.Angles(0,0,math.pi/2);width,depth=s.Y,s.Z elseif thin==3 then turn=CFrame.Angles(math.pi/2,0,0);width,depth=s.X,s.Y else width,depth=s.X,s.Z end
-        local ok,message=self.Pool:Move(1,body*turn);bodyReady=ok;if not ok then reason=message end
+        if thin==1 then turn=CFrame.Angles(0,0,math.pi/2);width,depth=size.Y,size.Z
+        elseif thin==3 then turn=CFrame.Angles(math.pi/2,0,0);width,depth=size.X,size.Y else width,depth=size.X,size.Z end
+        ready,reason=self.Pool:Move(1,body*turn)
     end
-    self:UpdateRider(character,root,h,base,thickness,bodyReady and self.Pool:Count()==#self.Pool.Plan)
-    self:UpdateDecor(pallet,body,bodyReady and self.Pool:Count()==#self.Pool.Plan,dt)
-    local stanceDepth=depth*profile.Depth
-    local travel=Vector3.new(root.Position.X-previous.X,0,root.Position.Z-previous.Z).Magnitude/math.max(dt,.001)
-    local definitions={};local stepping,wants=false,false
-    for pair=1,self.Pairs do for sideIndex,side in ipairs({-1,1})do
-        local i=(pair-1)*2+sideIndex;local slot=2+(i-1)*2;local upper,lower=self.Pool.Slots[slot],self.Pool.Slots[slot+1]
-        local a,b=upper and upper.Geometry.Length or length,lower and lower.Geometry.Length or length
-        local t=(pair-1)/(self.Pairs-1)-.5;local hip=body*Vector3.new(side*width*.42,0,t*stanceDepth*.8)
-        local home=(facing+base)*Vector3.new(side*(width*.42+math.min((a+b)*.4*profile.Spread,14)),0,t*(stanceDepth*.8+(a+b)*.5))
-        local leg=self.Legs[i];if not leg then leg={Foot=self:Ground(home)or home,Group=profile.SideGait and sideIndex%2 or (pair+sideIndex)%2};self.Legs[i]=leg end
-        local distance=(home-leg.Foot).Magnitude
-        if leg.Progress then stepping=true elseif distance>math.clamp((a+b)*.14,1.2,4)then wants=true end
-        definitions[i]={Hip=hip,Home=home,A=a,B=b,Upper=upper,Lower=lower,Slot=slot,Side=side,Distance=distance}
-    end end
-    if not stepping and wants then
-        for i,d in ipairs(definitions)do local leg=self.Legs[i]
-            if leg.Group==self.Group and d.Distance>.3 then local point=self:Ground(d.Home)
-                if point then leg.From=leg.Foot;leg.To=point;leg.Progress=0;leg.Duration=math.clamp(.46-travel*.008,.18,.46)end
+    self:UpdateRider(character,root,h,base,thickness,ready and not floating and self.Pool:Count()==#self.Pool.Plan)
+    if ready then self:Accessories(body)end
+    if not build.Figure then
+        local travel=Vector3.new(root.Position.X-previous.X,0,root.Position.Z-previous.Z).Magnitude/math.max(dt,.001)
+        local definitions={};local stepping,wants=false,false
+        for pair=1,self.Pairs do for sideIndex,side in ipairs({-1,1})do
+            local i=(pair-1)*2+sideIndex;local slot=2+(i-1)*build.Segments
+            local upper=self.Pool.Slots[slot];local lower=build.Segments==2 and self.Pool.Slots[slot+1]
+            local a,b=upper and upper.Geometry.Length or length,lower and lower.Geometry.Length or(build.Segments==2 and length or 0)
+            local t=(pair-1)/(self.Pairs-1)-.5
+            local hip=body*Vector3.new(side*width*.42,0,t*depth*profile.Depth*.8)
+            local home=(facing+base)*Vector3.new(side*(width*.42+math.min((a+b)*.4*profile.Spread,14)),0,t*(depth*profile.Depth*.8+(a+b)*.5))
+            if build.Segments==1 then
+                local flat=Vector3.new(home.X-hip.X,0,home.Z-hip.Z)
+                if flat.Magnitude<.001 then flat=facing.RightVector*side end
+                local reach=math.sqrt(math.max(a*a-(hip.Y-base.Y)^2,.1))
+                home=Vector3.new(hip.X,base.Y,hip.Z)+flat.Unit*reach
             end
+            local leg=self.Legs[i]
+            if not leg then leg={Foot=self:Ground(home)or home,Group=profile.SideGait and sideIndex%2 or(pair+sideIndex)%2};self.Legs[i]=leg end
+            local distance=(home-leg.Foot).Magnitude
+            if leg.Progress then stepping=true elseif distance>math.clamp((a+b)*.14,1.2,4)then wants=true end
+            definitions[i]={Hip=hip,Home=home,A=a,B=b,Slot=slot,Upper=upper,Lower=lower,Side=side,Distance=distance}
+        end end
+        if not stepping and wants then
+            for i,d in ipairs(definitions)do local leg=self.Legs[i]
+                if leg.Group==self.Group and d.Distance>.3 then local point=self:Ground(d.Home)
+                    if point then leg.From=leg.Foot;leg.To=point;leg.Progress=0;leg.Duration=math.clamp(.46-travel*.008,.18,.46)end
+                end
+            end
+            self.Group=1-self.Group
         end
-        self.Group=1-self.Group
-    end
-    for i,d in ipairs(definitions)do local leg=self.Legs[i]
-        if leg.Progress then local t=math.min(leg.Progress+dt/leg.Duration,1);leg.Progress=t
-            leg.Foot=leg.From:Lerp(leg.To,t*t*(3-2*t))+Vector3.yAxis*math.sin(math.pi*t)*math.min(self.Lift,d.B*.35)
-            if t>=1 then leg.Foot=leg.To;leg.Progress=nil end
+        for i,d in ipairs(definitions)do local leg=self.Legs[i]
+            if leg.Progress then local t=math.min(leg.Progress+dt/leg.Duration,1);leg.Progress=t
+                leg.Foot=leg.From:Lerp(leg.To,t*t*(3-2*t))+Vector3.yAxis*math.sin(math.pi*t)*math.min(self.Lift,math.max(d.B,d.A)*.35)
+                if t>=1 then leg.Foot=leg.To;leg.Progress=nil end
+            end
+            if d.Lower then
+                local knee,foot=self.Solve(d.Hip,leg.Foot,d.A,d.B,facing:VectorToWorldSpace(Vector3.new(d.Side,1,0)))
+                if d.Upper then self.Pool:Move(d.Slot,self.RodFrame(d.Hip,knee,d.Upper.Geometry.Axis))end
+                self.Pool:Move(d.Slot+1,self.RodFrame(knee,foot,d.Lower.Geometry.Axis))
+            elseif d.Upper then self.Pool:Move(d.Slot,self.RodFrame(d.Hip,leg.Foot,d.Upper.Geometry.Axis))end
         end
-        local knee,foot=self.Solve(d.Hip,leg.Foot,d.A,d.B,facing:VectorToWorldSpace(Vector3.new(d.Side,1,0)))
-        if d.Upper then local ok,message=self.Pool:Move(d.Slot,self.RodFrame(d.Hip,knee,d.Upper.Geometry.Axis));if not ok then reason=message end end
-        if d.Lower then local ok,message=self.Pool:Move(d.Slot+1,self.RodFrame(knee,foot,d.Lower.Geometry.Axis));if not ok then reason=message end end
     end
-    self.Status=self.Construction.." · "..self.Pool:Count().."/"..#self.Pool.Plan.." core toys | "..(reason or self.Pool.Status=="Ready"and "WASD / joystick: walk"or self.Pool.Status)
-    if #self.Decor.Plan>0 then self.Status..=" | build "..self.Decor:Count().."/"..#self.Decor.Plan.." · "..self.Decor.Status end
+    self.Status=self.Construction.." · "..self.Pool:Count().."/"..#self.Pool.Plan.." toys · "..(reason or self.Pool.Status)
 end
-function Spider:Dispose()if self.Closed then return end;self.Closed=true;self.Enabled=false;self:ReleaseRider();self.Decor:Dispose();self.Pool:Dispose();self.Connection:Disconnect()end
+function Spider:Dispose()
+    if self.Closed then return end;self.Closed=true;self.Enabled=false;self:ReleaseRider();self.Pool:Dispose();self.Connection:Disconnect()
+end
 return Spider
 
 ]========]
@@ -44817,7 +44918,11 @@ function Panel.Install(context)
     local api=context.API
     self.Methods={
         Void=api.Void,Kill=api.Kill,Bring=api.BringPlayer,
-        Ragdoll=function(player)local character=api.Char(player);if character then api.Ragdoll(character)end end,
+        Ragdoll=function(player)
+            local kick=api.KickLoop
+            if kick and kick.Context.Enabled()and kick.Context.Selected(player)and not kick:IsHolding(player)then return end
+            local character=api.Char(player);if character then api.Ragdoll(character)end
+        end,
         Food=api.EatAntiInput,Seatables=api.DeleteSeatables,Gucci=api.RemoveGucci,
         Invisible=function(player)local _,root=api.Char(player);if root then root.Massless=false end end,
         AntiKick=function(player)local character=api.Char(player);if character then api.RemoveSticky(character)end end,
@@ -89771,10 +89876,28 @@ function Builds.Plan(name,item,mixed)
     if name=="Centipede"then return {"PalletLightBrown","PalletLightBrown","ToolPencil","ToolPencil"}end
     return {}
 end
-function Builds.Frames(name,length,phase,flight)
+local mixedPlan=Builds.Plan
+function Builds.Plan(name,item,mixed)
+    local plan=mixedPlan(name,item,mixed)
+    if not mixed then for i=1,#plan do plan[i]=item end end
+    return plan
+end
+function Builds.Frames(name,length,phase,flight,count)
     local p=Builds.Profiles[name];local result={}
     if not p then return result end
     if p.Layout then
+        if name=="Scorpion"and count and count<10 then
+            local tail=math.max(1,count-2);local point=Vector3.new(0,-.5,1)
+            for i=1,tail do
+                local angle=(i-1)*.8;local nextPoint=point+Vector3.new(math.sin(phase*.5)*.08,math.sin(angle),math.cos(angle)).Unit*length
+                result[#result+1]={Frame=Layouts.Frame({A=point,B=nextPoint},2),Axis=2};point=nextPoint
+            end
+            for _,side in ipairs({-1,1})do
+                local a=Vector3.new(side*.6,0,-1);local z=a+Vector3.new(side,.2,-.6).Unit*length
+                result[#result+1]={Frame=Layouts.Frame({A=a,B=z},2),Axis=2}
+            end
+            return result
+        end
         local segments=Layouts.Segments(p.Layout,length,phase,flight)
         for i,segment in ipairs(segments)do result[i]={Frame=Layouts.Frame(segment,2),Axis=2}end
         return result
@@ -89794,6 +89917,21 @@ function Builds.Frames(name,length,phase,flight)
         for i,side in ipairs({-1,1})do result[i+2]={Frame=CFrame.new(side*.9,1,-6)*CFrame.Angles(-.6,0,side*.5),Axis=2}end
     end
     return result
+end
+function Builds.Prepare(name,pairs,item,mixed,budget)
+    local profile=Builds.Profiles[name];if not profile then return end
+    budget=math.clamp(math.floor(budget or 13),9,13)
+    pairs=math.clamp(math.floor(pairs or profile.Pairs),profile.Pairs,4)
+    local accessories=Builds.Plan(name,item,mixed)
+    local figure=profile.Layout~=nil and name~="Scorpion"
+    local segments=not figure and 2 or 0
+    if not figure and 1+pairs*2*segments+#accessories>budget then segments=1 end
+    local core=figure and 1 or 1+pairs*2*segments
+    local count=math.min(#accessories,budget-core)
+    local plan={"PalletLightBrown"}
+    for i=2,core do plan[i]="LadderLightBrown"end
+    for i=1,count do plan[#plan+1]=accessories[i]end
+    return {Plan=plan,Figure=figure,Pairs=pairs,Segments=segments,Core=core,AccessoryCount=count}
 end
 return Builds
 
@@ -89845,6 +89983,7 @@ function Pallet.Install(context)
             -- A queued target still gets a turn after the native time slice.
             return self.MaximumSpeed and #self.Queue==0 and self:ContinuousValid(entry)
         end,
+        ContinueContact=function()return self.MaximumSpeed and self:ContinuousValid(self.Active)end,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
         Wait=function(seconds)
             if not valid()then error(Cancelled,0)end
@@ -89929,18 +90068,18 @@ function Pallet:Bind(model)
         if entry and not entry.Done and part and part:IsDescendantOf(entry.Character)then self.Contacts+=1;entry.ContactAt=self.Context.Clock()end
     end)
 end
-function Pallet:Request(character,valid)
+function Pallet:Request(character,valid,continuous)
     if self.Closed then return end
     local value=state(character);if not value then return end
-    if value.Value then return {Done=true,Success=true,Character=character}end
+    if value.Value and not continuous then return {Done=true,Success=true,Character=character}end
     local entry=self.Entries[character]
     if entry and not entry.Done then return entry end
-    entry={Character=character,Valid=valid,Done=false};self.Entries[character]=entry;self.Queue[#self.Queue+1]=entry
+    entry={Character=character,Valid=valid,Done=false,Continuous=continuous==true,ContinuousValid=continuous and valid or nil};self.Entries[character]=entry;self.Queue[#self.Queue+1]=entry
     if self.MaximumSpeed then self:Step()end
     return entry
 end
 function Pallet:Maintain(character,valid)
-    local entry=self:Request(character,valid)
+    local entry=self:Request(character,valid,true)
     if entry and not entry.Done then entry.Continuous=true;entry.ContinuousValid=valid end
     return entry
 end
@@ -90070,7 +90209,7 @@ return Pallet
 
 ]========]
 sources.KickLoop = [========[
--- Astral kick: keep acknowledged ownership and hold the root with constraints.
+-- Astral kick: near acquisition, upright native pose and bounded native cycles.
 local Loop={};Loop.__index=Loop
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
 function Loop.Install(context)
@@ -90194,7 +90333,6 @@ function Loop:Create(player,character,root,humanoid)
     orientation.CFrame=root.CFrame;orientation.Enabled=false;orientation.Parent=root
     session.Position,session.Orientation,session.Attachment=position,orientation,attachment
     self:ConfigureMovers(session)
-    if self.Context.WarmRagdoll and self:RagdollRequired()then self.Context.WarmRagdoll()end
     self.Sessions[player]=session;return session
 end
 function Loop:ConfigureMovers(session)
@@ -90214,6 +90352,9 @@ function Loop:Physics(session)
     -- Preserve the avatar's joints. Moving limbs independently of the root
     -- one frame at a time was splitting the visible character during travel.
     self.Context.Collisions(session.Character,false)
+    -- The native ragdoll pose follows the held root, rather than preserving
+    -- the horizontal pose from the floor. Existing joints stay intact.
+    if self.Context.Limbs then self.Context.Limbs(session.Character,true)end
 end
 function Loop:Acquire(session,now)
     local ctx=self.Context
@@ -90249,27 +90390,66 @@ function Loop:Acquire(session,now)
         end
     end)
 end
+function Loop:GrabNear(session,now,ping)
+    if now<(session.NextNearGrab or 0)or self.Context.OwnershipBusy()then return end
+    self.Context.Grab(session.Root);self.Calls+=1;session.Requested=true
+    session.NextNearGrab=now+math.clamp(ping*.5,.1,.3)
+end
+function Loop:Cycle(session,now,ping)
+    local ctx=self.Context
+    if ctx.OwnershipBusy()then return end
+    if session.RegrabFrame then
+        if self.Frame>=session.RegrabFrame then
+            ctx.Grab(session.Root);self.Calls+=1;session.Requested=true
+            session.RegrabFrame=nil;session.NextRefresh=now+math.clamp(ping*.5,1/15,.25)
+        end
+        return
+    end
+    if not session.HoldPlaced or not ctx.Owned(session.Root)then return end
+    if session.ReleaseAt and now>=session.ReleaseAt then
+        if self:Release(session)then
+            session.ReleaseAt=nil;session.RegrabFrame=self.Frame+1
+            session.CycleUntil=now+math.clamp(.4+2*ping,.6,2)
+        end
+        return
+    end
+    if now+1e-6>=(session.NextRefresh or 0)then
+        ctx.Grab(session.Root);self.Calls+=1;session.Requested=true
+        session.NextRefresh=now+math.clamp(ping*.5,1/15,.25)
+        session.ReleaseAt=session.ReleaseAt or now+math.clamp(ping*1.5,.2,.75)
+    end
+end
 function Loop:Update(session,position,now,ping)
     local ctx=self.Context;local root=session.Root
-    self:ConfigureMovers(session)
-    session.Position.Position=position
+    self:ConfigureMovers(session);session.Position.Position=position
     if self.Excursion or self.CaptureAnchor or session.Acquiring then return end
     local _,localRoot=ctx.LocalCharacter();if not localRoot then return end
+    local near=(root.Position-localRoot.Position).Magnitude<=28
+    if near then self:Cycle(session,now,ping)end
     local owned=ctx.Owned(root)
-    if not owned or root.Anchored then
+    local physics=ctx.NetworkOwned and ctx.NetworkOwned(root)or not ctx.NetworkOwned and owned
+    local retaining=session.HoldPlaced and physics and session.CycleUntil and now<=session.CycleUntil
+    if not(owned or retaining)or root.Anchored then
         session.Position.Enabled=false;session.Orientation.Enabled=false;session.OwnedAt=nil
+        if session.EKI then ctx.ReplicationRoot(root,nil);session.EKI=nil;session.EKIAt=now+.6 end
         if root.Anchored then return end
+        session.OwnershipLostAt=session.OwnershipLostAt or now
+        if near then
+            -- Near targets and deliberate release/regrab transitions do not
+            -- need another underground trip. Refresh from the real actor pose.
+            if now>=(session.NextGrab or 0)then self:GrabNear(session,now,ping)end
+            return
+        end
         local acknowledged=ctx.Acknowledged and ctx.Acknowledged(root)
         if acknowledged then
-            -- The game's claim tag arrives before the engine's replication
-            -- ownership. Wait in place instead of starting another excursion.
             session.AcknowledgedAt=session.AcknowledgedAt or now
+            if now-session.AcknowledgedAt<math.clamp(.6+2*ping,1,3)then return end
+            -- A stale claim (including a server-forced drop) is not an
+            -- indefinitely successful capture. Clear it before bounded retry.
+            session.Requested=true;self:Release(session);session.AcknowledgedAt=nil;session.NextGrab=now+.3
             return
         end
         session.AcknowledgedAt=nil
-        session.OwnershipLostAt=session.OwnershipLostAt or now
-        -- Let transient acknowledgement gaps settle without moving the real
-        -- character away from an otherwise steady overhead hold every frame.
         local grace=math.clamp(ping*.5,.15,.75)
         if not session.HoldPlaced or now-session.OwnershipLostAt>=grace then self:Acquire(session,now)end
         return
@@ -90277,30 +90457,32 @@ function Loop:Update(session,position,now,ping)
     session.OwnershipLostAt=nil;session.Requested=true
     if session.Humanoid.SeatPart or session.Humanoid.Sit==true then
         session.Position.Enabled=false;session.Orientation.Enabled=false
-        if self:RagdollRequired()then ctx.RequestRagdoll(session.Character,function()return self:Valid(session)and self:RagdollRequired()end)end
         return
     end
+    local look=localRoot.CFrame and localRoot.CFrame.LookVector or Vector3.new(0,0,-1)
+    local flat=Vector3.new(look.X,0,look.Z);flat=flat.Magnitude>.001 and flat.Unit or Vector3.new(0,0,-1)
+    local frame=CFrame.lookAt(position,position+flat)
+    session.Orientation.CFrame=frame
     local distance=(root.Position-position).Magnitude
     if not finite(distance)then return end
-    if not session.HoldPlaced or distance>33 then
-        if distance>6 and ctx.Teleport(root,position)==false then return end
-        session.HoldPlaced=true
+    if not session.HoldPlaced or distance>28 then
+        if ctx.Teleport(root,frame)==false then return end
+        session.HoldPlaced=true;session.PlacedFrame=self.Frame
     end
     session.Position.Enabled=true;session.Orientation.Enabled=true
     self:Physics(session)
-    if self:RagdollRequired()then
-        ctx.RequestRagdoll(session.Character,function()return self:Valid(session)and self:RagdollRequired()end)
+    if self:RagdollRequired()and self.Frame>(session.PlacedFrame or 0)then
+        ctx.RequestRagdoll(session.Character,function()
+            return self:Valid(session)and self:RagdollRequired()and session.HoldPlaced==true
+                and(session.Position.Position-session.Root.Position).Magnitude<=6
+        end)
     end
     if ctx.StickyEnabled()and not session.StickyBusy and now>=(session.NextSticky or 0)then
         session.StickyBusy=true;session.NextSticky=now+.25
-        ctx.SpawnThread(function()
-            if self:Valid(session)then pcall(ctx.RemoveSticky,session.Character)end
-            session.StickyBusy=false
-        end)
+        ctx.SpawnThread(function()if self:Valid(session)then pcall(ctx.RemoveSticky,session.Character)end;session.StickyBusy=false end)
     end
     session.EKIAt=session.EKIAt or now+.6
-    local networkOwned=ctx.NetworkOwned and ctx.NetworkOwned(root)or not ctx.NetworkOwned and owned
-    if ctx.EKIEnabled()and now>=session.EKIAt and networkOwned and not(ctx.SuppressEKI and ctx.SuppressEKI(session.Player))then
+    if ctx.EKIEnabled()and now>=session.EKIAt and physics and not(ctx.SuppressEKI and ctx.SuppressEKI(session.Player))then
         if not session.EKI then session.EKI=ctx.ReplicationRoot(root,root)==true end
     elseif session.EKI then ctx.ReplicationRoot(root,nil);session.EKI=nil end
     session.OwnedAt=session.OwnedAt or now
@@ -90327,7 +90509,10 @@ function Loop:Step(dt)
             if self.Cleanup[targetRoot]then waiting+=1;continue end
             if self.Excursion and not self.Sessions[player]then continue end
             local session=self.Sessions[player]or self:Create(player,character,targetRoot,targetHum)
-            local destination=(self.CaptureAnchor or root.Position)+Vector3.new(0,ctx.Height()+session.StackIndex*6,0)
+            local height=math.clamp(ctx.Height(),6,24)
+            local spacing=math.min(6,math.max(0,(26-height)/math.max(#targets-1,1)))
+            local offset=math.min(height+session.StackIndex*spacing,26)
+            local destination=(self.CaptureAnchor or root.Position)+Vector3.new(0,offset,0)
             if self.Excursion then destination=self.Excursion.Goals[session]or session.Position.Position end
             self:Update(session,destination,now,ping)
             if session.OwnedAt then held+=1 else waiting+=1 end
@@ -91069,7 +91254,8 @@ function Native.new(context)
         local humanoid=character:FindFirstChildOfClass("Humanoid")
         local ragdolled=humanoid and humanoid:FindFirstChild("Ragdolled")
         if not head or not torso or not ragdolled or humanoid.Health<=0 then return end
-        if ragdolled.Value then return true end
+        local function repeating()return context.ContinueContact and context.ContinueContact()end
+        if ragdolled.Value and not repeating()then return true end
         local function current()
             return valid()and head.Parent==character and torso.Parent==character
                 and humanoid.Parent==character and humanoid.Health>0
@@ -91091,7 +91277,7 @@ function Native.new(context)
         if not current()then return finish(false)end
         -- A busy or cancelled acquisition must not destroy a healthy cached toy.
         if not acquired then return finish(false)end
-        if ragdolled.Value then return finish(true)end
+        if ragdolled.Value and not repeating()then return finish(true)end
         if sound.Parent~=model or main.Parent~=model then return finish(false)end
         model.Name="RagdollRSC"
         for _,part in pairs(model:GetChildren())do if part:IsA("BasePart")then part.CanCollide=false end end
@@ -91103,14 +91289,14 @@ function Native.new(context)
         end
         local started=context.Clock()
         while current()and sound.Parent==model and main.Parent==model do
-            if ragdolled.Value then break end
+            if ragdolled.Value and not repeating()then break end
             if sound.Anchored or context.CanContact and not context.CanContact(sound)then break end
             sound.Position=torso.Position
             sound.Velocity=context.ImpactVelocity and context.ImpactVelocity()or Vector3.new(0,-10,0)
             context.Record(sound,character)
             context.Wait(.1)
             local expired=context.Clock()-started>.5
-            if not current()or ragdolled.Value or not head:FindFirstChild("PartOwner")
+            if not current()or ragdolled.Value and not repeating()or not head:FindFirstChild("PartOwner")
                 or expired and not(context.ContinueAttempt and context.ContinueAttempt())then break end
         end
         return finish(current()and ragdolled.Value==true)
