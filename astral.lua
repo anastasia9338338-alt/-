@@ -1,4 +1,4 @@
--- Astral v4.48 | uploaded native kick restored; physics-frame pallet contact.
+-- Astral v4.49 | uploaded native kick restored; physics-frame pallet contact.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.GameplayEffects = [========[
@@ -17897,7 +17897,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.48 | FTAP")
+                                warn("Astral v4.49 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -35522,7 +35522,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.48"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.49"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -35646,7 +35646,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.48",true)
+            box:AddLabel("Astral v4.49",true)
         end
 
         do
@@ -37466,7 +37466,6 @@ Escape Timer: %*]]
         local function syncKick()
             local selected=toggles.LoopApplyMethodTSel.Value or toggles.LoopApplyMethodTServ.Value
             methodControl:SetValue(selected and {Kick=true}or {})
-            if not selected then tbl12.PalletRagdoll:CancelWarm()end
         end
         toggles.LoopApplyMethodTSel:SetText("Enable Kick")
         toggles.LoopApplyMethodTServ:SetText("Enable Server Kick")
@@ -41862,9 +41861,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.47: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.49: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.47 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.49 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
