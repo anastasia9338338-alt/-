@@ -1,5 +1,7 @@
 # Astral v4.51
 
+Отдельный зимний скрипт: **[скачать winter.zip](https://github.com/anastasia9338338-alt/-/raw/refs/heads/main/winter.zip)** — снегопад, мягкий снег со следами, ёлки, снеговики, олени и гирлянды. [Описание и управление](winter/README.md).
+
 **[Скачать готовый ZIP](https://github.com/anastasia9338338-alt/-/raw/refs/heads/main/astral.zip)**. Распакуйте архив: внутри готовый `astral.lua`.
 
 Перед обновлением выгрузите работающую версию через **Settings → Unload astral**. После запуска на Home должна отображаться **v4.51**. Для повторных ударов включите **Enable Kick** и **Ragdoll During Kick**; второй переключатель включён по умолчанию.

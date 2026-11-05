@@ -8,3 +8,4 @@ The user requires a code review and fixes before every delivered script revision
 - Preserve existing features and names unless the user requests changes. Preserve notices.
 - Do not claim that Roblox physics, server hits or successful kicks were tested when only CLI/mocked checks ran. Report the scope of verification honestly.
 - Deliver the ready Lua in a ZIP with a verified commit-pinned download link. A raw Lua page opens as text in the user's client.
+- For the separate winter script, also build `python winter/build.py` and run `winter/tests/review_run.py`, `winter/tests/review_main.py`, `winter/tests/review_bundle.py` and `winter/tests/texture.py`. Keep Astral and Winter as separate deliverables.
