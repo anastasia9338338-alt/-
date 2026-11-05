@@ -5425,6 +5425,9 @@ do
         end
 
         local SlideForwardConn, SlideBackConn, InputChanged
+        Library:OnUnload(function()
+            if InputChanged then InputChanged:Disconnect();InputChanged=nil end
+        end)
         local CancelSlidingTweens = function()
             if SlideForwardConn then
                 SlideForwardConn:Disconnect()

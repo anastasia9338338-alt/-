@@ -12,4 +12,6 @@ b.Pressed=false;second.Changed:Fire()
 check(not cb.Connected and bc()==nil,'Second release leaked its observer')
 a.Pressed=true;ai.InputBegan:Fire(first);local previous=ac();ai.InputBegan:Fire(first)
 check(not previous.Connected and ac().Connected,'Repeated keydown leaked the old observer')
+local held=ac();Library.Unloaded=true;for _,fn in ipairs(Library.UnloadCallbacks)do fn()end
+check(not held.Connected and ac()==nil,'Unload leaked a held observer when parent skipped addon destruction')
 print('PASS: '..checks..' concurrent hold-key observer regressions')

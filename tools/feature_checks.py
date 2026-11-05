@@ -32,7 +32,9 @@ def run_feature_checks(modules,runner,folder):
         end=library.index('\n        KeyPicker:Update()',start)
         declaration=re.search(r'local SlideForwardConn, SlideBackConn, InputChanged',library)
         assert declaration,'Hold-key observer escaped its picker scope'
-        run('keybind',read('keybind_mock.luau')+declaration[0]+'\n'+library[start:end]+read('keybind_body.luau'))
+        cleanup=re.search(r'Library:OnUnload\(function\(\)\s+if InputChanged then InputChanged:Disconnect\(\);InputChanged=nil end\s+end\)',library)
+        assert cleanup,'Hold-key observer lacks direct unload cleanup'
+        run('keybind',read('keybind_mock.luau')+declaration[0]+'\n'+cleanup[0]+'\n'+library[start:end]+read('keybind_body.luau'))
     if 'SahurModel'in modules and 'LocalModels'in modules:
         program=read('model_mock.luau')+'\nlocal Sahur=(function()\n'+modules['SahurModel']+'\nend)()\n'
         program+='local Models=(function(...)\n'+modules['LocalModels']+'\nend)(function(name)assert(name=="SahurModel");return Sahur end)\n'+read('model_body.luau')

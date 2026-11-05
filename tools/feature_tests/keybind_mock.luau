@@ -10,7 +10,8 @@ local function signal()
  function s:Fire(...)for _,c in ipairs(self.Connections)do if c.Connected then c.Fn(...)end end end
  return s
 end
-local Library={Unloaded=false,Toggled=false}
+local Library={Unloaded=false,Toggled=false,UnloadCallbacks={}}
+function Library:OnUnload(fn)self.UnloadCallbacks[#self.UnloadCallbacks+1]=fn end
 local Enum={UserInputType={Keyboard='Keyboard'}}
 local SpecialKeysInput={}
 local function IsMouseClickInput()return false end
