@@ -3,6 +3,7 @@
 from pathlib import Path
 import argparse, concurrent.futures, re, shutil, subprocess, tempfile, zipfile
 from regressions import check_regressions
+from feature_checks import run_feature_checks
 
 def main():
     parser=argparse.ArgumentParser()
@@ -62,6 +63,7 @@ def main():
             diagnostic_lines=sum(pool.map(analyze_file,[p for p in files if p!=repo/'astral.lua']))
         print(f'ANALYSIS: {diagnostic_lines} diagnostic lines for review (includes missing Roblox definitions and inference limits)')
         check_regressions(modules,embedded[1],runner,folder)
+        run_feature_checks(modules,runner,folder)
     with zipfile.ZipFile(repo/'astral.zip')as archive:
         assert archive.namelist()==['astral.lua']and archive.testzip()is None
         assert archive.read('astral.lua')==(repo/'astral.lua').read_bytes(),'ZIP contains another Lua revision'
