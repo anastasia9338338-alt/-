@@ -203,4 +203,3 @@ function CFrame.fromMatrix(p,right,up,back)back=back or right:Cross(up);return f
 function CFMethods:PointToObjectSpace(p)return self:Inverse()*p end
 function CFMethods:PointToWorldSpace(p)return self*p end
 function Proxy:IsDescendantOfClass(class)local p=self.Parent;while p do if p:IsA(class)then return true end;p=p.Parent end;return false end
-
