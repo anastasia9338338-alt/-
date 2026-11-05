@@ -262,4 +262,32 @@ do
  check(h.WalkSpeed==24 and f.Root.AssemblyLinearVelocity.Z==-24 and f.Root.CanCollide,'Cosmetic locomotion changed real avatar physics')
  f.Controller:Dispose()
 end
+-- A normal Weld's C0 commonly points at the child's centre, not shoulder.
+do
+ local f=fixture();local arm=newNode('Part','Left Arm');arm.Size=Vector3.new(2,.4,.4);arm.CFrame=CFrame.new(-2,3.5,0);arm.Parent=f.Asset
+ local weld=newNode('Weld','ArmWeld');weld.Part0=f.Torso;weld.Part1=arm;weld.C0=f.Torso.CFrame:ToObjectSpace(arm.CFrame);weld.C1=CFrame.new();weld.Parent=f.Torso
+ local renderer=Sahur.Build(f.Context,f.Valid,function()end)
+ renderer:Render(renderer:Sample('idle',0),CFrame.new(),false)
+ check(arm.Position.Y<f.Torso.Position.Y-.5,'Ordinary rigid Weld left the arm in a horizontal rest pose')
+ local idle=f.Torso.Position.Y;renderer:Render(renderer:Sample('crouch',0),CFrame.new(),false)
+ check(f.Torso.Position.Y<idle-.5,'Crouch retained nearly full standing height')
+ local report=renderer:DescribeRig();check(report.AssetId==123969132800771 and report.JointCount==#renderer.Joints,'Rig report did not describe the actual imported model')
+ renderer:Dispose()
+end
+-- Skeletons exported with Bone.001 names still need anatomical pose drivers.
+do
+ local world=newNode('Workspace','World');local asset=newNode('Model','GenericSkeleton')
+ local mesh=newNode('MeshPart','Body');mesh.Size=Vector3.new(2,6,2);mesh.Parent=asset
+ local root=newNode('Bone','Bone.001');root.CFrame=CFrame.new();root.Transform=CFrame.new();root.WorldCFrame=CFrame.new();root.Parent=mesh
+ local function bone(name,x,parent)
+  local b=newNode('Bone',name);b.CFrame=CFrame.new(x,1.3,0);b.Transform=CFrame.new();b.WorldCFrame=CFrame.new(x,1.3,0);b.Parent=parent;return b
+ end
+ local left=bone('Bone.002',-.7,root);bone('Bone.003',-1.8,left)
+ local right=bone('Bone.004',.7,root);bone('Bone.005',1.8,right)
+ local renderer=Sahur.Build({Workspace=world,LoadAsset=function()return{asset}end},function()return true end,function()end)
+ renderer:Render(renderer:Sample('idle',0),CFrame.new(),false)
+ check(left.Transform.RightVector.Y>.8 and right.Transform.RightVector.Y<-.8,'Anonymous arm bones stayed in T-pose')
+ check(not renderer.RigidOnly and renderer:DescribeRig().BoneCount==5,'Anonymous usable skeleton reported rigid')
+ renderer:Dispose()
+end
 print('PASS: '..checks..' model sanitizer/articulation/locomotion/scale/cancellation/visibility checks (mocked)')

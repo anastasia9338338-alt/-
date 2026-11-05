@@ -28,6 +28,7 @@ for _,width in ipairs({120,240,680})do
   close(track.AbsoluteSize.Y,thumb.AbsoluteSize.Y,'Track and circle have different thickness')
   close(thumb.AbsoluteSize.X,thumb.AbsoluteSize.Y,'Handle is not circular')
   close(track.AbsolutePosition.Y+track.AbsoluteSize.Y*.5,thumb.AbsolutePosition.Y+thumb.AbsoluteSize.Y*.5,'Handle vertical centre is misaligned')
+  close(fill.AbsolutePosition.X+fill.AbsoluteSize.X,thumb.AbsolutePosition.X+thumb.AbsoluteSize.X,'Blue fill detached from the moving handle')
   check(thumb.AbsolutePosition.X>=track.AbsolutePosition.X-.00001,'Handle overflows minimum endpoint')
   check(thumb.AbsolutePosition.X+thumb.AbsoluteSize.X<=track.AbsolutePosition.X+track.AbsoluteSize.X+.00001,'Handle overflows maximum endpoint')
   check(track.AbsolutePosition.Y>=bar.AbsolutePosition.Y and track.AbsolutePosition.Y+track.AbsoluteSize.Y<=bar.AbsolutePosition.Y+bar.AbsoluteSize.Y,'Track escapes touch hit region')

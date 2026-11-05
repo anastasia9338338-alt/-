@@ -1,16 +1,161 @@
--- Astral v4.53 | physical pallet strokes, Sahur locomotion and equal slider geometry.
+-- Astral v4.54 | walking rig protection, attached slider fill and corrected Sahur joints.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
+sources.WalkingRig = [========[
+-- Preserve the local Humanoid's walking rig during a grab. No root transform,
+-- velocity, height, walk-speed or ownership writes are made by this controller.
+local Rig={};Rig.__index=Rig
+local falling={Enum.HumanoidStateType.Ragdoll,Enum.HumanoidStateType.FallingDown,Enum.HumanoidStateType.Physics}
+local function ragged(h)
+    local v=h:FindFirstChild("Ragdolled")
+    return v and v:IsA("BoolValue")and v.Value==true or false
+end
+local function body(part,character)
+    return part and part:IsA("BasePart")and part.Parent==character
+end
+function Rig.new()
+    return setmetatable({Records={},States={},Connections={}},Rig)
+end
+function Rig:Call(fn,...)
+    local ok,message=pcall(fn,...)
+    if not ok then self.LastError=tostring(message)end
+    return ok
+end
+function Rig:Record(v)
+    if self.Records[v]then return end
+    local kind,property
+    if v:IsA("Motor6D")and body(v.Part0,self.Character)and body(v.Part1,self.Character)then
+        kind="Motor";property="Enabled"
+    elseif (v:IsA("BallSocketConstraint")or v:IsA("HingeConstraint"))and
+        (v.Name=="BallSocketConstraint"or v.Name:lower():find("ragdoll",1,true))then
+        local a,b=v.Attachment0,v.Attachment1
+        if a and b and body(a.Parent,self.Character)and body(b.Parent,self.Character)then kind="Constraint";property="Enabled"end
+    elseif v:IsA("BasePart")and v.Name=="RagdollLimbPart"and body(v.Parent,self.Character)then
+        kind="Collider";property="CanCollide"
+    end
+    if not kind then return end
+    local record={Kind=kind,Property=property,Original=v[property],CapturedRagdoll=ragged(self.Humanoid)}
+    self.Records[v]=record
+    -- Server/local ragdoll handlers can disable a motor between two frames.
+    -- Reassert only this rig property; retain the game's gravity and movement.
+    if v.GetPropertyChangedSignal then
+        self.Connections[#self.Connections+1]=v:GetPropertyChangedSignal(property):Connect(function()
+            if self.Active and not self.Applying then self:Call(self.ApplyRecord,self,v,record)end
+        end)
+    end
+end
+function Rig:Bind(c,r,h)
+    if self.Character==c and self.Root==r and self.Humanoid==h then return end
+    self:Unbind()
+    self.Character=c;self.Root=r;self.Humanoid=h
+    self.CapturedRagdoll=ragged(h)
+    self.Properties={PlatformStand=h.PlatformStand,AutoRotate=h.AutoRotate}
+    for _,s in ipairs(falling)do self.States[s]=h:GetStateEnabled(s)end
+    for _,v in ipairs(c:GetDescendants())do self:Record(v)end
+    self.Connections[#self.Connections+1]=c.DescendantAdded:Connect(function(v)
+        if self.Character~=c then return end
+        self:Call(self.Record,self,v)
+        if self.Active and self.Records[v]then self:Call(self.ApplyRecord,self,v,self.Records[v])end
+    end)
+end
+function Rig:ApplyRecord(v,record)
+    if not v.Parent or not v:IsDescendantOf(self.Character)then return end
+    local value=false
+    if record.Kind=="Motor"then
+        if ragged(self.Humanoid)then record.RecoveredRagdoll=true end
+        value=record.Original or record.CapturedRagdoll or record.RecoveredRagdoll==true
+    end
+    if v[record.Property]~=value then
+        self.Applying=true
+        local ok,message=pcall(function()v[record.Property]=value end)
+        self.Applying=false
+        if not ok then error(message,0)end
+    end
+    record.Forced=value
+end
+function Rig:Restore()
+    if not self.Active then return end
+    self.Active=false
+    local h=self.Humanoid
+    if not h then return end
+    local stillRagdolled=ragged(h)
+    for v,record in pairs(self.Records)do
+        self:Call(function()
+            if not v.Parent or v[record.Property]~=record.Forced then return end
+            local value=record.Original
+            if stillRagdolled then value=record.Kind~="Motor"
+            elseif record.CapturedRagdoll or record.RecoveredRagdoll then value=record.Kind=="Motor"end
+            v[record.Property]=value
+        end)
+        record.Forced=nil
+    end
+    if h.Parent==self.Character then
+        for state,enabled in pairs(self.States)do self:Call(h.SetStateEnabled,h,state,enabled)end
+        local platform,rotate=self.Properties.PlatformStand,self.Properties.AutoRotate
+        if self.CapturedRagdoll and not stillRagdolled then platform=false;rotate=true end
+        if h.PlatformStand==false then h.PlatformStand=platform end
+        if h.AutoRotate==true then h.AutoRotate=rotate end
+    end
+end
+function Rig:Step(c,r,h,enabled,held,now)
+    if not enabled or not c or not r or not r.Parent or r.Anchored or not h or h.Parent~=c or h.Health<=0 then self:Unbind();return end
+    self:Bind(c,r,h)
+    -- A real seat/vehicle owns its own controller. Do not force it to stand.
+    if h.SeatPart or h.Sit then self:Restore();return end
+    local attacking=held or ragged(h)
+    if attacking then self.Until=now+.2 end
+    if not attacking and now>=(self.Until or 0)then self:Restore();return end
+    self.Active=true
+    for state in pairs(self.States)do
+        if h:GetStateEnabled(state)then h:SetStateEnabled(state,false)end
+    end
+    for v,record in pairs(self.Records)do self:ApplyRecord(v,record)end
+    if h.PlatformStand then h.PlatformStand=false end
+    if not h.AutoRotate then h.AutoRotate=true end
+    local state=h:GetState()
+    if state==Enum.HumanoidStateType.Physics or state==Enum.HumanoidStateType.Ragdoll or state==Enum.HumanoidStateType.FallingDown
+        or state==Enum.HumanoidStateType.PlatformStanding or state==Enum.HumanoidStateType.GettingUp then
+        h:ChangeState(h.FloorMaterial==Enum.Material.Air and Enum.HumanoidStateType.Freefall or Enum.HumanoidStateType.Running)
+    end
+end
+function Rig:Unbind()
+    -- Disconnect first, so restoration cannot re-enter our property handlers.
+    for _,connection in ipairs(self.Connections)do connection:Disconnect()end
+    table.clear(self.Connections)
+    self:Restore()
+    table.clear(self.Records);table.clear(self.States)
+    self.Character=nil;self.Root=nil;self.Humanoid=nil;self.Until=nil
+end
+function Rig:Dispose()self:Unbind()end
+return Rig
+
+]========]
 sources.AntiGrabWalk = [========[
--- Native release requests without a second character movement controller.
--- Normal / No Ragdoll never write CFrame, velocity, collision or walk speed.
+-- Native release plus local walking-rig protection. No root transform,
+-- velocity, height or walk-speed controller is introduced.
+local requireModule=...
+local WalkingRig=requireModule("WalkingRig")
 local Guard={};Guard.__index=Guard
 local nativeModes={Normal=true,["No Ragdoll"]=true}
 local knownModes={Normal=true,["No Ragdoll"]=true,["Anti-Kill"]=true,["Escapes Anything, but buggy"]=true}
 function Guard.Install(context)
     local self=setmetatable({Context=context,Calls=0,ClearCalls=0,Status="Disabled",Generation=0},Guard)
+    self.Rig=WalkingRig.new()
+    local signal=context.RunService.PreSimulation or context.RunService.Heartbeat
+    self.PhysicsConnection=signal:Connect(function()
+        if self.Closed then return end
+        local ok,message=pcall(self.UpdateRig,self)
+        if not ok then self.LastError="Walking rig: "..tostring(message);self.Rig:Call(self.Rig.Unbind,self.Rig)end
+    end)
     self.Connection=context.RunService.Heartbeat:Connect(function()self:Refresh()end)
     return self
+end
+function Guard:UpdateRig()
+    local ctx=self.Context
+    local c,r,h=ctx.Character()
+    local mode=ctx.Mode();if not knownModes[mode]then mode="Normal"end
+    local enabled=not self.Closed and ctx.Enabled()and nativeModes[mode]and not(ctx.Blocked and ctx.Blocked())
+    self.Rig:Step(c,r,h,enabled,ctx.Held(),ctx.Clock())
 end
 function Guard:SetActive(value)
     if self.Reported==value then return end
@@ -52,20 +197,6 @@ function Guard:Stop(reason)
     end
     self:SetActive(false);self.Status=reason or "Disabled"
 end
-function Guard:Recover(session,now)
-    if now<(session.NextRecover or 0)then return end
-    session.NextRecover=now+.15
-    local h=session.Humanoid
-    local ragdoll=h:FindFirstChild("Ragdolled")
-    -- A local state request is not a server release acknowledgement. Recover
-    -- only after the real game flag clears, while already on the ground.
-    if not ragdoll or not ragdoll:IsA("BoolValue")or ragdoll.Value or h.PlatformStand or h.Sit or h.SeatPart
-        or h.FloorMaterial==Enum.Material.Air then return end
-    local state=h:GetState()
-    if state==Enum.HumanoidStateType.Ragdoll or state==Enum.HumanoidStateType.FallingDown or state==Enum.HumanoidStateType.Physics then
-        h:ChangeState(Enum.HumanoidStateType.Running)
-    end
-end
 function Guard:Step()
     if self.Closed then return end
     local ctx=self.Context
@@ -92,8 +223,7 @@ function Guard:Step()
         if self:Call(ctx.Ragdoll,r,mode=="Anti-Kill"and .11 or 0)then self.ClearCalls+=1 end
     end
     if nativeModes[mode]then
-        self:Recover(session,now)
-        self.Status="Native release requested; normal movement retained"
+        self.Status="Walking rig protected; native release requested"
     elseif mode=="Anti-Kill"then
         if not h.SeatPart then
             if not session.WroteSit then session.OriginalSit=h.Sit;session.WroteSit=true end
@@ -111,13 +241,15 @@ function Guard:Step()
 end
 function Guard:Refresh()
     if self.Closed then return end
-    local ok,message=pcall(self.Step,self)
-    if not ok then self.LastError=tostring(message);self:Stop("Anti Grab error")end
+    local ok,message=pcall(function()self:UpdateRig();self:Step()end)
+    if not ok then self.LastError=tostring(message);self.Rig:Call(self.Rig.Unbind,self.Rig);self:Stop("Anti Grab error")end
 end
 function Guard:Dispose()
     if self.Closed then return end
     self.Closed=true
     if self.Connection then self.Connection:Disconnect()end
+    if self.PhysicsConnection then self.PhysicsConnection:Disconnect()end
+    self.Rig:Dispose()
     self:Stop("Disabled")
 end
 return Guard
@@ -197,12 +329,12 @@ end
 local function poseRotation(kind,pose,detail,lower)
     local walk=pose.Walk or 0;local run=pose.Run or 0;local crouch=pose.Crouch or 0
     local sit=pose.SitAmount or(pose.Sit and 1 or 0);local air=pose.Air or 0
-    local phase=(pose.Phase or 0)*math.pi*2;local wave=math.sin(phase)*walk
+    local phase=(pose.Phase or 0)*math.pi*2;local wave=math.sin(phase)*walk*(1-crouch*.55)*(1-air*.8)
     local side=(kind=="LeftLeg"or kind=="LeftArm")and 1 or -1
-    if detail=="Knee"then return CFrame.Angles((crouch*.9+sit*.55+run*math.max(0,-math.cos(phase)*side)*.7),0,0)end
-    if detail=="Elbow"then return CFrame.Angles(-(.12*walk+.65*run+.35*crouch),0,0)end
+    if detail=="Knee"then return CFrame.Angles((crouch*1.35+sit*.9+run*math.max(0,-math.cos(phase)*side)*.7),0,0)end
+    if detail=="Elbow"then return CFrame.Angles(-(.28+.12*walk+.65*run+.35*crouch),0,0)end
     if kind=="LeftLeg"or kind=="RightLeg"then
-        return CFrame.Angles(wave*side*(.58+.28*run)*(1-.5*crouch)-crouch*1.18-sit*1.28-air*.22,0,-(pose.Strafe or 0)*walk*.06)
+        return CFrame.Angles(wave*side*(.58+.28*run)*(1-.5*crouch)-crouch*1.4-sit*1.35-air*.22,0,-(pose.Strafe or 0)*walk*.06)
     elseif kind=="LeftArm"or kind=="RightArm"then
         return CFrame.Angles(-wave*side*(.35+.4*run)-sit*.3-crouch*.2-air*.55,0,(lower or 0)+side*(.035*walk+.12*air))
     elseif kind=="Body"then
@@ -344,7 +476,10 @@ function Sahur.Build(context,valid,status)
         for _,v in ipairs(self.Model:GetDescendants())do
             if v:IsA("Motor6D")or v:IsA("Weld")or v:IsA("ManualWeld")then
                 if records[v.Part0]and records[v.Part1]then
-                    addEdge(v.Part0,v.Part1,records[v.Part0].Rest*v.C0*(v:IsA("Motor6D")and v.Transform or IDENTITY),v.Name)
+                    -- A Weld stores a rigid offset, often at the arm's centre.
+                    -- Only a Motor6D has an authored articulation pivot.
+                    local jointPivot=v:IsA("Motor6D")and records[v.Part0].Rest*v.C0*v.Transform or nil
+                    addEdge(v.Part0,v.Part1,jointPivot,v.Name)
                 end
                 v:Destroy()
             elseif v:IsA("WeldConstraint")then
@@ -401,19 +536,39 @@ function Sahur.Build(context,valid,status)
         -- no joints were supplied. Their rendered geometry stays anchored.
         if not known[core.Part]then attach(rootPart,core.Part,inferredPivot(core),"Body");traverse()end
         for _,record in ipairs(self.Parts)do if not known[record.Part]then attach(core.Part,record.Part,nil,record.Part.Name);traverse()end end
+        local boneRoles={}
         for _,v in ipairs(bones)do
-            local boneRole=role(v.Name);local ancestor=v.Parent
+            local r=role(v.Name)
+            if not r then
+                -- Exporters frequently name a complete skeleton Bone.001…;
+                -- infer its anatomical branches from bind-pose positions.
+                local point=pivot:ToObjectSpace(v.WorldCFrame).Position
+                local dx=point.X-body.X
+                if point.Y<waist+.15 and math.abs(dx)>.12 then r=dx<0 and "LeftLeg"or "RightLeg"
+                elseif point.Y>waist+.25 and point.Y<self.Bottom+height*.88 and math.abs(dx)>.3 then r=dx<0 and "LeftArm"or "RightArm"
+                elseif point.Y>self.Bottom+height*.72 and math.abs(dx)<.5 then r="Head"
+                elseif point.Y>=waist-.15 and math.abs(dx)<.3 then r="Body"end
+            end
+            boneRoles[v]=r
+        end
+        for _,v in ipairs(bones)do
+            local boneRole=boneRoles[v];local ancestor=v.Parent
             while boneRole and ancestor and ancestor:IsA("Bone")do
-                if role(ancestor.Name)==boneRole then boneRole=nil;break end
+                if boneRoles[ancestor]==boneRole then boneRole=nil;break end
                 ancestor=ancestor.Parent
             end
             local detailName=v.Name:lower()
             local detail=(detailName:find("knee",1,true)or detailName:find("lowerleg",1,true))and "Knee"
                 or((detailName:find("elbow",1,true)or detailName:find("forearm",1,true))and "Elbow"or nil)
+            if not detail and v.Parent and v.Parent:IsA("Bone")and boneRoles[v]==boneRoles[v.Parent]then
+                local point=pivot:ToObjectSpace(v.WorldCFrame).Position
+                if (boneRoles[v]=="LeftLeg"or boneRoles[v]=="RightLeg")and point.Y>self.Bottom+height*.15 and point.Y<self.Bottom+height*.35 then detail="Knee"
+                elseif (boneRoles[v]=="LeftArm"or boneRoles[v]=="RightArm")and math.abs(point.X-body.X)>height*.18 and math.abs(point.X-body.X)<height*.35 then detail="Elbow"end
+            end
             local lower=0
             if boneRole=="LeftArm"or boneRole=="RightArm"then
-                for _,child in ipairs(v:GetDescendants())do if child:IsA("Bone")and role(child.Name)==boneRole then
-                    local d=child.WorldCFrame.Position-v.WorldCFrame.Position
+                for _,child in ipairs(v:GetDescendants())do if child:IsA("Bone")and boneRoles[child]==boneRole then
+                    local d=pivot:VectorToObjectSpace(child.WorldCFrame.Position-v.WorldCFrame.Position)
                     if math.abs(d.X)>.2 and d.Y>-math.abs(d.X)*.55 then lower=(boneRole=="LeftArm"and 1 or -1)*math.clamp(math.atan2(math.abs(d.X),math.max(.02,-d.Y))-.2,0,1.35)end
                     break
                 end end
@@ -449,6 +604,13 @@ function Sahur.Build(context,valid,status)
     end
     return self
 end
+function Sahur:DescribeRig()
+    local parts,bones={},{}
+    for _,r in ipairs(self.Parts)do parts[#parts+1]={Name=r.Part.Name,Class=r.Part.ClassName,Role=r.Role or "unassigned"}end
+    for i,r in ipairs(self.Bones)do if i<=96 then bones[#bones+1]={Name=r.Bone.Name,Role=r.Role or r.Detail or "unassigned"}end end
+    return {AssetId=Sahur.AssetId,Parts=parts,Bones=bones,BoneCount=#self.Bones,JointCount=#self.Joints,
+        Animated=self.Animated,StaticMesh=self.RigidOnly,FaceRig=self.HasFaceRig}
+end
 function Sahur:Sample(style,phase)
     return {Phase=(style=="walk"or style=="run")and phase or 0,Idle=style=="idle"and phase or 0,
         Walk=(style=="walk"or style=="run")and 1 or 0,Run=style=="run"and 1 or 0,
@@ -482,7 +644,7 @@ function Sahur:Render(pose,ground,hidden)
     local scale=self.Scale
     local walk=pose.Walk or 0
     local sit=pose.SitAmount or(pose.Sit and 1 or 0);local crouch=pose.Crouch or 0
-    local lift=math.abs(math.sin((pose.Phase or 0)*math.pi*2))*.045*walk-.72*crouch-.5*sit
+    local lift=math.abs(math.sin((pose.Phase or 0)*math.pi*2))*.045*walk-1.05*crouch-.5*sit
     lift+=math.sin((pose.Idle or 0)*math.pi*2)*.012*(1-walk)
     local anchor=ground*CFrame.new(0,-self.Bottom*scale+lift,0)
     local frames={}
@@ -9088,7 +9250,9 @@ do
             end
 
             local X = (Slider.Value - Slider.Min) / (Slider.Max - Slider.Min)
-            Fill.Size = UDim2.fromScale(X, 1)
+            -- Use the same inset travel as the handle. The fill extends under
+            -- its full diameter, so rounded caps never leave a moving gap.
+            Fill.Size = UDim2.new(X,SliderDiameter*(1-X),1,0)
             -- Inset the centre at both ends, so the entire circle stays in the track.
             Thumb.Position = UDim2.new(X,SliderDiameter*(.5-X),.5,0)
         end
@@ -18455,7 +18619,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.53 | FTAP")
+                                warn("Astral v4.54 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -22113,6 +22277,7 @@ end
                     tbl12.AntiGrabWalk=requireModule("AntiGrabWalk").Install({RunService=RunService,Clock=os.clock,Spawn=task.spawn,
                         Enabled=function()return not flag11 and tbl8.AntiGrab and not tbl8.GucciAntiGrab end,
                         Held=function()return isHeld.Value==true end,
+                        Blocked=function()return tbl8.Flight==true end,
                         Mode=function()return tbl9.AGType end,
                         Character=function()return tbl12.Char()end,
                         Struggle=function()tbl11.Struggle:FireServer()end,
@@ -35944,7 +36109,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.53"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.54"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -36068,7 +36233,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.53",true)
+            box:AddLabel("Astral v4.54",true)
         end
 
         do
@@ -36877,7 +37042,7 @@ Escape Timer: %*]]
 		Antis:AddToggle("AntiGrab", {
 			Text = "Anti Grab",
 			Default = false,
-			Tooltip = "Requests release while preserving normal walking and gravity. Normal / No Ragdoll use no vehicle.",
+			Tooltip = "Protects walking joints and Humanoid states during a grab; requests native release. Normal / No Ragdoll use no vehicle or height lock.",
 			Callback = function(antiGrab)
 				tbl8.AntiGrab = antiGrab
 				tbl12.AntiGrab()
@@ -38958,7 +39123,15 @@ Escape Timer: %*]]
         models:AddSlider("AstralLocalModelAnimationSpeed",{Text="Animation Speed",Default=1,Min=.5,Max=1.7,Rounding=2,Compact=true,Suffix="x",Callback=function(v)tbl12.LocalModels.AnimationSpeed=v end})
         models:AddToggle("AstralLocalModelFirstPerson",{Text="Hide In First Person",Default=true,Callback=function(v)tbl12.LocalModels.HideFirstPerson=v end})
         models:AddButton({Text="Reload Model",Func=function()tbl12.LocalModels:Retry()end})
-        models:AddLabel("CS-style animated poses and movement inertia. Hold Ctrl or C to crouch the model. Facial movement uses available face bones.",true)
+        models:AddButton({Text="Copy Model Info",Func=function()
+            local renderer=tbl12.LocalModels.Renderer
+            if not renderer then fn18("Enable Sahur and wait for loading first.");return end
+            local copy=setclipboard or toclipboard
+            if type(copy)~="function"then fn18("Clipboard is unavailable in this executor.");return end
+            copy(game:GetService("HttpService"):JSONEncode(renderer:DescribeRig()))
+            fn18("Loaded model structure copied.")
+        end})
+        models:AddLabel("CS-style animated poses and movement inertia. Hold Ctrl or C to crouch the model. Facial movement uses available face bones. If limbs remain rigid, Copy Model Info reports the loaded structure.",true)
         local status=models:AddLabel("Disabled",true);local elapsed=0
         lib:GiveSignal(RunService.Heartbeat:Connect(function(dt)
             elapsed+=dt;if elapsed<.2 then return end;elapsed=0;status:SetText(tbl12.LocalModels.Status)
@@ -41919,6 +42092,8 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 	lib3:SetIgnoreIndexes({
         -- Old configs must not silently restore a hold-only kick.
         "RagdollNK",
+        "AstralLocalModelWalk",
+        "AstralLocalModelCrouch",
 		"WhitelistDropdown",
 		"ObjectGroup",
 		"GroupNoclip",
@@ -42296,9 +42471,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.53: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.54: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.53 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.54 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -91127,7 +91302,7 @@ function Models:Step(dt)
     end
     local activity=seated and "sitting"or crouching and "crouching"or airborne and "airborne"or self.RunBlend>.5 and "running"or moving and "walking"or "idle"
     self.Status="Tung Tung Tung Sahur · "..activity
-    if renderer.RigidOnly then self.Status..=" · asset has no separate limbs/bones"
+    if renderer.RigidOnly then self.Status..=" · rigid asset: a rigged mesh is required"
     elseif renderer.HasFaceRig==false then self.Status..=" · static face texture"end
 end
 function Models:Dispose()

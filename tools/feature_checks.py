@@ -19,7 +19,9 @@ def run_feature_checks(modules,runner,folder):
     if 'ObjectESP'in modules:
         run('esp',read('esp_mock.luau')+'\nlocal ObjectESP=(function(...)\n'+modules['ObjectESP']+"\nend)(function(name)assert(name=='AssetCatalog');return {Items={Train='train-picture',BallSnowball='snow-picture'}}end)\n"+read('esp_body.luau'))
     if 'AntiGrabWalk'in modules:
-        run('antigrab',read('antigrab_mock.luau')+'\nlocal Guard=(function()\n'+modules['AntiGrabWalk']+'\nend)()\n'+read('antigrab_body.luau'))
+        program=read('antigrab_mock.luau')+'\nlocal WalkingRig=(function()\n'+modules['WalkingRig']+'\nend)()\n'
+        program+='Guard=(function(...)\n'+modules['AntiGrabWalk']+'\nend)(function(name)assert(name=="WalkingRig");return WalkingRig end)\n'+read('antigrab_body.luau')
+        run('antigrab',program)
     if 'PalletRagdoll'in modules and 'Resonance29Ragdoll'in modules:
         program=read('kick_mock.luau')+'\nlocal Source=(function()\n'+modules['Resonance29Ragdoll']+'\nend)()\n'
         program+='local Pallet=(function(...)\n'+modules['PalletRagdoll']+'\nend)(function(name)assert(name=="Resonance29Ragdoll");return Source end)\n'+read('kick_body.luau')
