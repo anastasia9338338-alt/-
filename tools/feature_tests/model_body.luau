@@ -290,4 +290,15 @@ do
  check(not renderer.RigidOnly and renderer:DescribeRig().BoneCount==5,'Anonymous usable skeleton reported rigid')
  renderer:Dispose()
 end
+-- Changing the selected model while its old load is queued must not build
+-- or show that superseded skin, or hide the source avatar while loading.
+do
+ local f=localFixture();f.Controller:SetEnabled(true);f.Controller:SetChoice('Aqua (CS:GO)')
+ f.Data.Queue[1]();check(f.Data.Builds==0,'Superseded model load still ran its asset importer')
+ f.Data.Queue[2]();f.Controller:Step(1/60)
+ check(f.Data.Builds==1 and f.Controller.Choice=='Aqua (CS:GO)'and f.Root.LocalTransparencyModifier==1,'New model selection did not become the only active renderer')
+ f.Controller:SetChoice('Tung Tung Tung Sahur')
+ check(f.Root.LocalTransparencyModifier==0 and f.Controller.Loading,'Switching model left the old avatar hidden during loading')
+ f.Controller:Dispose();f.Data.Queue[3]();check(f.Data.Builds==1,'Unloaded model selector started a queued importer')
+end
 print('PASS: '..checks..' model sanitizer/articulation/locomotion/scale/cancellation/visibility checks (mocked)')

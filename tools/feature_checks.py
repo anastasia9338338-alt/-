@@ -37,6 +37,12 @@ def run_feature_checks(modules,runner,folder):
         cleanup=re.search(r'Library:OnUnload\(function\(\)\s+if InputChanged then InputChanged:Disconnect\(\);InputChanged=nil end\s+end\)',library)
         assert cleanup,'Hold-key observer lacks direct unload cleanup'
         run('keybind',read('keybind_mock.luau')+declaration[0]+'\n'+cleanup[0]+'\n'+library[start:end]+read('keybind_body.luau'))
+    if {'AquaAssets','AquaPose','AquaMesh','AquaModel'}<=modules.keys():
+        program=read('model_mock.luau')+'\n'+read('aqua_mock.luau')
+        for name,alias in [('AquaAssets','Assets'),('AquaPose','Pose'),('AquaMesh','Mesh')]:
+            program+='\nlocal '+alias+'=(function()\n'+modules[name]+'\nend)()\n'
+        program+='local function BuildModel(meshModule) return (function(...)\n'+modules['AquaModel']+'\nend)(function(name)if name=="AquaAssets"then return Assets elseif name=="AquaPose"then return Pose elseif name=="AquaMesh"then return meshModule end;error(name)end)end\nlocal Model=BuildModel(Mesh)\n'
+        run('aqua',program+read('aqua_body.luau'))
     if 'SahurModel'in modules and 'LocalModels'in modules:
         program=read('model_mock.luau')+'\nlocal Sahur=(function()\n'+modules['SahurModel']+'\nend)()\n'
         program+='local Models=(function(...)\n'+modules['LocalModels']+'\nend)(function(name)assert(name=="SahurModel");return Sahur end)\n'+read('model_body.luau')
