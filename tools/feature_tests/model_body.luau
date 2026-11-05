@@ -167,4 +167,99 @@ do
  check((f.Left.CFrame.UpVector-lower.CFrame.UpVector).Magnitude<1e-6 and(lower.CFrame.UpVector-foot.CFrame.UpVector).Magnitude<1e-6,'R15 lower chain failed to inherit proximal pose')
  renderer:Dispose()
 end
-print('PASS: '..checks..' model sanitizer/pose/scale/cancellation/visibility checks (mocked)')
+-- Reversed WeldConstraints and separate mesh pieces both require real limb
+-- articulation; neither is an assurance that a one-piece mesh has a rig.
+do
+ local f=fixture();local arms={}
+ for _,side in ipairs({'Left','Right'})do
+  local arm=newNode('Part',side..'Arm');arm.Size=Vector3.new(2,.4,.4)
+  arm.CFrame=CFrame.new(side=='Left'and -2 or 2,3.5,0);arm.Parent=f.Asset;arms[side]=arm
+  local weld=newNode('WeldConstraint',side..'Shoulder');weld.Part0=arm;weld.Part1=f.Torso;weld.Parent=arm
+ end
+ local renderer=Sahur.Build(f.Context,f.Valid,function()end)
+ renderer:Render(renderer:Sample('idle',0),CFrame.new(),false)
+ check(arms.Left.Position.Y<f.Torso.Position.Y and arms.Right.Position.Y<f.Torso.Position.Y,'Reversed welded T-pose arms did not hang below shoulders')
+ local roles={};for _,edge in ipairs(renderer.Joints)do roles[edge.B]=edge.Role end
+ check(roles[arms.Left]=='LeftArm'and roles[arms.Right]=='RightArm','WeldConstraint edges lost limb animation roles')
+ local torsoIdle=f.Torso.CFrame.UpVector;local idleY=f.Torso.Position.Y
+ renderer:Render(renderer:Sample('crouch',0),CFrame.new(),false)
+ check(f.Torso.Position.Y<idleY-.2 and(f.Torso.CFrame.UpVector-torsoIdle).Magnitude>.1,'Crouching did not bend/lower the torso')
+ renderer:Render(renderer:Sample('sit',0),CFrame.new(),false)
+ check((f.Torso.CFrame.UpVector-torsoIdle).Magnitude>.05,'Sitting did not change torso posture')
+ renderer:Dispose()
+end
+do
+ local f=fixture()
+ for _,v in ipairs(f.Asset:GetDescendants())do if v:IsA('Motor6D')or v:IsA('WeldConstraint')then v:Destroy()end end
+ f.Torso.Name='MeshBody';f.Left.Name='Mesh001';f.Right.Name='Mesh002'
+ local arm=newNode('Part','Mesh003');arm.Size=Vector3.new(2,.4,.4);arm.CFrame=CFrame.new(-2,3.5,0);arm.Parent=f.Asset
+ local renderer=Sahur.Build(f.Context,f.Valid,function()end)
+ local roles={};for _,edge in ipairs(renderer.Joints)do roles[edge.B]=edge.Role end
+ check(roles[f.Left]=='LeftLeg'and roles[f.Right]=='RightLeg'and roles[arm]=='LeftArm','Disconnected unnamed geometry lacked inferred hips/shoulder')
+ renderer:Render(renderer:Sample('walk',.25),CFrame.new(),false)
+ check((f.Left.CFrame.UpVector-f.Right.CFrame.UpVector).Magnitude>.1,'Disconnected inferred legs stayed rigid')
+ check(not renderer.RigidOnly,'Articulated separate limbs were reported rigid')
+ renderer:Dispose()
+end
+do
+ local world=newNode('Workspace','World');local asset=newNode('Model','StaticModel')
+ local mesh=newNode('MeshPart','SingleMesh');mesh.Size=Vector3.new(2,6,2);mesh.Parent=asset
+ local renderer=Sahur.Build({Workspace=world,LoadAsset=function()return{asset}end},function()return true end,function()end)
+ check(renderer.RigidOnly and not renderer.HasFaceRig,'Single textured mesh incorrectly advertised limbs/facial rig')
+ renderer:Render(renderer:Sample('run',.25),CFrame.new(),false)
+ check(mesh.Size.Y>5,'Rigid mesh was stretched to invent separate limb motion')
+ renderer:Dispose()
+end
+do
+ local f=fixture();local head=f.Asset:FindFirstChild('Head');local face=newNode('FaceControls','FaceControls');face.Parent=head
+ local renderer=Sahur.Build(f.Context,f.Valid,function()end)
+ check(renderer.HasFaceRig,'DynamicHead FaceControls was not discovered')
+ renderer:Render(renderer:Sample('idle',3.55/4),CFrame.new(),false)
+ check(face.LeftEyeClosed>.9 and face.RightEyeClosed>.9,'Available facial controls did not blink')
+ renderer:Dispose()
+end
+-- Import order and a rotated first child must not rotate a loose model sideways.
+do
+ local world=newNode('Workspace','World');local asset=newNode('Model','Loose')
+ local arm=newNode('Part','LeftArm');arm.Size=Vector3.new(.4,2,.4);arm.CFrame=CFrame.new(-2,3.5,0)*CFrame.Angles(0,0,math.pi/2);arm.Parent=asset
+ local body=newNode('Part','Torso');body.Size=Vector3.new(2,3,1);body.CFrame=CFrame.new(0,3,0);body.Parent=asset
+ local leg=newNode('Part','LeftLeg');leg.Size=Vector3.new(.6,2,.6);leg.CFrame=CFrame.new(-.5,.5,0);leg.Parent=asset
+ local renderer=Sahur.Build({Workspace=world,LoadAsset=function()return{asset}end},function()return true end,function()end)
+ renderer:Render(renderer:Sample('idle',0),CFrame.new(),false)
+ check(renderer.Root==body and body.CFrame.UpVector.Y>.99,'Rotated first asset child changed the core/up basis')
+ renderer:Dispose()
+end
+-- A skinned rest Transform translation scales, and torso bones do not receive
+-- the same body lean a second time from their carrier mesh.
+do
+ local world=newNode('Workspace','World');local asset=newNode('Model','Skinned')
+ local mesh=newNode('MeshPart','Body');mesh.Size=Vector3.new(2,6,2);mesh.Parent=asset
+ local spine=newNode('Bone','Spine');spine.CFrame=CFrame.new();spine.Transform=CFrame.new(0,.1,0);spine.WorldCFrame=CFrame.new();spine.Parent=mesh
+ local renderer=Sahur.Build({Workspace=world,LoadAsset=function()return{asset}end},function()return true end,function()end)
+ renderer:SetScale(1.3);renderer:Render(renderer:Sample('crouch',0),CFrame.new(),false)
+ check(math.abs(spine.Transform.Position.Y-.13)<1e-6,'Authored Bone.Transform translation did not scale')
+ check(mesh.CFrame.UpVector.Y>.99 and spine.Transform.UpVector.Z>.1,'Carrier and spine compounded the same torso lean')
+ renderer:Dispose()
+end
+-- Controller smooths input-driven pose transitions while leaving the actual
+-- avatar movement properties and velocity completely unchanged.
+do
+ local f=localFixture();local h=f.Character:FindFirstChild('Humanoid')
+ local crouch=true;f.Controller.Context.Crouching=function()return crouch end
+ local poses={};f.Controller:SetEnabled(true);f.Data.Queue[1]()
+ f.Controller.Renderer.Sample=Sahur.Sample;f.Controller.Renderer.Blend=Sahur.Blend
+ f.Controller.Renderer.Render=function(_,pose)poses[#poses+1]=pose;return true end
+ h.WalkSpeed=24;h.MoveDirection=Vector3.new(0,0,-1);f.Root.AssemblyLinearVelocity=Vector3.new(0,0,-24)
+ f.Controller:Step(1/60);f.Controller:Step(1/60)
+ local partial=poses[#poses].Crouch
+ check(partial>0 and partial<1,'Crouch transition snapped instead of blending')
+ for _=1,45 do f.Controller:Step(1/60)end
+ check(poses[#poses].Crouch>.99 and poses[#poses].Run<.01,'Crouch pose failed to settle or incorrectly sprinted')
+ crouch=false;for _=1,60 do f.Controller:Step(1/60)end
+ check(poses[#poses].Run>.7 and poses[#poses].Walk>.99,'Running failed to derive from actual locomotion')
+ f.Controller.CrouchInput=false;crouch=true;for _=1,30 do f.Controller:Step(1/60)end
+ check(poses[#poses].Crouch<.01,'Disabled crouch input still changed the pose')
+ check(h.WalkSpeed==24 and f.Root.AssemblyLinearVelocity.Z==-24 and f.Root.CanCollide,'Cosmetic locomotion changed real avatar physics')
+ f.Controller:Dispose()
+end
+print('PASS: '..checks..' model sanitizer/articulation/locomotion/scale/cancellation/visibility checks (mocked)')

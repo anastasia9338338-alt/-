@@ -1,4 +1,4 @@
--- Astral v4.52 | Sahur cosmetic model, world ESP filtering and native walking Anti Grab.
+-- Astral v4.53 | physical pallet strokes, Sahur locomotion and equal slider geometry.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.AntiGrabWalk = [========[
@@ -173,26 +173,47 @@ Sahur.Name="Tung Tung Tung Sahur"
 local IDENTITY=CFrame.new()
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
 local function role(name)
-    name=name:lower():gsub("[%s_%-]","")
-    if name:find("left",1,true)then
-        if name:find("leg",1,true)or name:find("hip",1,true)or name:find("foot",1,true)then return "LeftLeg"end
-        if name:find("arm",1,true)or name:find("shoulder",1,true)or name:find("hand",1,true)then return "LeftArm"end
-    elseif name:find("right",1,true)then
-        if name:find("leg",1,true)or name:find("hip",1,true)or name:find("foot",1,true)then return "RightLeg"end
-        if name:find("arm",1,true)or name:find("shoulder",1,true)or name:find("hand",1,true)then return "RightArm"end
-    elseif name:find("neck",1,true)or name=="head"then return "Head"end
-end
-local function poseRotation(kind,pose)
-    if pose.Sit then
-        if kind=="LeftLeg"or kind=="RightLeg"then return CFrame.Angles(-1.35,0,0)end
-        if kind=="LeftArm"or kind=="RightArm"then return CFrame.Angles(-.25,0,0)end
+    name=name:lower():gsub("[%s_%-%.:]","")
+    local side=name:find("left",1,true)and "Left"or name:find("right",1,true)and "Right"
+    if not side then
+        if name:match("^larm")or name:match("^lleg")or name:match("^lhand")or name:match("^lfoot")then side="Left"
+        elseif name:match("^rarm")or name:match("^rleg")or name:match("^rhand")or name:match("^rfoot")then side="Right"end
     end
-    local wave=math.sin(pose.Phase*math.pi*2)*pose.Walk
-    if kind=="LeftLeg"then return CFrame.Angles(wave*.6,0,0)
-    elseif kind=="RightLeg"then return CFrame.Angles(-wave*.6,0,0)
-    elseif kind=="LeftArm"then return CFrame.Angles(-wave*.35,0,-.035*pose.Walk)
-    elseif kind=="RightArm"then return CFrame.Angles(wave*.25,0,.035*pose.Walk)
-    elseif kind=="Head"then return CFrame.Angles(0,math.sin(pose.Idle*math.pi*2)*.025,0)end
+    if name:find("eyelid",1,true)or name:find("blink",1,true)then return "Lid"end
+    if name:find("eyebrow",1,true)or name:find("brow",1,true)then return "Brow"end
+    if name:find("jaw",1,true)then return "Jaw"end
+    if name:find("eye",1,true)then return "Eye"end
+    if side then
+        if name:find("leg",1,true)or name:find("hip",1,true)or name:find("foot",1,true)or name:find("thigh",1,true)or name:find("calf",1,true)then return side.."Leg"end
+        if name:find("arm",1,true)or name:find("shoulder",1,true)or name:find("hand",1,true)or name:find("clavicle",1,true)then return side.."Arm"end
+    end
+    if name:find("neck",1,true)or name:find("head",1,true)then return "Head"end
+    if name:find("torso",1,true)or name:find("spine",1,true)or name=="body"or name=="chest"then return "Body"end
+end
+local function blink(pose)
+    local t=(pose.Idle or 0)*4%4
+    return math.clamp(1-math.abs(t-3.55)/.065,0,1)
+end
+local function poseRotation(kind,pose,detail,lower)
+    local walk=pose.Walk or 0;local run=pose.Run or 0;local crouch=pose.Crouch or 0
+    local sit=pose.SitAmount or(pose.Sit and 1 or 0);local air=pose.Air or 0
+    local phase=(pose.Phase or 0)*math.pi*2;local wave=math.sin(phase)*walk
+    local side=(kind=="LeftLeg"or kind=="LeftArm")and 1 or -1
+    if detail=="Knee"then return CFrame.Angles((crouch*.9+sit*.55+run*math.max(0,-math.cos(phase)*side)*.7),0,0)end
+    if detail=="Elbow"then return CFrame.Angles(-(.12*walk+.65*run+.35*crouch),0,0)end
+    if kind=="LeftLeg"or kind=="RightLeg"then
+        return CFrame.Angles(wave*side*(.58+.28*run)*(1-.5*crouch)-crouch*1.18-sit*1.28-air*.22,0,-(pose.Strafe or 0)*walk*.06)
+    elseif kind=="LeftArm"or kind=="RightArm"then
+        return CFrame.Angles(-wave*side*(.35+.4*run)-sit*.3-crouch*.2-air*.55,0,(lower or 0)+side*(.035*walk+.12*air))
+    elseif kind=="Body"then
+        return CFrame.Angles((pose.LeanX or 0)+.16*run+.3*crouch+.13*sit,(pose.Turn or 0)*.07,(pose.LeanZ or 0))
+    elseif kind=="Head"then
+        return CFrame.Angles((pose.LookPitch or 0)*.65-(pose.LeanX or 0)*.4-.08*crouch,
+            (pose.LookYaw or 0)*.65+math.sin((pose.Idle or 0)*math.pi*2)*.025,-(pose.LeanZ or 0)*.4)
+    elseif kind=="Eye"then return CFrame.Angles((pose.LookPitch or 0)*.22,(pose.LookYaw or 0)*.22,0)
+    elseif kind=="Lid"then return CFrame.Angles(blink(pose)*.5,0,0)
+    elseif kind=="Jaw"then return CFrame.Angles(.018+run*.045+math.sin((pose.Idle or 0)*math.pi*4)*.012,0,0)
+    elseif kind=="Brow"then return CFrame.Angles(-run*.04,0,0)end
     return IDENTITY
 end
 local function scaled(cf,scale)return cf.Rotation+cf.Position*scale end
@@ -206,7 +227,7 @@ local function neutralize(v)
     if v:IsA("Trail")or v:IsA("Beam")then v.Enabled=false end
 end
 function Sahur.Build(context,valid,status)
-    local self=setmetatable({Context=context,Parts={},Joints={},Bones={},Scale=1,Visible=false},Sahur)
+    local self=setmetatable({Context=context,Parts={},Joints={},Bones={},Faces={},Scale=1,Visible=false},Sahur)
     self.Model=Instance.new("Model");self.Model.Name="AstralLocalSahur"
     local ownedRoots={}
     local function check()assert(valid(),"Model loading cancelled")end
@@ -246,9 +267,19 @@ function Sahur.Build(context,valid,status)
             if v.Name=="HumanoidRootPart"then rootPart=v end
         end end
         assert(#parts>0 and visible>0,"Requested model has no visible geometry")
-        rootPart=rootPart or parts[1]
+        local hasRoot=rootPart~=nil
+        if not rootPart then
+            local best=-math.huge
+            for _,part in ipairs(parts)do if part.Transparency<.99 then
+                local r=role(part.Name);local score=part.Size.X*part.Size.Y*part.Size.Z
+                if r=="Body"then score+=10000 elseif r then score*=.05 end
+                if score>best then best=score;rootPart=part end
+            end end
+        end
         self.Model.PrimaryPart=rootPart
-        self.Model:PivotTo(CFrame.new())
+        -- A loose asset's first mesh can be a rotated arm. Preserve its
+        -- authored world up instead of treating that arm rotation as a rig basis.
+        self.Model:PivotTo(hasRoot and CFrame.new()or self.Model:GetPivot().Rotation)
         local bottom,top=math.huge,-math.huge
         for _,p in ipairs(parts)do if p.Transparency<.99 then
             local cf,size=p.CFrame,p.Size*.5
@@ -259,7 +290,7 @@ function Sahur.Build(context,valid,status)
         assert(finite(height)and height>.05 and height<10000,"Invalid model height")
         self.BaseScale=math.clamp(5.8/height,.005,100)
         self.Model:ScaleTo(self.BaseScale)
-        local pivot=self.Model:GetPivot()
+        local pivot=hasRoot and self.Model:GetPivot()or CFrame.new()
         local minY=math.huge;local footY=math.huge
         local partSet={}
         for _,p in ipairs(parts)do
@@ -276,45 +307,131 @@ function Sahur.Build(context,valid,status)
             if p:IsA("MeshPart")then pcall(function()p.RenderFidelity=Enum.RenderFidelity.Automatic end)end
         end
         self.Bottom=finite(footY)and footY or minY
-        self.Root=rootPart
-        local edges={}
+        local records={};local core;local coreScore=-math.huge
+        for _,record in ipairs(self.Parts)do
+            records[record.Part]=record
+            if record.Visible then
+                local score=record.Size.X*record.Size.Y*record.Size.Z
+                if record.Role=="Body"then score+=10000 end
+                if record.Role=="Head"then score*=.05 end
+                if score>coreScore then coreScore=score;core=record end
+            end
+        end
+        if not core.Role then core.Role="Body"end
+        if not hasRoot then rootPart=core.Part;self.Model.PrimaryPart=rootPart end
+        local body=core.Rest.Position
+        local height=5.8;local waist=self.Bottom+height*.43
+        local function classify(record)
+            if record.Role or not record.Visible or record==core then return end
+            local p=record.Rest.Position;local dx=p.X-body.X
+            if p.Y<waist and math.abs(dx)>.1 and record.Size.Y>record.Size.Z*.65 then
+                record.Role=dx<0 and "LeftLeg"or "RightLeg"
+            elseif p.Y>waist and p.Y<self.Bottom+height*.84 and math.abs(dx)>math.max(core.Size.X*.45,.45)then
+                record.Role=dx<0 and "LeftArm"or "RightArm"
+            elseif p.Y>self.Bottom+height*.7 and math.abs(dx)<math.max(core.Size.X*.65,.7)then record.Role="Head"end
+        end
+        for _,record in ipairs(self.Parts)do classify(record)end
+        -- Prefer the anatomical core; the first asset child may be an arm and
+        -- imported welds are not required to point from parent to child.
+        self.Root=rootPart;self.Core=core.Part
+        local edges={};local adjacency={};local bones={}
+        local function addEdge(a,b,pivot,name)
+            if not records[a]or not records[b]or a==b then return end
+            local edge={A=a,B=b,Pivot=pivot,Name=name}
+            edges[#edges+1]=edge;adjacency[a]=adjacency[a]or{};adjacency[b]=adjacency[b]or{}
+            table.insert(adjacency[a],edge);table.insert(adjacency[b],edge)
+        end
         for _,v in ipairs(self.Model:GetDescendants())do
             if v:IsA("Motor6D")or v:IsA("Weld")or v:IsA("ManualWeld")then
-                if partSet[v.Part0]and partSet[v.Part1]then
-                    local jointRole=role(v.Part1.Name)or role(v.Name)
-                    -- Distal joints inherit the proximal hip/shoulder swing;
-                    -- applying it again at every knee/ankle compounds angles.
-                    if jointRole and role(v.Part0.Name)==jointRole then jointRole=nil end
-                    edges[#edges+1]={A=v.Part0,B=v.Part1,C0=v.C0,C1=v.C1,RestTransform=v:IsA("Motor6D")and v.Transform or IDENTITY,
-                        Role=jointRole}
+                if records[v.Part0]and records[v.Part1]then
+                    addEdge(v.Part0,v.Part1,records[v.Part0].Rest*v.C0*(v:IsA("Motor6D")and v.Transform or IDENTITY),v.Name)
                 end
                 v:Destroy()
             elseif v:IsA("WeldConstraint")then
-                if partSet[v.Part0]and partSet[v.Part1]then
-                    edges[#edges+1]={A=v.Part0,B=v.Part1,C0=v.Part0.CFrame:ToObjectSpace(v.Part1.CFrame),C1=IDENTITY,RestTransform=IDENTITY}
+                addEdge(v.Part0,v.Part1,nil,v.Name);v:Destroy()
+            elseif v:IsA("Constraint")or v:IsA("BodyMover")or v:IsA("Humanoid")or v:IsA("AnimationController")then v:Destroy()
+            elseif v:IsA("Bone")then bones[#bones+1]=v
+            elseif v:IsA("FaceControls")then self.Faces[#self.Faces+1]=v end
+        end
+        local function inferredPivot(record)
+            local r=record.Role;local p=record.Rest.Position
+            if r=="LeftArm"or r=="RightArm"then
+                local x=body.X+(r=="LeftArm"and -1 or 1)*math.min(core.Size.X*.48,.7)
+                return CFrame.new(x,math.clamp(p.Y,waist+.35,self.Bottom+height*.78),body.Z)
+            elseif r=="LeftLeg"or r=="RightLeg"then return CFrame.new(p.X,waist,p.Z)
+            elseif r=="Head"then return CFrame.new(body.X,p.Y-record.Size.Y*.42,body.Z)
+            elseif r=="Body"then return CFrame.new(body.X,waist,body.Z)end
+            return record.Rest
+        end
+        local known={};local pending={};local animated=0
+        local function attach(a,b,pivot,name)
+            local record=records[b];local parent=records[a]
+            local r=record.Role or role(name or "")
+            if r and parent.Role==r then r=nil end
+            local lowerName=(b.Name..(name or "")):lower()
+            local detail=lowerName:find("knee",1,true)or lowerName:find("lowerleg",1,true)
+            detail=detail and "Knee"or((lowerName:find("elbow",1,true)or lowerName:find("lowerarm",1,true)or lowerName:find("forearm",1,true))and "Elbow"or nil)
+            if not pivot and detail then pivot=CFrame.new((parent.Rest.Position+record.Rest.Position)*.5)end
+            pivot=pivot or inferredPivot(record)
+            local d=record.Rest.Position-pivot.Position;local lower=0
+            if r=="LeftArm"or r=="RightArm"then
+                -- Correct an authored horizontal T-pose only. Existing arms
+                -- hanging below their shoulder retain their authored rest.
+                if math.abs(d.X)>.2 and d.Y>-math.abs(d.X)*.55 then
+                    lower=(r=="LeftArm"and 1 or -1)*math.clamp(math.atan2(math.abs(d.X),math.max(.02,-d.Y))-.2,0,1.35)
                 end
-                v:Destroy()
-            elseif v:IsA("Constraint")or v:IsA("BodyMover")or v:IsA("Humanoid")or v:IsA("AnimationController")then
-                v:Destroy()
-            elseif v:IsA("Bone")then
-                local boneRole=role(v.Name);local ancestor=v.Parent
-                while boneRole and ancestor and ancestor:IsA("Bone")do
-                    if role(ancestor.Name)==boneRole then boneRole=nil;break end
-                    ancestor=ancestor.Parent
-                end
-                self.Bones[#self.Bones+1]={Bone=v,Rest=v.Transform,Basis=v.WorldCFrame.Rotation,Role=boneRole}
             end
+            self.Joints[#self.Joints+1]={A=a,B=b,C0=parent.Rest:ToObjectSpace(pivot),C1=pivot:ToObjectSpace(record.Rest),Basis=pivot.Rotation,Role=r,Lower=lower,Detail=detail}
+            if r or detail then animated+=1 end
+            known[b]=true;pending[#pending+1]=b
         end
-        -- Topologically order only internal joints; cycles and detached details
-        -- retain their authored relative pose instead of driving real physics.
-        local known={[rootPart]=true}
-        for _=1,#parts do
-            local added=false
-            for _,edge in ipairs(edges)do if known[edge.A]and not known[edge.B]then
-                self.Joints[#self.Joints+1]=edge;known[edge.B]=true;added=true
-            end end
-            if not added then break end
+        local function traverse()
+            local index=1
+            while index<=#pending do
+                local a=pending[index];index+=1
+                for _,edge in ipairs(adjacency[a]or{})do
+                    local b=edge.A==a and edge.B or edge.A
+                    if not known[b]then attach(a,b,edge.Pivot,edge.Name)end
+                end
+            end
+            table.clear(pending)
         end
+        known[rootPart]=true;pending[1]=rootPart;traverse()
+        -- Separate authored mesh pieces need virtual shoulders/hips even when
+        -- no joints were supplied. Their rendered geometry stays anchored.
+        if not known[core.Part]then attach(rootPart,core.Part,inferredPivot(core),"Body");traverse()end
+        for _,record in ipairs(self.Parts)do if not known[record.Part]then attach(core.Part,record.Part,nil,record.Part.Name);traverse()end end
+        for _,v in ipairs(bones)do
+            local boneRole=role(v.Name);local ancestor=v.Parent
+            while boneRole and ancestor and ancestor:IsA("Bone")do
+                if role(ancestor.Name)==boneRole then boneRole=nil;break end
+                ancestor=ancestor.Parent
+            end
+            local detailName=v.Name:lower()
+            local detail=(detailName:find("knee",1,true)or detailName:find("lowerleg",1,true))and "Knee"
+                or((detailName:find("elbow",1,true)or detailName:find("forearm",1,true))and "Elbow"or nil)
+            local lower=0
+            if boneRole=="LeftArm"or boneRole=="RightArm"then
+                for _,child in ipairs(v:GetDescendants())do if child:IsA("Bone")and role(child.Name)==boneRole then
+                    local d=child.WorldCFrame.Position-v.WorldCFrame.Position
+                    if math.abs(d.X)>.2 and d.Y>-math.abs(d.X)*.55 then lower=(boneRole=="LeftArm"and 1 or -1)*math.clamp(math.atan2(math.abs(d.X),math.max(.02,-d.Y))-.2,0,1.35)end
+                    break
+                end end
+            end
+            self.Bones[#self.Bones+1]={Bone=v,Rest=v.Transform,Basis=v.WorldCFrame.Rotation,Role=boneRole,Detail=detail,Lower=lower}
+            if boneRole=="Body"then
+                local carrier=v.Parent;while carrier and not carrier:IsA("BasePart")do carrier=carrier.Parent end
+                if carrier==self.Core then self.BodyBone=true end
+                for _,edge in ipairs(self.Joints)do if edge.B==carrier and edge.Role=="Body"then edge.Role=nil end end
+            end
+            if boneRole or detail then animated+=1 end
+        end
+        self.RootPosePivot=inferredPivot(records[rootPart])
+        self.Animated=animated
+        self.HasFaceRig=#self.Faces>0
+        for _,edge in ipairs(self.Joints)do if edge.Role=="Jaw"or edge.Role=="Lid"or edge.Role=="Eye"or edge.Role=="Brow"then self.HasFaceRig=true end end
+        for _,record in ipairs(self.Bones)do if record.Role=="Jaw"or record.Role=="Lid"or record.Role=="Eye"or record.Role=="Brow"then self.HasFaceRig=true end end
+        self.RigidOnly=animated==0
         if context.Preload then
             status("Loading Sahur meshes and textures…")
             context.Preload({self.Model},valid);check()
@@ -333,10 +450,17 @@ function Sahur.Build(context,valid,status)
     return self
 end
 function Sahur:Sample(style,phase)
-    return {Phase=style=="walk"and phase or 0,Idle=style=="idle"and phase or 0,Walk=style=="walk"and 1 or 0,Sit=style=="sit"}
+    return {Phase=(style=="walk"or style=="run")and phase or 0,Idle=style=="idle"and phase or 0,
+        Walk=(style=="walk"or style=="run")and 1 or 0,Run=style=="run"and 1 or 0,
+        Crouch=style=="crouch"and 1 or 0,SitAmount=style=="sit"and 1 or 0,Sit=style=="sit",Air=style=="jump"and 1 or 0}
 end
 function Sahur:Blend(a,b,alpha)
-    return {Phase=b.Phase,Idle=a.Idle,Walk=a.Walk+(b.Walk-a.Walk)*alpha,Sit=b.Sit}
+    alpha=math.clamp(alpha,0,1)
+    local result={Phase=b.Phase or a.Phase or 0,Idle=a.Idle or b.Idle or 0,Sit=b.Sit}
+    for _,key in ipairs({"Walk","Run","Crouch","SitAmount","Air","LeanX","LeanZ","Turn","LookYaw","LookPitch","Strafe"})do
+        result[key]=(a[key]or 0)+((b[key]or 0)-(a[key]or 0))*alpha
+    end
+    return result
 end
 function Sahur:SetScale(value)
     if self.Closed or not finite(value)then return end
@@ -356,14 +480,36 @@ end
 function Sahur:Render(pose,ground,hidden)
     if not self:IsReady()then return false end
     local scale=self.Scale
-    local lift=math.abs(math.sin(pose.Phase*math.pi*2))*.045*pose.Walk
+    local walk=pose.Walk or 0
+    local sit=pose.SitAmount or(pose.Sit and 1 or 0);local crouch=pose.Crouch or 0
+    local lift=math.abs(math.sin((pose.Phase or 0)*math.pi*2))*.045*walk-.72*crouch-.5*sit
+    lift+=math.sin((pose.Idle or 0)*math.pi*2)*.012*(1-walk)
     local anchor=ground*CFrame.new(0,-self.Bottom*scale+lift,0)
     local frames={}
     for _,record in ipairs(self.Parts)do frames[record.Part]=anchor*scaled(record.Rest,scale)end
+    if self.Root==self.Core and not self.BodyBone then
+        local pivot=self.RootPosePivot
+        -- Find the root record rather than relying on import child order.
+        for _,record in ipairs(self.Parts)do if record.Part==self.Root then
+            frames[self.Root]=anchor*scaled(pivot,scale)*poseRotation("Body",pose)*scaled(pivot:Inverse()*record.Rest,scale);break
+        end end
+    end
     for _,edge in ipairs(self.Joints)do
-        local basis=edge.C0.Rotation*edge.RestTransform.Rotation
-        local swing=basis:Inverse()*poseRotation(edge.Role,pose)*basis
-        frames[edge.B]=frames[edge.A]*scaled(edge.C0,scale)*scaled(edge.RestTransform,scale)*swing*scaled(edge.C1,scale):Inverse()
+        local basis=edge.Basis
+        local swing=basis:Inverse()*poseRotation(edge.Role,pose,edge.Detail,edge.Lower)*basis
+        frames[edge.B]=frames[edge.A]*scaled(edge.C0,scale)*swing*scaled(edge.C1,scale)
+    end
+    if sit<.01 and(pose.Air or 0)<.01 then
+        local bottom=math.huge
+        for _,record in ipairs(self.Parts)do if record.Role=="LeftLeg"or record.Role=="RightLeg"then
+            local cf,size=frames[record.Part],record.Size*scale*.5
+            local extent=math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z
+            bottom=math.min(bottom,cf.Position.Y-extent)
+        end end
+        if finite(bottom)then
+            local correction=Vector3.new(0,math.clamp(ground.Position.Y-bottom,-1.5*scale,1.5*scale),0)
+            for part,cf in pairs(frames)do frames[part]=cf+correction end
+        end
     end
     for _,record in ipairs(self.Parts)do
         local part=record.Part
@@ -373,8 +519,20 @@ function Sahur:Render(pose,ground,hidden)
         end
     end
     for _,record in ipairs(self.Bones)do if record.Bone.Parent then
-        local swing=record.Basis:Inverse()*poseRotation(record.Role,pose)*record.Basis
-        record.Bone.Transform=record.Rest*swing
+        local swing=record.Basis:Inverse()*poseRotation(record.Role,pose,record.Detail,record.Lower)*record.Basis
+        record.Bone.Transform=scaled(record.Rest,scale)*swing
+    end end
+    for _,face in ipairs(self.Faces)do if face.Parent then
+        -- FaceControls exists only on DynamicHead assets. Static facial
+        -- textures are left intact rather than advertised as a facial rig.
+        pcall(function()
+            local b=blink(pose);face.LeftEyeClosed=b;face.RightEyeClosed=b
+            face.JawDrop=.015+(pose.Run or 0)*.05
+            face.EyesLookLeft=math.clamp(pose.LookYaw or 0,0,1)*.3
+            face.EyesLookRight=math.clamp(-(pose.LookYaw or 0),0,1)*.3
+            face.EyesLookUp=math.clamp(pose.LookPitch or 0,0,1)*.3
+            face.EyesLookDown=math.clamp(-(pose.LookPitch or 0),0,1)*.3
+        end)
     end end
     self.LastScale=scale;self:SetVisible(not hidden)
     return true
@@ -387,7 +545,7 @@ end
 function Sahur:Dispose()
     if self.Closed then return end;self.Closed=true
     if self.Model then self.Model:Destroy()end
-    table.clear(self.Parts);table.clear(self.Joints);table.clear(self.Bones)
+    table.clear(self.Parts);table.clear(self.Joints);table.clear(self.Bones);table.clear(self.Faces)
 end
 return Sahur
 
@@ -5266,7 +5424,7 @@ do
             end
         end
 
-        local SlideForwardConn, SlideBackConn
+        local SlideForwardConn, SlideBackConn, InputChanged
         local CancelSlidingTweens = function()
             if SlideForwardConn then
                 SlideForwardConn:Disconnect()
@@ -6151,6 +6309,7 @@ do
                 elseif KeyPicker.Mode == "Press" then
                     KeyPicker:DoClick()
                 elseif KeyPicker.Mode == "Hold" then
+                    if InputChanged then InputChanged:Disconnect();InputChanged=nil end
                     InputChanged = Input.Changed:Connect(function()
                         if KeyPicker:GetState() then
                             return
@@ -6181,6 +6340,7 @@ do
 
         function KeyPicker:Destroy()
             KeyPicker.Destroyed = true
+            if InputChanged then InputChanged:Disconnect();InputChanged=nil end
 
             if SlideForwardConn then
                 SlideForwardConn:Disconnect()
@@ -8769,6 +8929,8 @@ do
 
         local Groupbox = self
         local Container = Groupbox.Container
+        -- One diameter keeps the rounded track and its handle equally thick.
+        local SliderDiameter = 16
 
         local Slider = {
             Connections = {},
@@ -8824,9 +8986,9 @@ do
         })
         local Track = New("Frame", {
             AnchorPoint = Vector2.new(0,.5),BackgroundColor3 = "MainColor",
-            Position = UDim2.fromScale(0,.5),Size = UDim2.new(1,0,0,8),Parent = Bar,
+            Position = UDim2.fromScale(0,.5),Size = UDim2.new(1,0,0,SliderDiameter),Parent = Bar,
         })
-        New("UIStroke",{Color="OutlineColor",Transparency=.55,Parent=Track})
+        New("UIStroke",{Color="OutlineColor",Transparency=.55,Thickness=1,Parent=Track})
         local DisplayLabel = New("TextLabel", {
             AnchorPoint = Vector2.new(1,0),BackgroundTransparency = 1,
             Position = UDim2.fromScale(1,0),Size = UDim2.new(.40,0,0,14),
@@ -8869,7 +9031,7 @@ do
         New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Fill})
         local Thumb = New("Frame", {
             AnchorPoint = Vector2.new(.5,.5),BackgroundColor3 = "WhiteColor",
-            Position = UDim2.fromScale(.5,.5),Size = UDim2.fromOffset(16,16),
+            Position = UDim2.fromScale(.5,.5),Size = UDim2.fromOffset(SliderDiameter,SliderDiameter),
             ZIndex = Bar.ZIndex+2,Parent = Track,
         })
         New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Thumb})
@@ -8924,7 +9086,8 @@ do
 
             local X = (Slider.Value - Slider.Min) / (Slider.Max - Slider.Min)
             Fill.Size = UDim2.fromScale(X, 1)
-            Thumb.Position = UDim2.fromScale(X,.5)
+            -- Inset the centre at both ends, so the entire circle stays in the track.
+            Thumb.Position = UDim2.new(X,SliderDiameter*(.5-X),.5,0)
         end
 
         function Slider:OnChanged(Func)
@@ -9122,8 +9285,9 @@ do
             end
 
             while IsDragInput(Input) and not Slider.Destroyed do
-                local Location = Mouse.X
-                local Scale = math.clamp((Location - Bar.AbsolutePosition.X) / Bar.AbsoluteSize.X, 0, 1)
+                local Location = Input.UserInputType == Enum.UserInputType.Touch and Input.Position.X or Mouse.X
+                local Travel = math.max(1,Track.AbsoluteSize.X-SliderDiameter)
+                local Scale = math.clamp((Location-Track.AbsolutePosition.X-SliderDiameter*.5)/Travel,0,1)
 
                 local OldValue = Slider.Value
                 Slider.Value = Round(Slider.Min + ((Slider.Max - Slider.Min) * Scale), Slider.Rounding)
@@ -18288,7 +18452,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.52 | FTAP")
+                                warn("Astral v4.53 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -35777,7 +35941,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.52"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.53"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -35901,7 +36065,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.52",true)
+            box:AddLabel("Astral v4.53",true)
         end
 
         do
@@ -37749,7 +37913,7 @@ Escape Timer: %*]]
 
 		v21:AddToggle("RagdollNK", {
 			Text = "Ragdoll During Kick",
-            Tooltip = "The pallet keeps striking the target while Kick is enabled.",
+            Tooltip = "Required for pallet strikes. Enabled automatically on each launch; old configs cannot turn it off.",
 			Default = true,
 			Callback = function(ragdollInNK)
 				tbl8.RagdollInNK = ragdollInNK
@@ -38768,6 +38932,11 @@ Escape Timer: %*]]
                 return tbl12.Char()
             end,
             Camera=function()return workspace.CurrentCamera end,Spawn=task.spawn,
+            Crouching=function()
+                if UserInputService:GetFocusedTextBox()then return false end
+                return UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+                    or UserInputService:IsKeyDown(Enum.KeyCode.C)
+            end,
             BindRender=function(callback)
                 local name="Astral/LocalModels"
                 RunService:BindToRenderStep(name,Enum.RenderPriority.Camera.Value+5,callback)
@@ -38780,12 +38949,13 @@ Escape Timer: %*]]
         models:AddDropdown("AstralLocalModelChoice",{Text="Character Model",Values={"Tung Tung Tung Sahur"},Default=1,AllowNull=false,
             Tooltip="Creator Store model123969132800771. Loaded through your Roblox client; asset access is required."})
         models:AddToggle("AstralLocalModelEnabled",{Text="Tung Tung Tung Sahur (Local)",Default=false,Callback=function(v)tbl12.LocalModels:SetEnabled(v)end})
-        models:AddToggle("AstralLocalModelWalk",{Text="Walk Animation",Default=true,Callback=function(v)tbl12.LocalModels.AnimeWalk=v end})
+        models:AddToggle("AstralLocalModelWalk",{Text="Walk Animation",Default=true,Tooltip="Blends standing, walking, running, jumping and seated poses.",Callback=function(v)tbl12.LocalModels.AnimeWalk=v end})
+        models:AddToggle("AstralLocalModelCrouch",{Text="Crouch Pose [Ctrl / C]",Default=true,Callback=function(v)tbl12.LocalModels.CrouchInput=v end})
         models:AddSlider("AstralLocalModelScale",{Text="Model Scale",Default=1,Min=.65,Max=1.35,Rounding=2,Compact=true,Suffix="x",Callback=function(v)tbl12.LocalModels.Scale=v end})
         models:AddSlider("AstralLocalModelAnimationSpeed",{Text="Animation Speed",Default=1,Min=.5,Max=1.7,Rounding=2,Compact=true,Suffix="x",Callback=function(v)tbl12.LocalModels.AnimationSpeed=v end})
         models:AddToggle("AstralLocalModelFirstPerson",{Text="Hide In First Person",Default=true,Callback=function(v)tbl12.LocalModels.HideFirstPerson=v end})
         models:AddButton({Text="Reload Model",Func=function()tbl12.LocalModels:Retry()end})
-        models:AddLabel("Local cosmetic model. Original controls and hitboxes are preserved. Asset scripts and gameplay objects are removed before display.",true)
+        models:AddLabel("CS-style animated poses and movement inertia. Hold Ctrl or C to crouch the model. Facial movement uses available face bones.",true)
         local status=models:AddLabel("Disabled",true);local elapsed=0
         lib:GiveSignal(RunService.Heartbeat:Connect(function(dt)
             elapsed+=dt;if elapsed<.2 then return end;elapsed=0;status:SetText(tbl12.LocalModels.Status)
@@ -41744,6 +41914,8 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 	lib3:IgnoreThemeSettings()
 
 	lib3:SetIgnoreIndexes({
+        -- Old configs must not silently restore a hold-only kick.
+        "RagdollNK",
 		"WhitelistDropdown",
 		"ObjectGroup",
 		"GroupNoclip",
@@ -42121,9 +42293,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.52: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.53: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.52 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.53 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -90311,7 +90483,18 @@ function Pallet.Install(context)
                 self:Bind(part.Parent)
                 if context.Owned(part)then return true end
                 local acquired=context.Acquire(part,valid)
-                return valid()and acquired~=false and context.Owned(part)
+                if not valid()or acquired==false then return false end
+                -- The game's owner marker can arrive before the local physics
+                -- assembly is actually handed over. Wait without moving either
+                -- the character or the unowned pallet.
+                local ping=context.PingSeconds and context.PingSeconds()or .1
+                if type(ping)~="number"or ping~=ping then ping=.1 end
+                local deadline=context.Clock()+math.clamp(ping*1.5+.1,.25,.75)
+                while valid()and alive(part)and not context.Owned(part)and context.Clock()<deadline do
+                    self.Status="Waiting for pallet physics ownership"
+                    self.FrameSignal:Wait()
+                end
+                return valid()and alive(part)and context.Owned(part)
             end,
             DestroyToy=function(model)
                 if model and model.Parent then
@@ -90325,13 +90508,15 @@ function Pallet.Install(context)
         ContinueAttempt=function()return #self.Queue==0 and self:ContinuousValid(self.Active)end,
         SliceSeconds=function()return .12 end,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
-        PhaseSeconds=function()return self.MaximumSpeed and 1/240 or math.max(self.IntervalSeconds*.5,1/240)end,
+        -- Each separation spans several physics steps and a network sample.
+        -- Frame-rate-sized teleports never established a physical strike.
+        PhaseSeconds=function()return self.MaximumSpeed and .05 or math.max(self.IntervalSeconds*.5,.05)end,
         WaitPhase=function()
             if not valid()then error(CANCELLED,0)end
-            self.FrameSignal:Wait()
+            local dt=self.FrameSignal:Wait()
             if not valid()then error(CANCELLED,0)end
+            return dt
         end,
-        ImpactVelocity=function()return Vector3.new(0,-120,0)end,
         BeginStrike=function(character)
             self.StrikeAttempts+=1
             local entry=self.Active
@@ -90380,9 +90565,16 @@ function Pallet:Park()
     local main=self.Model and self.Model:FindFirstChild("Main")
     local mover=main and main:FindFirstChild("RagdollBP")
     if mover then mover.MaxForce=Vector3.zero end
+    local assembly=sound.AssemblyRootPart or sound
+    assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=Vector3.zero
     sound.AssemblyLinearVelocity=Vector3.zero;sound.AssemblyAngularVelocity=Vector3.zero;sound.Velocity=Vector3.zero
     local position=self.Context.ParkPosition and self.Context.ParkPosition()
-    if position then sound.Position=position end
+    if position then assembly.CFrame=assembly.CFrame+(position-sound.Position)end
+end
+function Pallet:SafePark()
+    local ok,message=pcall(self.Park,self)
+    if not ok then self.LastError="Pallet cleanup: "..tostring(message)end
+    return ok
 end
 function Pallet:ForgetModel()
     if self.TouchConnection then self.TouchConnection:Disconnect();self.TouchConnection=nil end
@@ -90415,14 +90607,18 @@ function Pallet:Request(character,valid,continuous)
 end
 function Pallet:Maintain(character,valid)
     local entry=self:Request(character,valid,true)
-    if entry and not entry.Done then entry.Continuous=true;entry.ContinuousValid=valid end
+    if entry and not entry.Done then
+        -- A one-shot effect may have its own short-lived predicate. Once the
+        -- kick owns this entry, only its current predicate controls the worker.
+        entry.Continuous=true;entry.Valid=valid;entry.ContinuousValid=valid
+    end
     return entry
 end
 function Pallet:Cancel(character)
     local entry=self.Entries[character]
     if entry then
         entry.Done=true;entry.Success=false
-        if self.Active==entry then self:Park()end
+        if self.Active==entry then self:SafePark()end
     end
     self.Entries[character]=nil
 end
@@ -90468,14 +90664,13 @@ function Pallet:Step()
         entry.CompletedAt=self.Context.Clock()
         self.NextStart=not cancelled and(not ok or(entry.Passes or 0)==passesBefore)and self.Context.Clock()+.1 or nil
         if not ok and not cancelled then self.LastError=tostring(value);self.Status="Native ragdoll error: "..self.LastError end
-        local parked,err=pcall(self.Park,self)
-        if not parked then self.LastError="Pallet cleanup: "..tostring(err)end
+        self:SafePark()
         if self.Active==entry then self.Active=nil end
     end)
 end
 function Pallet:Pause(token,value)
     self.Pauses[token]=value and true or nil
-    if value then self:Park();self.Status="Native ragdoll paused during Gucci visit"end
+    if value then self:SafePark();self.Status="Native ragdoll paused during Gucci visit"end
 end
 function Pallet:Warm()
     if self.Closed then return end
@@ -90490,15 +90685,21 @@ function Pallet:Describe()
         self.PassRate=(self.Passes-self.RatePasses)/dt;self.TouchRate=(self.Contacts-self.RateContacts)/dt
         self.RateAt=now;self.RatePasses=self.Passes;self.RateContacts=self.Contacts
     end
-    return self.Status..string.format("\nplacements: %d | local touches: %d | game ragdolls: %d\nmeasured: %.1f placements/s | %.1f local touches/s",self.Passes,self.Contacts,self.Confirmed,self.PassRate,self.TouchRate)
+    return self.Status..string.format("\nstrokes: %d | local touches: %d | game ragdolls: %d\nmeasured: %.1f strokes/s | %.1f local touches/s",self.Passes,self.Contacts,self.Confirmed,self.PassRate,self.TouchRate)
 end
 function Pallet:Dispose()
     if self.Closed then return end
     self.Closed=true;self.Connection:Disconnect()
     for _,entry in pairs(self.Entries)do entry.Done=true;entry.Success=false end
     table.clear(self.Queue)
-    local model=self.Model;self:ForgetModel()
-    if model and model.Parent then self.Context.Destroy(model)end
+    self:SafePark()
+    local model=self.Model
+    local forgotten,forgetError=pcall(self.ForgetModel,self)
+    if not forgotten then self.LastError="Pallet release: "..tostring(forgetError)end
+    if model and model.Parent then
+        local destroyed,destroyError=pcall(self.Context.Destroy,model)
+        if not destroyed then self.LastError="Pallet destroy: "..tostring(destroyError)end
+    end
 end
 return Pallet
 
@@ -90794,8 +90995,8 @@ local requireModule=...
 local Models={};Models.__index=Models
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
 function Models.Install(context)
-    local self=setmetatable({Context=context,Enabled=false,Closed=false,Generation=0,Scale=1,AnimationSpeed=1,AnimeWalk=true,HideFirstPerson=true,
-        Hidden={},Connections={},WalkPhase=0,IdlePhase=0,WalkBlend=0,Speed=0,Status="Disabled"},Models)
+    local self=setmetatable({Context=context,Enabled=false,Closed=false,Generation=0,Scale=1,AnimationSpeed=1,AnimeWalk=true,CrouchInput=true,HideFirstPerson=true,
+        Hidden={},Connections={},WalkPhase=0,IdlePhase=0,WalkBlend=0,Speed=0,RunBlend=0,CrouchBlend=0,SitBlend=0,AirBlend=0,LeanX=0,LeanZ=0,Turn=0,LookYaw=0,LookPitch=0,Status="Disabled"},Models)
     self.Connection=context.BindRender(function(dt)
         if self.Closed or not self.Enabled then return end
         local ok,err=pcall(self.Step,self,dt)
@@ -90820,7 +91021,7 @@ function Models:Attach(character)
     self:Restore();self.Character=character
     for _,part in ipairs(character:GetDescendants())do self:HidePart(part)end
     self.DescendantConnection=character.DescendantAdded:Connect(function(part)if self.Enabled and self.Character==character then self:HidePart(part)end end)
-    self.WalkPhase=0;self.WalkBlend=0;self.Speed=0
+    self.WalkPhase=0;self.WalkBlend=0;self.Speed=0;self.RunBlend=0;self.CrouchBlend=0;self.SitBlend=0;self.AirBlend=0;self.PreviousVelocity=nil;self.PreviousLook=nil;self.LeanX=0;self.LeanZ=0;self.Turn=0
 end
 function Models:SetEnabled(value)
     if self.Closed then return end
@@ -90869,16 +91070,43 @@ function Models:Step(dt)
     local move=humanoid.MoveDirection and humanoid.MoveDirection.Magnitude or 0
     if move>.05 and speed<.2 then speed=math.min(humanoid.WalkSpeed,16)*move end
     self.Speed+=(math.clamp(speed,0,60)-self.Speed)*(1-math.exp(-dt*12))
-    local moving=self.AnimeWalk and self.Speed>.45 and not humanoid.Sit and humanoid.SeatPart==nil
-    self.WalkBlend+=((moving and 1 or 0)-self.WalkBlend)*(1-math.exp(-dt*12))
-    self.IdlePhase=(self.IdlePhase+dt*self.AnimationSpeed/4)%1
-    if moving then self.WalkPhase=(self.WalkPhase+dt*math.clamp(self.Speed/7.7,.8,3.4)*self.AnimationSpeed)%1 end
-    local idle=renderer:Sample("idle",self.IdlePhase);local pose=idle
-    if self.WalkBlend>.005 then pose=renderer:Blend(idle,renderer:Sample("walk",self.WalkPhase),self.WalkBlend)end
+    local seated=humanoid.Sit or humanoid.SeatPart~=nil
     local state=humanoid:GetState()
-    if humanoid.Sit or humanoid.SeatPart~=nil then pose=renderer:Sample("sit",0)
-    elseif state==Enum.HumanoidStateType.Jumping or state==Enum.HumanoidStateType.Freefall then pose=renderer:Sample("jump",0)end
+    local airborne=state==Enum.HumanoidStateType.Jumping or state==Enum.HumanoidStateType.Freefall
+    local crouching=self.CrouchInput and self.Context.Crouching and self.Context.Crouching()and not seated
+    local moving=self.AnimeWalk and self.Speed>.45 and not seated and not airborne
+    local function smooth(value,target,rate)return value+(target-value)*(1-math.exp(-dt*rate))end
+    self.WalkBlend=smooth(self.WalkBlend,moving and 1 or 0,12)
+    self.RunBlend=smooth(self.RunBlend,moving and not crouching and math.clamp((self.Speed-15)/11,0,1)or 0,9)
+    self.CrouchBlend=smooth(self.CrouchBlend,crouching and 1 or 0,13)
+    self.SitBlend=smooth(self.SitBlend,seated and 1 or 0,12)
+    self.AirBlend=smooth(self.AirBlend,airborne and 1 or 0,12)
+    self.IdlePhase=(self.IdlePhase+dt*self.AnimationSpeed/4)%1
+    if moving then self.WalkPhase=(self.WalkPhase+dt*math.clamp(self.Speed/7.7,.55,3.4)*self.AnimationSpeed*(crouching and .75 or 1))%1 end
+    local idle=renderer:Sample("idle",self.IdlePhase)
+    local pose=renderer:Blend(idle,renderer:Sample("walk",self.WalkPhase),self.WalkBlend)
+    pose.Idle=self.IdlePhase;pose.Phase=self.WalkPhase;pose.Run=self.RunBlend
+    pose.Crouch=self.CrouchBlend;pose.SitAmount=self.SitBlend;pose.Sit=seated;pose.Air=self.AirBlend
+    local localVelocity=root.CFrame:VectorToObjectSpace(Vector3.new(velocity.X,0,velocity.Z))
+    local acceleration=self.PreviousVelocity and(localVelocity-self.PreviousVelocity)/dt or Vector3.new(0,0,0)
+    self.PreviousVelocity=localVelocity
+    self.LeanX=smooth(self.LeanX,math.clamp(-acceleration.Z/220,-.14,.2),8)
+    self.LeanZ=smooth(self.LeanZ,math.clamp(-acceleration.X/260,-.16,.16),8)
+    local look=root.CFrame.LookVector
+    local turn=0
+    if self.PreviousLook then turn=math.atan2(self.PreviousLook:Cross(look).Y,self.PreviousLook:Dot(look))/dt end
+    self.PreviousLook=look;self.Turn=smooth(self.Turn,math.clamp(turn/5,-1,1),10)
+    pose.LeanX=self.LeanX;pose.LeanZ=self.LeanZ;pose.Turn=self.Turn
+    pose.Strafe=self.Speed>.5 and math.clamp(localVelocity.X/math.max(self.Speed,.5),-1,1)or 0
     local hidden=false;local camera=self.Context.Camera()
+    local yaw,pitch=0,0
+    if camera then
+        local view=root.CFrame:VectorToObjectSpace(camera.CFrame.LookVector)
+        yaw=math.clamp(math.atan2(-view.X,-view.Z),-.9,.9)
+        pitch=math.clamp(math.asin(math.clamp(view.Y,-1,1)),-.6,.6)
+    end
+    self.LookYaw=smooth(self.LookYaw,yaw,9);self.LookPitch=smooth(self.LookPitch,pitch,9)
+    pose.LookYaw=self.LookYaw;pose.LookPitch=self.LookPitch
     local head=character:FindFirstChild("Head")
     if self.HideFirstPerson and camera and head then hidden=(camera.CFrame.Position-head.Position).Magnitude<1 end
     renderer:SetScale(self.Scale)
@@ -90894,7 +91122,10 @@ function Models:Step(dt)
             self.Hidden[part]=nil
         end
     end
-    self.Status="Tung Tung Tung Sahur · local"..(moving and " · walking"or "")
+    local activity=seated and "sitting"or crouching and "crouching"or airborne and "airborne"or self.RunBlend>.5 and "running"or moving and "walking"or "idle"
+    self.Status="Tung Tung Tung Sahur · "..activity
+    if renderer.RigidOnly then self.Status..=" · asset has no separate limbs/bones"
+    elseif renderer.HasFaceRig==false then self.Status..=" · static face texture"end
 end
 function Models:Dispose()
     if self.Closed then return end
@@ -91368,46 +91599,77 @@ function Native.new(context)
         sound.CanTouch=true
         local mover=main:FindFirstChild("RagdollBP")
         if not mover then mover=Instance.new("BodyPosition");mover.Name="RagdollBP";mover.Parent=main end
-        mover.D=1500;mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
+        mover.D=1500
         mover.Position=Vector3.new(0,100000,0)
         local function ready()
+            local assembly=sound.AssemblyRootPart or sound
             return current()and sound.Parent==model and main.Parent==model and not sound.Anchored
+                and alive(assembly)and not assembly.Anchored
                 and(not context.CanContact or context.CanContact(sound))
         end
+        local function halfHeight(part)
+            local cf,size=part.CFrame,part.Size*.5
+            return math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z
+        end
+        local function velocity(value)
+            local assembly=sound.AssemblyRootPart or sound
+            assembly.AssemblyAngularVelocity=Vector3.zero
+            assembly.AssemblyLinearVelocity=value
+            sound.AssemblyAngularVelocity=Vector3.zero
+            sound.AssemblyLinearVelocity=value;sound.Velocity=value
+        end
+        local function followVertical(speed)
+            local difference=torso.Position-sound.Position
+            local lateral=Vector3.new(difference.X,0,difference.Z)*18
+            if lateral.Magnitude>64 then lateral=lateral.Unit*64 end
+            velocity(torso.AssemblyLinearVelocity+lateral+Vector3.new(0,-speed,0))
+        end
         local started=context.Clock()
-        local phaseSchedule
+        local physicsStep=1/60
         while ready()do
             if repeating()then
-                -- Moving to the same overlapping point every frame does not
-                -- create another contact. Both poses get actual physics steps.
-                local clearance=(sound.Size.Magnitude+torso.Size.Magnitude)*.5+6
-                local function phase(offset,hit)
-                    local at=context.Clock()
-                    local duration=context.PhaseSeconds()
-                    local deadline=(phaseSchedule or at)+duration
-                    if deadline<=at then deadline=at+duration end
-                    if hit and context.BeginStrike then context.BeginStrike(character)end
-                    repeat
-                        if not ready()or not repeating()then return false end
-                        sound.Position=torso.Position+offset
-                        local velocity=torso.AssemblyLinearVelocity or Vector3.zero
-                        if hit then velocity+=context.ImpactVelocity()end
-                        sound.AssemblyAngularVelocity=Vector3.zero
-                        sound.AssemblyLinearVelocity=velocity;sound.Velocity=velocity
-                        if hit then context.Record(sound,character)
-                        elseif context.RecordClear then context.RecordClear(sound,character)end
-                        context.WaitPhase()
-                    until context.Clock()+1e-7>=deadline
-                    phaseSchedule=deadline
-                    return true
-                end
-                if not phase(Vector3.zero,true)then break end
-                if not phase(Vector3.new(clearance,0,0),false)then break end
-                -- Yield a complete contact/separation pair to queued targets.
+                -- The original lift fights contact: with infinite force aimed
+                -- at Y=100000 it can eject the pallet before a touch is solved.
+                -- Keep it for one-shot source behavior, disable it for strokes.
+                mover.MaxForce=Vector3.zero
+                local half=halfHeight(sound)+halfHeight(torso)
+                local gap=.75
+                local assembly=sound.AssemblyRootPart or sound
+                -- Move the connected assembly once to a SEPARATED launch pose.
+                -- No CFrame/Position writes occur during the physical crossing.
+                local launch=torso.Position+Vector3.new(0,half+gap,0)
+                assembly.CFrame=assembly.CFrame+(launch-sound.Position)
+                followVertical(0)
+                if context.RecordClear then context.RecordClear(sound,character)end
+                local clearUntil=context.Clock()+context.PhaseSeconds()
+                repeat
+                    local dt=context.WaitPhase()
+                    if type(dt)=="number"and dt==dt and dt>0 then physicsStep=math.clamp(dt,1/240,1/10)end
+                    if not ready()or not repeating()then return finish(false)end
+                    followVertical(0)
+                until context.Clock()+1e-7>=clearUntil
+                -- A finite sweep gives the physics solver time to enter and
+                -- leave the trigger; at low FPS cap travel per solver step so
+                -- the whole overlap interval cannot be skipped in one frame.
+                local speed=math.clamp(half/math.max(physicsStep,1/240),24,96)
+                local strokeAt=context.Clock()
+                local deadline=strokeAt+math.clamp((2*half+2*gap)/speed+.15,.2,1)
+                if context.BeginStrike then context.BeginStrike(character)end
+                followVertical(speed)
+                context.Record(sound,character) -- attempted stroke, never a confirmed server hit
+                repeat
+                    local dt=context.WaitPhase()
+                    if type(dt)=="number"and dt==dt and dt>0 then physicsStep=math.clamp(dt,1/240,1/10)end
+                    if not ready()or not repeating()then return finish(false)end
+                    if sound.Position.Y<torso.Position.Y-half-gap and context.Clock()-strokeAt>=.05 then break end
+                    followVertical(speed)
+                until context.Clock()>=deadline
+                -- Fairness is checked after a complete physical stroke.
                 if context.Clock()-started>=(context.SliceSeconds and context.SliceSeconds()or .5)
                     and not(context.ContinueAttempt and context.ContinueAttempt())then break end
             else
                 if ragdolled.Value then break end
+                mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
                 sound.Position=torso.Position
                 sound.Velocity=Vector3.new(0,-10,0)
                 context.Record(sound,character)
