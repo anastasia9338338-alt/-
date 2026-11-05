@@ -44,7 +44,7 @@ end
 do
  local state,context,world,original=fixture()
  local model=Model.Build(context,function()return state.Valid end,function()end)
- check(model.Mode=='Skinned'and model:IsReady()and #state.Created==3,'Native GPU skeleton did not initialize')
+ check(model.Mode=='Skinned'and model:IsReady()and #state.Created==#data.Parts,'Native GPU skeleton did not initialize')
  for _,part in pairs(model.Parts)do
   check(part.Anchored and not part.CanCollide and not part.CanQuery and part.LocalTransparencyModifier==1,'Model flashed or modified gameplay physics')
  end
@@ -75,7 +75,7 @@ do
  local fallback=BuildModel(tiny)
  local state,context,world,original=fixture();context.CreateSkinned=function()error('Native mesh loader unavailable')end
  local progress={};local model=fallback.Build(context,function()return state.Valid end,function(text)progress[#progress+1]=text end)
- check(model.Mode=='FileMesh'and model:IsReady()and counts.Bakes==73*3,'File fallback did not prepare the bounded animation set')
+ check(model.Mode=='FileMesh'and model:IsReady()and counts.Bakes==73*#data.Parts,'File fallback did not prepare the bounded animation set')
  for _,phase in ipairs({0,.2,.5,.99})do
   for _,activity in ipairs({'idle','walk','run','crouch','sit','jump'})do
    local p=model:Sample(activity,phase);model:Render(p,CFrame.new(5,0,9),false)
@@ -92,5 +92,20 @@ do
  local static=fallback.Build(context,function()return true end,function()end)
  check(static.Mode=='FileMesh'and static.NativeError:find('skin weights',1,true)~=nil,'A loader that discarded skin weights produced a rigid model')
  static:Dispose()
+end
+-- Grounding must also work between stance/crouch endpoints.
+do
+ for n=0,10 do
+  local f=pose:Resolve({Crouch=n/10,Walk=.25,Phase=.31},false);local matrices=pose:Skin(f);local bottom=math.huge
+  for _,v in ipairs(data.FootContacts)do
+   local p=Vector3.zero;for k,id in ipairs(v.Bones)do p+=(matrices[id]*Vector3.new(table.unpack(v.Position)))*v.Weights[k]end
+   bottom=math.min(bottom,p.Y)
+  end
+  check(bottom>=-.001,'Interpolated crouch put feet below the surface')
+ end
+ local t=0;local fx=Effects.new({Clock=function()return t end,Wind=function()return Vector3.new(20,0,0),1 end})
+ local maxBlink=0;local previous=0
+ for _=1,600 do t+=1/120;local e=fx:Step(CFrame.new(),nil);maxBlink=math.max(maxBlink,e.Blink);check(math.abs(e.WindX-previous)<.01,'Wind animation snapped');previous=e.WindX end
+ check(maxBlink>.99,'Eyes did not fully close during a blink')
 end
 print('PASS: '..checks..' Aqua source geometry, texture, GPU rig, file fallback and cancellation assertions (mocked)')

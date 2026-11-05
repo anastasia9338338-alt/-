@@ -14,6 +14,10 @@ def run_feature_checks(modules,runner,folder):
         result=subprocess.run([str(runner),str(path)],capture_output=True,text=True)
         assert result.returncode==0,(name,result.stdout,result.stderr)
         print(result.stdout.strip())
+    if 'BlobmanAura'in modules and 'WaterWalk'in modules:
+        program=read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{}end}\n'
+        program+='local Aura=(function()\n'+modules['BlobmanAura']+'\nend)()\nlocal Walk=(function()\n'+modules['WaterWalk']+'\nend)()\n'+read('survival_body.luau')
+        run('survival',program)
     if 'ESPMotion'in modules:
         run('motion',read('motion_mock.luau')+'\nlocal Motion=(function()\n'+modules['ESPMotion']+'\nend)()\n'+read('motion_body.luau'))
     if 'ObjectESP'in modules:
@@ -39,9 +43,9 @@ def run_feature_checks(modules,runner,folder):
         run('keybind',read('keybind_mock.luau')+declaration[0]+'\n'+cleanup[0]+'\n'+library[start:end]+read('keybind_body.luau'))
     if {'AquaAssets','AquaPose','AquaMesh','AquaModel'}<=modules.keys():
         program=read('model_mock.luau')+'\n'+read('aqua_mock.luau')
-        for name,alias in [('AquaAssets','Assets'),('AquaPose','Pose'),('AquaMesh','Mesh')]:
+        for name,alias in [('AquaAssets','Assets'),('AquaPose','Pose'),('AquaMesh','Mesh'),('AquaEffects','Effects')]:
             program+='\nlocal '+alias+'=(function()\n'+modules[name]+'\nend)()\n'
-        program+='local function BuildModel(meshModule) return (function(...)\n'+modules['AquaModel']+'\nend)(function(name)if name=="AquaAssets"then return Assets elseif name=="AquaPose"then return Pose elseif name=="AquaMesh"then return meshModule end;error(name)end)end\nlocal Model=BuildModel(Mesh)\n'
+        program+='local function BuildModel(meshModule) return (function(...)\n'+modules['AquaModel']+'\nend)(function(name)if name=="AquaAssets"then return Assets elseif name=="AquaPose"then return Pose elseif name=="AquaMesh"then return meshModule elseif name=="AquaEffects"then return Effects end;error(name)end)end\nlocal Model=BuildModel(Mesh)\n'
         run('aqua',program+read('aqua_body.luau'))
     if 'SahurModel'in modules and 'LocalModels'in modules:
         program=read('model_mock.luau')+'\nlocal Sahur=(function()\n'+modules['SahurModel']+'\nend)()\n'
