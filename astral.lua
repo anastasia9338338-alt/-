@@ -1,6 +1,140 @@
--- Astral v4.60 | Distinct target ownership phases and verified local replication cleanup; holding and pallet preserved.
+-- Astral v4.61 | Game ragdoll receiver targeting and read-only reaction observation; no synthetic camera effects.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
+sources.PalletReaction = [========[
+-- Read-only target selection and reaction observation. Local contact and
+-- observed Ragdolled state are not per-hit acknowledgments. This module only
+-- reports fresh state edges, without establishing camera blur or a disconnect.
+local Reaction={};Reaction.__index=Reaction
+local roots={'HumanoidRootPart','realHrp','realHRP','saviHRP'}
+local function living(character)
+ return character and character.Parent and character.FindFirstChild and character.FindFirstChildOfClass
+end
+function Reaction.Resolve(character)
+ if not living(character)then return nil,'Unavailable','Character unavailable'end
+ local fallbackReason
+ for _,name in ipairs(roots)do
+  local root=character:FindFirstChild(name)
+  local receiver=root and root:FindFirstChild('RagdollTouchedHitbox')
+  if receiver then
+   local reason
+   if not root:IsA('BasePart')or root.Parent~=character then reason='Ragdoll receiver root is invalid'
+   elseif not receiver:IsA('BasePart')then reason='RagdollTouchedHitbox is not a BasePart'
+   elseif receiver.Parent~=root then reason='Ragdoll receiver was detached'
+   elseif receiver.CanTouch~=true then reason='RagdollTouchedHitbox has CanTouch disabled'
+   else return receiver,'RagdollTouchedHitbox'end
+   fallbackReason=fallbackReason or reason
+  end
+ end
+ if not fallbackReason and character:FindFirstChild('RagdollTouchedHitbox',true)then
+  fallbackReason='RagdollTouchedHitbox is outside a supported character root'
+ end
+ -- The source used Torso. An unusable named hitbox does not establish that
+ -- the game's original torso contact path is disabled; preserve that path.
+ local reason='Torso receiver unavailable'
+ for _,name in ipairs({'Torso','UpperTorso'})do
+  local torso=character:FindFirstChild(name)
+  if torso and torso:IsA('BasePart')and torso.Parent==character then
+   if torso.CanTouch==true then return torso,'TorsoFallback',nil,fallbackReason end
+   reason='Torso fallback has CanTouch disabled'
+  end
+ end
+ return nil,'Unavailable',reason,fallbackReason
+end
+local function inspect(character)
+ local receiver,kind,reason,fallbackReason=Reaction.Resolve(character)
+ if not living(character)then return nil,nil,receiver,kind,reason,fallbackReason end
+ local humanoid=character:FindFirstChildOfClass('Humanoid')
+ if not humanoid or humanoid.Parent~=character then return nil,nil,receiver,kind,'Humanoid unavailable',fallbackReason end
+ local flag=humanoid:FindFirstChild('Ragdolled')
+ if not flag or not flag:IsA('BoolValue')or flag.Parent~=humanoid then
+  return humanoid,nil,receiver,kind,'Game Ragdolled flag unavailable',fallbackReason
+ end
+ if humanoid.Health<=0 then return humanoid,flag,receiver,kind,'Humanoid is not alive',fallbackReason end
+ return humanoid,flag,receiver,kind,reason,fallbackReason
+end
+function Reaction.new(character,clock)
+ local self=setmetatable({Character=character,Clock=clock or os.clock,Rises=0,Generation=0,Closed=false},Reaction)
+ self:Refresh();return self
+end
+function Reaction:Disconnect()
+ if self.Connection then self.Connection:Disconnect();self.Connection=nil end
+end
+function Reaction:Sample(payload)
+ if not self.Ready or not self.Flag then return end
+ local value=payload
+ if type(value)~='boolean'then value=self.Flag.Value==true end
+ if value and self.LastValue==false then
+  self.Rises+=1;self.LastRiseAt=self.Clock()
+ end
+ self.LastValue=value
+end
+function Reaction:Refresh(skipSample)
+ if self.Closed then return false,'Observer disposed'end
+ local humanoid,flag,receiver,kind,reason,fallbackReason=inspect(self.Character)
+ local ready=humanoid~=nil and flag~=nil and receiver~=nil and reason==nil
+ if humanoid~=self.Humanoid or flag~=self.Flag or receiver~=self.Receiver or ready~=self.Ready then
+  self:Disconnect();self.Generation+=1
+  self.Humanoid=humanoid;self.Flag=flag;self.Receiver=receiver;self.ReceiverKind=kind
+  self.Ready=ready;self.LastValue=flag and flag.Value==true or false;self.Observation=nil
+  if ready then
+   local generation=self.Generation
+   local changed=flag.Changed
+   if changed and changed.Connect then
+    self.Observation='BoolValueChanged'
+    self.Connection=changed:Connect(function(value)
+     if self.Closed or self.Flag~=flag or self.Generation~=generation then return end
+     -- Changed carries BoolValue's event-time boolean. Under deferred
+     -- signals, reading current Value could lose a complete true/false pulse.
+     self:Refresh(true)
+     if self.Ready and self.Flag==flag and self.Generation==generation and type(value)=='boolean'then self:Sample(value)end
+    end)
+   else
+    local propertyChanged=flag.GetPropertyChangedSignal and flag:GetPropertyChangedSignal('Value')
+    if propertyChanged and propertyChanged.Connect then
+     self.Observation='ChangedSignal'
+     self.Connection=propertyChanged:Connect(function()
+      if not self.Closed and self.Flag==flag and self.Generation==generation then self:Refresh()end
+     end)
+    end
+   end
+  end
+ end
+ self.Reason=reason;self.ReceiverKind=kind;self.FallbackReason=fallbackReason
+ -- Polling a payload-bound flag could count current true before its deferred
+ -- false/true callbacks arrive and then count that same rise a second time.
+ if not skipSample and self.Observation~='BoolValueChanged'then self:Sample()end
+ return self.Ready,self.Reason
+end
+function Reaction:StartAttempt()
+ local ready,reason=self:Refresh()
+ if not ready then return nil,reason end
+ return {Observer=self,Generation=self.Generation,Counter=self.Rises,Baseline=self.LastValue,
+  Receiver=self.Receiver,Flag=self.Flag,StartedAt=self.Clock()}
+end
+function Reaction:ObservedSince(attempt)
+ local ready,reason=self:Refresh()
+ if not ready then return false,reason end
+ if not attempt or attempt.Observer~=self or attempt.Generation~=self.Generation or attempt.Receiver~=self.Receiver or attempt.Flag~=self.Flag then
+  return false,'Reaction attempt belongs to an old target binding'
+ end
+ if self.Rises>(attempt.Counter or self.Rises)then return true,'New game ragdoll reaction observed'end
+ return false,attempt.Baseline and 'Ragdolled was already true; no new reaction observed'or 'No new game ragdoll reaction observed'
+end
+function Reaction:Describe()
+ self:Refresh()
+ return {Ready=self.Ready==true,Reason=self.Closed and 'Observer disposed'or self.Reason,
+  Ragdolled=self.Flag and self.Flag.Value==true or false,Rises=self.Rises,LastRiseAt=self.LastRiseAt,
+  ReceiverName=self.Receiver and self.Receiver.Name or nil,ReceiverKind=self.ReceiverKind,FallbackReason=self.FallbackReason,
+  Generation=self.Generation,Disposed=self.Closed,Observation=self.Connection and self.Observation or 'SampledState'}
+end
+function Reaction:Dispose()
+ if self.Closed then return end
+ self.Closed=true;self:Disconnect();self.Ready=false;self.Generation+=1;self.Reason='Observer disposed'
+end
+return Reaction
+
+]========]
 sources.PalletCadence = [========[
 -- Per-target physical stroke plans. Planning/retries do not advance the pattern;
 -- the caller reports completion only after a successful physical traversal.
@@ -19676,7 +19810,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.60 | FTAP")
+                                warn("Astral v4.61 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -36989,7 +37123,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.60"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.61"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -37113,7 +37247,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.60",true)
+            box:AddLabel("Astral v4.61",true)
         end
 
         do
@@ -38942,6 +39076,12 @@ Escape Timer: %*]]
         v21:AddDivider("Hold")
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddButton({Text="Prepare Pallet",Func=function()tbl12.PalletRagdoll:Warm()end})
+        v21:AddButton({Text="Copy Kick Info",Func=function()
+            local copy=setclipboard or toclipboard
+            if type(copy)~="function"then fn18("Clipboard unavailable");return end
+            local ok,why=pcall(function()copy(HttpService:JSONEncode(tbl12.PalletRagdoll:Evidence()))end)
+            fn18(ok and "Pallet receiver and observed ragdoll data copied."or "Copy failed: "..tostring(why))
+        end})
 
 		v21:AddToggle("RagdollNK", {
 			Text = "Ragdoll During Kick",
@@ -43371,9 +43511,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.60: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.61: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.60 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.61 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -91530,6 +91670,7 @@ local Source=requireModule("Resonance29Ragdoll")
 local Ownership=requireModule("PalletOwnership")
 local Stroke=requireModule("PalletStroke")
 local Cadence=requireModule("PalletCadence")
+local Reaction=requireModule("PalletReaction")
 local Pallet={};Pallet.__index=Pallet
 local CANCELLED={}
 local function alive(part)return part and part.Parent and part:IsA("BasePart")end
@@ -91587,20 +91728,36 @@ function Pallet.Install(context)
             self:EndContact()
             self.StrokeFailure=nil
             local entry=self.Active
+            local receiver,kind,receiverError=Reaction.Resolve(character)
+            if not receiver then self.Status=tostring(receiverError);return false,receiverError end
+            entry.Receiver=receiver;entry.ReceiverKind=kind
+            local attempt
             local plan=Cadence.Plan(entry,context.PingSeconds and context.PingSeconds()or .1)
             self:ShowPallet()
             local complete,why=Stroke.Run({Clock=context.Clock,Gravity=context.Gravity,Speed=plan.Speed,ClearSeconds=plan.ClearSeconds,
-                Ready=function()return current()and context.Owned(sound)end,
+                Ready=function()return current()and context.Owned(sound)and Reaction.Resolve(character)==receiver end,
                 WaitPhase=function()
                     if not valid()then error(CANCELLED,0)end
                     local dt=self.FrameSignal:Wait()
                     if not valid()then error(CANCELLED,0)end;return dt
                 end,
                 RecordClear=function()self.ClearPasses+=1 end,
-                BeginStrike=function()self.StrikeAttempts+=1;local e=self.Active;if e then e.StrikeAttempts=(e.StrikeAttempts or 0)+1 end end,
+                BeginStrike=function()
+                    attempt=entry.Reaction:StartAttempt()
+                    self.StrikeAttempts+=1;entry.StrikeAttempts=(entry.StrikeAttempts or 0)+1
+                end,
                 Record=function()self.Passes+=1;self.LastPassAt=context.Clock();local e=self.Active;if e then e.Passes=(e.Passes or 0)+1 end;self.Status='Pallet crossing selected target'end,
-            },sound,main,torso,character)
-            if complete then Cadence.Completed(entry)end
+            },sound,main,receiver,character)
+            if complete then
+                entry.CompletedTraversals=(entry.CompletedTraversals or 0)+1
+                -- The game's bool is a state, not a per-hit acknowledgement.
+                -- Observe it without delaying/rejecting repeated physical strokes:
+                -- a real hit can refresh ragdoll while this value remains true.
+                local observed,reason=entry.Reaction:ObservedSince(attempt)
+                if observed then entry.ReactionReason=nil else entry.ReactionReason=reason end
+                self.Status=observed and 'New Ragdolled transition observed' or 'Pallet traversal; game reaction not established'
+                Cadence.Completed(entry)
+            end
             return complete,why
         end,
         StrokeFailed=function(reason)self.StrokeFailure=reason;self.Status='Pallet stroke stopped: '..tostring(reason)end,
@@ -91710,7 +91867,11 @@ function Pallet:Bind(model)
     sound.CanTouch=true
     self.TouchConnection=sound.Touched:Connect(function(part)
         local entry=self.Active
-        if entry and not entry.Done and part and part:IsDescendantOf(entry.Character)then self.Contacts+=1;entry.ContactAt=self.Context.Clock()end
+        if entry and not entry.Done and part and part:IsDescendantOf(entry.Character)then
+            self.Contacts+=1;entry.ContactAt=self.Context.Clock()
+            local receiver=Reaction.Resolve(entry.Character)
+            if receiver and part==receiver then entry.ReceiverContactAt=self.Context.Clock();entry.ReceiverContacts=(entry.ReceiverContacts or 0)+1 end
+        end
     end)
 end
 function Pallet:Request(character,valid,continuous)
@@ -91720,6 +91881,7 @@ function Pallet:Request(character,valid,continuous)
     local entry=self.Entries[character]
     if entry and not entry.Done then return entry end
     entry={Character=character,Valid=valid,StartedAt=self.Context.Clock(),Done=false,Continuous=continuous==true,ContinuousValid=continuous and valid or nil}
+    entry.Reaction=Reaction.new(character,self.Context.Clock)
     self.Entries[character]=entry;self.Queue[#self.Queue+1]=entry
     self:Step() -- dispatch without an extra queue frame
     return entry
@@ -91737,6 +91899,7 @@ function Pallet:Cancel(character)
     local entry=self.Entries[character]
     if entry then
         entry.Done=true;entry.Success=false
+        if entry.Reaction then entry.Reaction:Dispose()end
         if self.Active==entry then self:SafePark()end
     end
     self.Entries[character]=nil
@@ -91760,6 +91923,7 @@ function Pallet:Step()
         local candidate=table.remove(self.Queue,1)
         if self:EntryValid(candidate)then entry=candidate;break end
         candidate.Done=true;candidate.Success=false
+        if candidate.Reaction then candidate.Reaction:Dispose()end
     end
     if not entry then return end
     self.Active=entry
@@ -91779,6 +91943,7 @@ function Pallet:Step()
             entry.Done=true;entry.Success=ok and value==true
             if cancelled then entry.Success=false end
             if entry.Success then self.Confirmed+=1 else self.Misses+=1 end
+            if entry.Reaction then entry.Reaction:Dispose()end
         end
         entry.CompletedAt=self.Context.Clock()
         self.NextStart=not cancelled and(not ok or(entry.Passes or 0)==passesBefore)and self.Context.Clock()+.1 or nil
@@ -91795,13 +91960,15 @@ function Pallet:Watchdog()
     local entry=self.Active or self.Queue[1]
     if self.Closed or not entry or entry.Done or not self:EntryValid(entry)or not self.Context.Notify then return end
     local now=self.Context.Clock()
-    if now-(entry.ContactAt or entry.StartedAt or now)<3 or now<(self.NextWarning or 0)then return end
+    local reaction=entry.Reaction and entry.Reaction:Describe()
+    if now-((reaction and reaction.LastRiseAt)or entry.StartedAt or now)<3 or now<(self.NextWarning or 0)then return end
     local reason
     if not alive(self.Sound)then reason='Доска ещё не создана: '..tostring(self.Status)
     elseif not self.Context.Owned(self.Sound)then reason='Нет физического владения доской. Повторяю захват.'
     elseif self.StrokeFailure then reason='Доска не завершила проход через цель: '..tostring(self.StrokeFailure)
     elseif now-(self.LastPassAt or 0)>.75 then reason='Цикл доски остановлен: '..tostring(self.Status)
-    else reason='Локальное касание цели пока не зарегистрировано.'end
+    elseif reaction and reaction.Ragdolled then reason='Ragdolled остаётся true: новые удары по этому флагу не различить.'
+    else reason='Доска движется, но перехода Ragdolled не видно. Нужна проверка на втором экране.'end
     self.NextWarning=now+10;pcall(self.Context.Notify,reason)
 end
 function Pallet:Prepare(valid)
@@ -91840,6 +92007,18 @@ function Pallet:Warm()
     if self.Closed or self.Preparing or self.Active then return end
     self.Context.SpawnThread(function()self:Prepare()end)
 end
+function Pallet:Evidence()
+    local info={Status=self.Status,StrokeFailure=self.StrokeFailure,OwnershipReason=self.OwnershipReason,Entries={}}
+    for _,entry in pairs(self.Entries)do if not entry.Done then
+        local reaction=entry.Reaction and entry.Reaction:Describe()
+        info.Entries[#info.Entries+1]={Character=entry.Character.Name,Receiver=entry.Receiver and entry.Receiver.Name,
+            ReceiverKind=entry.ReceiverKind,StrokeAttempts=entry.StrikeAttempts or 0,PhysicalTraversals=entry.CompletedTraversals or 0,
+            LocalReceiverContacts=entry.ReceiverContacts or 0,
+            ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.ReactionReason,
+            Reaction=reaction}
+    end end
+    return info
+end
 function Pallet:GetContactTime(character)local e=self.Entries[character];return e and e.ContactAt end
 function Pallet:GetCompletedTime(character)local e=self.Entries[character];return e and e.CompletedAt end
 function Pallet:Describe()
@@ -91853,7 +92032,7 @@ end
 function Pallet:Dispose()
     if self.Closed then return end
     self.Closed=true;self.Connection:Disconnect();self.Ownership:Dispose()
-    for _,entry in pairs(self.Entries)do entry.Done=true;entry.Success=false end
+    for _,entry in pairs(self.Entries)do entry.Done=true;entry.Success=false;if entry.Reaction then entry.Reaction:Dispose()end end
     table.clear(self.Queue)
     self:SafePark()
     local model=self.Model

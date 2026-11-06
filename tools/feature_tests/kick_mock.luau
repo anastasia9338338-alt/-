@@ -20,11 +20,13 @@ function CFrame.new(x,y,z)
         RightVector=Vector3.new(1,0,0),UpVector=Vector3.new(0,1,0),LookVector=Vector3.new(0,0,-1)},CF)
 end
 CF.__add=function(cf,v)return CFrame.new(cf.Position+v)end
+local currentSim
 local Node={}
 Node.__index=function(n,k)
     if k=='Parent'then return rawget(n,'_parent')end
     if k=='CFrame'then return rawget(n,'_cf')end
     if k=='Position'then return rawget(n,'_cf').Position end
+    if k=='Value'then return rawget(n,'_value')end
     return Node[k]
 end
 local function translate(n,delta)
@@ -37,6 +39,12 @@ Node.__newindex=function(n,k,v)
         if previous and previous.Children then local i=table.find(previous.Children,n);if i then table.remove(previous.Children,i)end end
         rawset(n,'_parent',v)
         if v and v.Children then table.insert(v.Children,n)end
+    elseif k=='Value'then
+        local previous=rawget(n,'_value');rawset(n,'_value',v)
+        if previous~=v then
+            local signals=rawget(n,'_signals');if signals and signals.Value then signals.Value:Fire()end
+            if n.Changed then n.Changed:Fire(v)end
+        end
     elseif k=='CFrame'or k=='Position'then
         local position=k=='CFrame'and v.Position or v
         rawset(n,'Teleports',(n.Teleports or 0)+1)
@@ -44,17 +52,26 @@ Node.__newindex=function(n,k,v)
     else rawset(n,k,v)end
 end
 function Node:IsA(class)return self.ClassName==class or class=='BasePart'and self.ClassName=='Part'end
-function Node:FindFirstChild(name)for _,v in ipairs(self.Children)do if v.Name==name then return v end end end
+function Node:GetPropertyChangedSignal(name)
+    local signals=rawget(self,'_signals')
+    if not signals then signals={};rawset(self,'_signals',signals)end
+    if not signals[name]then signals[name]=(rawget(self,'_sim')or currentSim):Signal()end
+    return signals[name]
+end
+function Node:FindFirstChild(name,recursive)
+ for _,v in ipairs(self.Children)do if v.Name==name then return v end end
+ if recursive then for _,v in ipairs(self.Children)do local found=v:FindFirstChild(name,true);if found then return found end end end
+end
 function Node:FindFirstChildOfClass(class)for _,v in ipairs(self.Children)do if v:IsA(class)then return v end end end
 function Node:WaitForChild(name)return self:FindFirstChild(name)end
 function Node:GetChildren()return table.clone(self.Children)end
 function Node:IsDescendantOf(ancestor)local p=self.Parent;while p do if p==ancestor then return true end;p=p.Parent end;return false end
 function Node:Destroy()for _,v in ipairs(self:GetChildren())do v:Destroy()end;self.Parent=nil end
 local WORLD={}
-local currentSim
 local function newNode(class,name,parent)
     local n=setmetatable({ClassName=class,Name=name or class,Children={},_cf=CFrame.new(),Size=Vector3.new(2,2,1),
-        CanTouch=true,CanCollide=true,Anchored=false,AssemblyLinearVelocity=Vector3.zero,AssemblyAngularVelocity=Vector3.zero},Node)
+        CanTouch=true,CanCollide=true,Anchored=false,AssemblyLinearVelocity=Vector3.zero,AssemblyAngularVelocity=Vector3.zero,_sim=currentSim},Node)
+    n.Changed=currentSim:Signal()
     if class=='Part'then n.Touched=currentSim:Signal()end
     n.Parent=parent
     return n
@@ -108,7 +125,7 @@ local function target(name,position)
     t.Torso=newNode('Part','Torso',t.Character);t.Torso.Position=position or Vector3.new(0,15,0)
     t.Head=newNode('Part','Head',t.Character);newNode('StringValue','PartOwner',t.Head)
     t.Humanoid=newNode('Humanoid','Humanoid',t.Character);t.Humanoid.Health=100
-    t.Flag=newNode('BoolValue','Ragdolled',t.Humanoid);t.Flag.Value=true
+    t.Flag=newNode('BoolValue','Ragdolled',t.Humanoid);t.Flag.Value=false
     return t
 end
 local function fixture(Pallet,pre)
@@ -118,27 +135,42 @@ local function fixture(Pallet,pre)
     local main=newNode('Part','Main',model);main.Position=Vector3.new(20,10,0)
     sound.Position=main.Position+Vector3.new(0,.25,0)
     sound.AssemblyRootPart=main;main.AssemblyRootPart=main;main.AssemblyMembers={main,sound}
-    local data={Valid=true,Owned=true,Acquire=true,Targets={t},Crossings={},Spawns=0,Acquires=0,Destroyed=0,Accept=true}
+    local data={Valid=true,Owned=true,Acquire=true,Targets={t},Crossings={},Spawns=0,Acquires=0,Destroyed=0,Accept=true,GameAccept=true,GameReactions=0}
     local function overlap(part,other)
         local delta=part.Position-other.Position;local half=(part.Size+other.Size)*.5
         return math.abs(delta.X)<half.X and math.abs(delta.Y)<half.Y and math.abs(delta.Z)<half.Z
     end
+    local function receiverFor(p)
+        local named=p.Receiver
+        return named and named.Parent and named:IsA('BasePart')and named.CanTouch and named or p.Torso
+    end
     sim.Physics=function(dt)
+        -- This is deliberately an external fake GAME input, not a production
+        -- setter: local touch delivery and game acceptance are independent.
+        for _,p in ipairs(data.Targets)do
+            if p.GameClearAt and sim.Now>=p.GameClearAt then p.Flag.Value=false;p.GameClearAt=nil end
+        end
         if not main.Parent or not data.Owned then return end
-        local before={};for _,p in ipairs(data.Targets)do before[p]=overlap(sound,p.Torso)end
+        local before={};for _,p in ipairs(data.Targets)do before[p]=overlap(sound,receiverFor(p))end
         local mover=main:FindFirstChild('RagdollBP')
         if mover and mover.MaxForce.Magnitude>0 then
             -- Exposes the old opposing lift instead of treating placements as hits.
             translate(main,Vector3.new(0,1000*dt,0))
         elseif not data.Blocked then translate(main,main.AssemblyLinearVelocity*dt)end
         for _,p in ipairs(data.Targets)do
-            if sound.CanTouch and not before[p]and overlap(sound,p.Torso)then
-                data.Crossings[#data.Crossings+1]={Target=p,At=sim.Now,Velocity=sound.AssemblyLinearVelocity-p.Torso.AssemblyLinearVelocity,
+            local receiver=receiverFor(p)
+            if sound.CanTouch and receiver.CanTouch and not before[p]and overlap(sound,receiver)then
+                data.Crossings[#data.Crossings+1]={Target=p,Receiver=receiver,At=sim.Now,Velocity=sound.AssemblyLinearVelocity-receiver.AssemblyLinearVelocity,
                     Lift=mover and mover.MaxForce.Magnitude or 0}
-                if data.Accept then sound.Touched:Fire(p.Torso)end
+                if data.Accept then sound.Touched:Fire(receiver)end
+                if data.GameAccept then
+                    if not p.Flag.Value then data.GameReactions+=1 end
+                    p.Flag.Value=true;p.GameClearAt=sim.Now+.08
+                end
             end
         end
     end
+
     local controller=Pallet.Install({RunService=sim.RunService,Clock=function()return sim.Now end,
         Wait=function(ti)return sim:Wait(ti)end,SpawnThread=function(fn)sim:Spawn(fn)end,MaximumSpeed=true,States={},
         Find=function()return model.Parent and model end,CanSpawn=function()return true end,

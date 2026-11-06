@@ -36,6 +36,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='astral-check-')as temp:
         folder=Path(temp)
         files=[repo/'astral.lua']
+        probe=repo/'diagnostics/hit_probe.lua'
+        if probe.is_file():files.append(probe)
         for name,body in modules.items():
             if name=='Notices':continue
             path=folder/(name+'.luau');path.write_text(body);files.append(path)
@@ -67,6 +69,11 @@ def main():
     with zipfile.ZipFile(repo/'astral.zip')as archive:
         assert archive.namelist()==['astral.lua']and archive.testzip()is None
         assert archive.read('astral.lua')==(repo/'astral.lua').read_bytes(),'ZIP contains another Lua revision'
+    if probe.is_file():
+        with zipfile.ZipFile(probe.with_suffix('.zip'))as archive:
+            assert archive.namelist()==[probe.name]and archive.testzip()is None
+            assert archive.read(probe.name)==probe.read_bytes(),'Hit probe ZIP contains another Lua revision'
+        print('PASS: standalone receiving-account probe compiles and ZIP matches Lua')
     print(f'PASS: bundle, {len(modules)-1} executable modules, embedded gameplay, {len(bindings)} controller bindings and ZIP')
 
 if __name__=='__main__':main()
