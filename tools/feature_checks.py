@@ -29,8 +29,14 @@ def run_feature_checks(modules,runner,folder):
         run('antigrab',program)
     if 'PalletRagdoll'in modules and 'Resonance29Ragdoll'in modules:
         program=read('kick_mock.luau')+'\nlocal Source=(function()\n'+modules['Resonance29Ragdoll']+'\nend)()\n'
-        program+='local Pallet=(function(...)\n'+modules['PalletRagdoll']+'\nend)(function(name)assert(name=="Resonance29Ragdoll");return Source end)\n'+read('kick_body.luau')
+        program+='local Ownership=(function()\n'+modules['PalletOwnership']+'\nend)()\nlocal Stroke=(function()\n'+modules['PalletStroke']+'\nend)()\n'
+        program+='local Pallet=(function(...)\n'+modules['PalletRagdoll']+'\nend)(function(name)if name=="Resonance29Ragdoll"then return Source elseif name=="PalletOwnership"then return Ownership elseif name=="PalletStroke"then return Stroke end;error(name)end)\n'+read('kick_body.luau')
         run('kick',program)
+        run('pallet_ownership',read('kick_mock.luau')+'\nlocal Ownership=(function()\n'+modules['PalletOwnership']+'\nend)()\n'+read('pallet_ownership_body.luau'))
+        run('kick_channel',read('kick_mock.luau')+'\nlocal Loop=(function()\n'+modules['KickLoop']+'\nend)()\n'+read('kick_channel_body.luau'))
+        start=modules['Main'].index('tbl12.SNO = function');end=modules['Main'].index('tbl12.RNO = function',start)
+        sno=modules['Main'][start:end]
+        run('pallet_sno',read('kick_mock.luau')+'\n'+read('pallet_sno_prefix.luau')+'\n'+sno+'\n'+read('pallet_sno_body.luau'))
     if 'Library'in modules:
         library=modules['Library']
         slider=library[library.index('    function Funcs:AddSlider('):library.index('    function Funcs:AddDropdown(')]
