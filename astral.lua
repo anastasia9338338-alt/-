@@ -1,6 +1,86 @@
--- Astral v4.59 | Active pallet ownership recovery, shared grab scheduling and finite physical strikes.
+-- Astral v4.60 | Distinct target ownership phases and verified local replication cleanup; holding and pallet preserved.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
+sources.PalletCadence = [========[
+-- Per-target physical stroke plans. Planning/retries do not advance the pattern;
+-- the caller reports completion only after a successful physical traversal.
+local Cadence={}
+local function pingSeconds(value)
+ if type(value)~='number'or value~=value or value<0 or math.abs(value)==math.huge then return .1 end
+ return value
+end
+local function state(entry)
+ local current=entry.PalletCadence
+ if not current then current={Step=0,Initial=true};entry.PalletCadence=current end
+ return current
+end
+function Cadence.Plan(entry,ping)
+ local current=state(entry)
+ if current.Plan then return current.Plan end
+ local speed,clear=48,.06
+ if current.Step==0 then
+  speed=28
+  clear=current.Initial and .06 or math.clamp(.15+pingSeconds(ping)*.5,.18,.35)
+ elseif current.Step==1 then
+  clear=math.clamp(.1+pingSeconds(ping)*.5,.12,.25)
+ end
+ current.Plan=table.freeze({Speed=speed,ClearSeconds=clear})
+ return current.Plan
+end
+function Cadence.Completed(entry)
+ local current=state(entry)
+ current.Step=(current.Step+1)%5;current.Initial=false;current.Plan=nil
+end
+function Cadence.Reset(entry)entry.PalletCadence=nil end
+return Cadence
+
+]========]
+sources.KickHandoff = [========[
+-- Request phases are observations of the local ownership state, never proof of
+-- a server kick. Hold movers and the independent pallet are outside this gate.
+local Handoff={}
+local function pingSeconds(value)
+ if type(value)~='number'or value~=value or math.abs(value)==math.huge then return .1 end
+ return math.clamp(value,0,1.2)
+end
+local function observe(phase,owned,wanted)
+ if owned==wanted then phase.Observed=true end
+end
+function Handoff.Grabbed(session,frame,now,ping)
+ session.Handoff={Phase='grab',Frame=frame,Earliest=now+.05,
+  Deadline=now+math.clamp(.1+pingSeconds(ping),.15,.7),Observed=false}
+end
+function Handoff.CanRelease(session,frame,now,owned)
+ local phase=session.Handoff
+ if not phase or phase.Phase~='grab'then return false end
+ observe(phase,owned,true)
+ if frame<=phase.Frame or now+1e-7<phase.Earliest then return false end
+ if phase.Observed or now+1e-7>=phase.Deadline then
+  session.LastHandoff={Phase='grab',Observed=phase.Observed,At=now}
+  return true
+ end
+ return false
+end
+function Handoff.Released(session,frame,now,ping)
+ session.Handoff={Phase='released',Frame=frame,Earliest=now+.05,
+  Deadline=now+math.clamp(.05+pingSeconds(ping)*.5,.05,.3),Observed=false}
+end
+function Handoff.CanGrab(session,frame,now,owned)
+ local phase=session.Handoff
+ if not phase then return true end
+ if phase.Phase~='released'then return false end
+ observe(phase,owned,false)
+ if frame<=phase.Frame or now+1e-7<phase.Earliest then return false end
+ if phase.Observed or now+1e-7>=phase.Deadline then
+  session.LastHandoff={Phase='released',Observed=phase.Observed,At=now}
+  session.Handoff=nil
+  return true
+ end
+ return false
+end
+return Handoff
+
+]========]
 sources.PalletStroke = [========[
 -- A contact attempt moves the owned pallet through a real separated -> overlap
 -- -> separated path. It does not equate a solver touch with a server hit.
@@ -47,7 +127,7 @@ function Stroke.Run(ctx,sound,main,torso,character)
  assembly.CFrame=assembly.CFrame+(launch-sound.Position)
  velocity(0,true)
  if ctx.RecordClear then ctx.RecordClear(sound,character)end
- local clearUntil=ctx.Clock()+.06
+ local clearUntil=ctx.Clock()+math.clamp(ctx.ClearSeconds or .06,.06,.35)
  repeat
   dt=validDt(ctx.WaitPhase())
   if not ready()then return false,'cancelled'end
@@ -19596,7 +19676,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.59 | FTAP")
+                                warn("Astral v4.60 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -36832,7 +36912,7 @@ Escape Timer: %*]]
                 Targets=function()return tbl12.GetTargets(false,tbl7.SelectedPlayers)end,
                 LocalCharacter=function()return tbl12.Char()end,Character=tbl12.Char,
                 Owned=function(root)return tbl12.KickNetworkOwned(root)and tbl12.IsPartOwner(root)end,
-                NetworkOwned=tbl12.KickNetworkOwned,
+                NetworkOwned=tbl12.IsNetworkOwner,MarkerOwned=tbl12.IsPartOwner,
                 OwnershipBusy=function()return tbl7.States.Owning==true or tbl12.PalletRagdoll.Preparing or tbl12.PalletRagdoll.Ownership.InFlight end,
                 Grab=tbl12.Grab,Release=tbl12.RNO,
                 Acquire=function(root,valid)return tbl12.SNO(root,.65,valid)end,
@@ -36848,9 +36928,19 @@ Escape Timer: %*]]
                 Height=function()return tbl9.NKOffset end,
                 EKIEnabled=function()return tbl8.EKI==true end,
                 SuppressEKI=function(player)return tbl12.DesyncDestroy and tbl12.DesyncDestroy:IsTarget(player)end,
+                ReadReplicationRoot=function(root)
+                    if not root or not root.Parent or typeof(gethiddenproperty)~="function"then return false end
+                    return pcall(gethiddenproperty,root,"PhysicsRepRootPart")
+                end,
                 ReplicationRoot=function(root,value)
                     if not root or not root.Parent or typeof(sethiddenproperty)~="function"then return false end
-                    return pcall(sethiddenproperty,root,"PhysicsRepRootPart",value)
+                    local wrote=pcall(sethiddenproperty,root,"PhysicsRepRootPart",value)
+                    if not wrote then return false end
+                    if typeof(gethiddenproperty)=="function"then
+                        local read,actual=pcall(gethiddenproperty,root,"PhysicsRepRootPart")
+                        if read then return actual==value end
+                    end
+                    return true
                 end,
                 FastMode=function()return tbl9.NKDelayMode=="Faster but worse"end,
                 PingSeconds=tbl12.KickPingSeconds,
@@ -36899,7 +36989,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.59"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.60"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -37023,7 +37113,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.59",true)
+            box:AddLabel("Astral v4.60",true)
         end
 
         do
@@ -43281,9 +43371,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.59: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.60: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.59 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.60 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -91439,6 +91529,7 @@ local requireModule=...
 local Source=requireModule("Resonance29Ragdoll")
 local Ownership=requireModule("PalletOwnership")
 local Stroke=requireModule("PalletStroke")
+local Cadence=requireModule("PalletCadence")
 local Pallet={};Pallet.__index=Pallet
 local CANCELLED={}
 local function alive(part)return part and part.Parent and part:IsA("BasePart")end
@@ -91495,7 +91586,10 @@ function Pallet.Install(context)
         Stroke=function(sound,main,torso,character,current)
             self:EndContact()
             self.StrokeFailure=nil
-            return Stroke.Run({Clock=context.Clock,Gravity=context.Gravity,
+            local entry=self.Active
+            local plan=Cadence.Plan(entry,context.PingSeconds and context.PingSeconds()or .1)
+            self:ShowPallet()
+            local complete,why=Stroke.Run({Clock=context.Clock,Gravity=context.Gravity,Speed=plan.Speed,ClearSeconds=plan.ClearSeconds,
                 Ready=function()return current()and context.Owned(sound)end,
                 WaitPhase=function()
                     if not valid()then error(CANCELLED,0)end
@@ -91506,6 +91600,8 @@ function Pallet.Install(context)
                 BeginStrike=function()self.StrikeAttempts+=1;local e=self.Active;if e then e.StrikeAttempts=(e.StrikeAttempts or 0)+1 end end,
                 Record=function()self.Passes+=1;self.LastPassAt=context.Clock();local e=self.Active;if e then e.Passes=(e.Passes or 0)+1 end;self.Status='Pallet crossing selected target'end,
             },sound,main,torso,character)
+            if complete then Cadence.Completed(entry)end
+            return complete,why
         end,
         StrokeFailed=function(reason)self.StrokeFailure=reason;self.Status='Pallet stroke stopped: '..tostring(reason)end,
         EndContact=function()self:EndContact()end,
@@ -91584,7 +91680,22 @@ function Pallet:SafePark()
     if not ok then self.LastError="Pallet cleanup: "..tostring(message)end
     return ok
 end
+function Pallet:ShowPallet()
+    self.Visuals=self.Visuals or{}
+    if not self.Model or not self.Model.Parent then return end
+    for _,p in ipairs(self.Model:GetChildren())do
+        if p:IsA('BasePart')and(p.Transparency or 0)<1 then
+            local value=p.LocalTransparencyModifier or 0
+            if value<.45 then
+                if self.Visuals[p]==nil then self.Visuals[p]=value end
+                p.LocalTransparencyModifier=.45
+            end
+        end
+    end
+end
 function Pallet:ForgetModel()
+    for p,value in pairs(self.Visuals or{})do if p.Parent and p.LocalTransparencyModifier==.45 then p.LocalTransparencyModifier=value end end
+    self.Visuals=nil
     if self.TouchConnection then self.TouchConnection:Disconnect();self.TouchConnection=nil end
     if self.Model and self.Context.Reserve then self.Context.Reserve(self.Model,false)end
     self.Model=nil;self.Sound=nil
@@ -91757,8 +91868,10 @@ return Pallet
 
 ]========]
 sources.KickLoop = [========[
--- Native kick body restored from the uploaded source. Local movers run
--- before physics; native Grab/RNO pairs have a separate bounded clock.
+local requireModule=...
+local Handoff=requireModule("KickHandoff")
+-- Existing hold movers run before physics. Target ownership requests use
+-- distinct bounded acquisition/release phases; pallet strikes are independent.
 local Loop={};Loop.__index=Loop
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
 function Loop.Install(context)
@@ -91767,8 +91880,8 @@ function Loop.Install(context)
     local signal=available and physics or context.RunService.Heartbeat
     self.Connection=signal:Connect(function(dt)
         self:FlushCleanup()
-        -- Frame is the native protocol clock, not the rendering frame. RNO
-        -- and its next Grab must run on the same tick, even above 240 FPS.
+        -- Request phases advance on their own clock. A release and its next
+        -- Grab occupy different ticks, independently of rendering FPS.
         local now=context.Clock()
         local nextAt=self.NextNativeAt or now
         self.NativeTick=now+1e-7>=nextAt
@@ -91853,7 +91966,7 @@ function Loop:Remove(player)
     local restores={};session.Restores=restores
     restores.Position=function()if session.Position and session.Position.Parent then session.Position:Destroy()end end
     restores.Orientation=function()if session.Orientation and session.Orientation.Parent then session.Orientation:Destroy()end end
-    if session.EKI then restores.EKI=function()if session.Root.Parent then self.Context.ReplicationRoot(session.Root,nil)end end end
+    if session.EKI then restores.EKI=function()assert(self:RestoreEKI(session),session.EKIError or 'Replication reset rejected')end end
     if session.Weld then restores.Weld=function()if session.Weld.Parent then session.Weld.Enabled=session.WeldEnabled end end end
     if session.Physics then
         restores.Motors=function()self.Context.RestoreMotors(session.Character)end
@@ -91864,6 +91977,16 @@ function Loop:Remove(player)
     restores.Pallet=function()self.Context.CancelRagdoll(session.Character)end
     if self.Context.ForgetInterval then restores.Interval=function()self.Context.ForgetInterval(player)end end
     self.Cleanup[session.Root]=session;session.CleanupAt=0;self:FlushCleanup()
+end
+function Loop:RestoreEKI(session)
+    if not session.EKI then return true end
+    if not session.Root.Parent then session.EKI=nil;return true end
+    local ok,restored=pcall(self.Context.ReplicationRoot,session.Root,session.EKIOriginal)
+    if ok and restored==true then
+        session.EKI=nil;session.EKIOriginal=nil;session.EKIError=nil;return true
+    end
+    session.EKIError=ok and 'Replication reset rejected'or tostring(restored)
+    return false
 end
 function Loop:Clear()
     local players={};for player in pairs(self.Sessions)do players[#players+1]=player end
@@ -91938,7 +92061,9 @@ function Loop:FlushReleases()
         local due=first and(first.Frame and self.Frame>=first.Frame or first.Time and now>=first.Time)
         if due then
             if self:Valid(session)then
-                if self:Release(session)then
+                local owned=(self.Context.MarkerOwned or self.Context.Owned)(session.Root)
+                if Handoff.CanRelease(session,self.Frame,now,owned)and self:Release(session)then
+                    Handoff.Released(session,self.Frame,now,self.Context.PingSeconds())
                     table.remove(queue,1)
                     -- After a deliberate Gucci pause, discard overdue release
                     -- callbacks instead of replaying them as a same-frame burst.
@@ -91963,11 +92088,14 @@ function Loop:Update(session,position,now,ping)
         if ctx.Owned(root)then ctx.Teleport(root,position)
         else self:Acquire(session,now);return end
     end
-    -- The source attempts native Grab without waiting for a pre-existing
-    -- ownership or ragdoll acknowledgement. Its ragdoll worker is independent.
-    local repeatReady=self.MaximumSpeed or not ctx.IntervalReady or ctx.IntervalReady(session.Player,session.Character)
+    -- Ownership phases gate only the next outgoing Grab. Hold updates,
+    -- collision maintenance and the pallet worker continue while waiting.
+    local queued=session.Releases and #session.Releases>0
+    local repeatReady=not queued and Handoff.CanGrab(session,self.Frame,now,(ctx.MarkerOwned or ctx.Owned)(root))
+    if repeatReady and ctx.IntervalReady then repeatReady=ctx.IntervalReady(session.Player,session.Character)end
     if repeatReady then
         session.Requested=true;ctx.Grab(root);self.Calls+=1
+        Handoff.Grabbed(session,self.Frame,now,ping)
         session.Releases=session.Releases or {}
         if self:Compatibility()then
             session.Releases[#session.Releases+1]={Time=now+.2}
@@ -91991,8 +92119,17 @@ function Loop:Update(session,position,now,ping)
     session.EKIAt=session.EKIAt or now+.6
     local networkOwned=ctx.NetworkOwned and ctx.NetworkOwned(root)or not ctx.NetworkOwned and ctx.Owned(root)
     if ctx.EKIEnabled()and now>=session.EKIAt and networkOwned and not(ctx.SuppressEKI and ctx.SuppressEKI(session.Player))then
-        session.EKI=ctx.ReplicationRoot(root,root)==true
-    elseif session.EKI then ctx.ReplicationRoot(root,nil);session.EKI=nil end
+        if not session.EKI then
+            session.EKIOriginal=nil
+            if ctx.ReadReplicationRoot then
+                local ok,read,value=pcall(ctx.ReadReplicationRoot,root)
+                if ok and read then session.EKIOriginal=value end
+            end
+        end
+        local ok,applied=pcall(ctx.ReplicationRoot,root,root)
+        if ok and applied==true then session.EKI=true;session.EKIError=nil
+        else session.EKIError=ok and 'Replication write rejected'or tostring(applied)end
+    elseif session.EKI then self:RestoreEKI(session)end
     session.OwnedAt=ctx.Owned(root)and(session.OwnedAt or now)or nil
 end
 function Loop:Step(dt)

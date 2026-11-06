@@ -137,4 +137,21 @@ do
  f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(1,240)
  check(#f.Data.Crossings>=3 and apiCalls==0,'Continuous physical strikes depended on an injected touch API')
 end
+do
+ local f=fixture(Pallet);f.Main.LocalTransparencyModifier=.12;f.Sound.Transparency=1
+ f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(2,240)
+ local hits=f.Data.Crossings
+ check(#hits>=6,'Physical probe/burst sequence did not complete')
+ check(hits[1].Velocity.Y==-28 and hits[2].Velocity.Y==-48 and hits[5].Velocity.Y==-48 and hits[6].Velocity.Y==-28,'Physical velocities did not follow single/four-burst/single cadence')
+ check(hits[2].At-hits[1].At>hits[3].At-hits[2].At+.04,'Hover gap was not distinct from the fast physical series')
+ check(f.Main.LocalTransparencyModifier==.45 and f.Sound.LocalTransparencyModifier~=.45,'Pallet visibility changed invisible trigger geometry')
+ f.Pallet:Dispose();check(f.Main.LocalTransparencyModifier==.12,'Pallet cleanup did not restore its original local transparency')
+end
+do
+ local f=fixture(Pallet);f.Data.Blocked=true
+ f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(1,240)
+ check(#f.Data.Crossings==0,'Blocked stroke was reported as a physical hit')
+ f.Data.Blocked=false;f.Sim:Run(.5,240)
+ check(#f.Data.Crossings>0 and f.Data.Crossings[1].Velocity.Y==-28,'Failed traversal advanced the series before the first physical probe')
+end
 print('PASS: '..checks..' physical pallet crossings, FPS bounds, promotion, ownership and lifecycle checks (mocked; no server hits)')
