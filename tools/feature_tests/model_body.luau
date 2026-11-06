@@ -301,4 +301,20 @@ do
  check(f.Root.LocalTransparencyModifier==0 and f.Controller.Loading,'Switching model left the old avatar hidden during loading')
  f.Controller:Dispose();f.Data.Queue[3]();check(f.Data.Builds==1,'Unloaded model selector started a queued importer')
 end
+do
+ local f=localFixture()
+ check(f.Controller:SetChoice(' Aqua (CS:GO) ')and f.Controller.Choice=='Aqua (CS:GO)','Aqua alias silently selected Sahur')
+ check(not f.Controller:SetChoice('unknown model')and f.Controller.Choice=='Aqua (CS:GO)','Invalid model silently fell back to Sahur')
+ local info=f.Controller:Describe();check(info.RequestedModel=='Aqua (CS:GO)'and info.Error~=nil,'Unloaded model diagnostics omitted the selection/error')
+ f.Controller:SetEnabled(true);f.Data.Queue[1]();check(f.Controller.Renderer~=nil,'Aqua selection failed to enable')
+ f.Controller:Dispose()
+end
+do
+ local f=localFixture();f.Controller:SetChoice('Aqua (CS:GO)')
+ f.Controller.Context.BuildRenderer=function()return{Name='Tung Tung Tung Sahur',Render=function()end,Dispose=function()f.Data.Disposed+=1 end}end
+ f.Controller:SetEnabled(true);f.Data.Queue[1]()
+ check(f.Controller.Renderer==nil and f.Data.Disposed==1,'Aqua request silently accepted a Sahur renderer')
+ local info=f.Controller:Describe();check(info.RequestedModel=='Aqua (CS:GO)'and info.Error:find('Renderer mismatch',1,true),'Renderer mismatch diagnostics omitted the Aqua request')
+ f.Controller:Dispose()
+end
 print('PASS: '..checks..' model sanitizer/articulation/locomotion/scale/cancellation/visibility checks (mocked)')

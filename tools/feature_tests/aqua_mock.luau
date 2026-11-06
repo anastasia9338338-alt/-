@@ -1,3 +1,4 @@
+local Vector2={new=function(x,y)return{X=x,Y=y}end}
 -- Extend the shared geometric Instance mock for full Source skeleton matrices.
 local oldConstructor=CFrame.new
 function CFrame.new(x,y,z,...)

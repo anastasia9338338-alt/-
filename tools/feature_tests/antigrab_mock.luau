@@ -34,16 +34,19 @@ local function fixture(mode)
  local collider=node('Part',leg,{Name='RagdollLimbPart',CanCollide=false})
  c.Descendants={torso,leg,motor,a,b,socket,collider}
  local rag={Value=false,IsA=function(_,name)return name=='BoolValue'end}
+ local hsignals={}
  local hdata={Parent=c,Health=100,AutoRotate=true,RequiresNeck=true,PlatformStand=false,Sit=false,SeatPart=nil,WalkSpeed=22,HipHeight=2,FloorMaterial='Grass',State='Running',StateEnabled={}}
  hdata.FindFirstChild=function(_,name)return name=='Ragdolled'and rag end
  hdata.GetState=function()return hdata.State end
  hdata.ChangeState=function(_,value)d.Changes[#d.Changes+1]=value;hdata.State=value end
  hdata.GetStateEnabled=function(_,state)return hdata.StateEnabled[state]~=false end
  hdata.SetStateEnabled=function(_,state,value)hdata.StateEnabled[state]=value end
- local hum=setmetatable({},{__index=hdata,__newindex=function(_,k,v)d.Writes[#d.Writes+1]='hum.'..k;hdata[k]=v end})
+ hdata.GetPropertyChangedSignal=function(_,key)hsignals[key]=hsignals[key]or signal();return hsignals[key]end
+ local hum=setmetatable({},{__index=hdata,__newindex=function(_,k,v)d.Writes[#d.Writes+1]='hum.'..k;local before=hdata[k];hdata[k]=v;if before~=v and hsignals[k]then hsignals[k]:Fire()end end})
  local ctx={RunService={Heartbeat=heart,PreSimulation=pre},Clock=function()return d.Now end,
   Enabled=function()return d.Enabled end,Held=function()return d.Held end,Mode=function()return d.Mode end,
   Character=function()return d.Character or c,d.Root or root,d.Humanoid or hum end,
+  GrabWelds=function()return d.GrabWelds or{}end,RecoverAnimation=function()d.AnimationRecoveries=(d.AnimationRecoveries or 0)+1 end,
   SetActive=function(value)d.Active[#d.Active+1]=value end,
   Struggle=function()d.Struggles+=1;if d.Throw then error('remote denied')end end,
   Ragdoll=function(r,t)d.Clears[#d.Clears+1]={Root=r,Duration=t};if d.Throw then error('remote denied')end end,

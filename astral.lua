@@ -1,6 +1,83 @@
--- Astral v4.57 | Native pallet contacts, sea-level void platform and resilient Aqua loading.
+-- Astral v4.58 | Explicit Aqua selection, EditableMesh fallback, walking recovery and pallet touch bridge.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
+sources.AquaEditable = [========[
+-- Construct the original mesh through Roblox's EditableMesh API. This path
+-- never asks the executor to open a .mesh URI. Poses still use the source rig.
+local requireModule=...
+local Mesh=requireModule('AquaMesh')
+local Editable={};Editable.__index=Editable
+local function skin(v,matrices)
+ local p,n=Vector3.zero,Vector3.zero
+ for k,id in ipairs(v.Bones)do local m,w=matrices[id],v.Weights[k]/255;p+=(m*v.Position)*w;n+=m:VectorToWorldSpace(v.Normal)*w end
+ return p,n.Magnitude>1e-8 and n.Unit or v.Normal
+end
+function Editable.Build(ctx,data,pose,assets,textures,valid,status)
+ assert(type(ctx.CreateEditableMesh)=='function'and type(ctx.CreateEditablePart)=='function','EditableMesh loader unavailable')
+ local self=setmetatable({Context=ctx,Records={},Parts={},Scale=1},Editable)
+ local function check()assert(valid()and not self.Closed,'Aqua loading cancelled')end
+ local ok,why=pcall(function()
+  local matrices=pose:Skin(pose:Resolve({}))
+  for _,spec in ipairs(data.Parts)do
+   check();status('Constructing Aqua geometry: '..spec.Key)
+   local parsed=Mesh.Parse(assets.Bytes(spec.Key,valid,ctx.Files.Wait),spec)
+   local mesh=assert(ctx.CreateEditableMesh(),'EditableMesh memory budget unavailable')
+   local record={Editable=mesh,Parsed=parsed,Spec=spec,Vertices={},Normals={}};self.Records[#self.Records+1]=record
+   local positions,normals={},{};local low=Vector3.new(math.huge,math.huge,math.huge);local high=-low
+   for i,v in ipairs(parsed.Vertices)do
+    local p,n=skin(v,matrices);positions[i]=p;normals[i]=n
+    low=Vector3.new(math.min(low.X,p.X),math.min(low.Y,p.Y),math.min(low.Z,p.Z));high=Vector3.new(math.max(high.X,p.X),math.max(high.Y,p.Y),math.max(high.Z,p.Z))
+   end
+   record.Center=(low+high)*.5;record.Size=high-low
+   local uvs={}
+   for i,v in ipairs(parsed.Vertices)do
+    record.Vertices[i]=mesh:AddVertex(positions[i]-record.Center)
+    record.Normals[i]=mesh:AddNormal(normals[i]);uvs[i]=mesh:AddUV(Vector2.new(v.UV[1],v.UV[2]))
+    if i%512==0 then check();if ctx.Files.Wait then ctx.Files.Wait()end;check()end
+   end
+   for i,face in ipairs(parsed.Faces)do
+    local a,b,c=face[1],face[2],face[3];local id=mesh:AddTriangle(record.Vertices[a],record.Vertices[b],record.Vertices[c])
+    mesh:SetFaceNormals(id,{record.Normals[a],record.Normals[b],record.Normals[c]})
+    mesh:SetFaceUVs(id,{uvs[a],uvs[b],uvs[c]})
+    if i%512==0 then check();if ctx.Files.Wait then ctx.Files.Wait()end;check()end
+   end
+   check();local part=ctx.CreateEditablePart(mesh);record.Part=part
+   if not valid()then if typeof(part)=='Instance'and part.Parent==nil then part:Destroy()end;record.Part=nil;check()end
+   assert(typeof(part)=='Instance'and part:IsA('MeshPart')and part.Parent==nil,'EditableMesh loader returned an invalid part')
+   part.Name=spec.Key;part.TextureID=textures[spec.Texture];self.Parts[spec.Key]=part
+  end
+ end)
+ if not ok then self:Dispose();error(why,0)end
+ return self
+end
+function Editable:Render(frame,ground,pose,scale)
+ local now=(self.Context.Clock or os.clock)()
+ if now>=(self.NextUpdate or 0)then
+  self.NextUpdate=now+1/30
+  local matrices=pose:Skin(frame)
+  for _,r in ipairs(self.Records)do
+   for i,v in ipairs(r.Parsed.Vertices)do
+    local p,n=skin(v,matrices);r.Editable:SetPosition(r.Vertices[i],p-r.Center);r.Editable:SetNormal(r.Normals[i],n)
+   end
+  end
+ end
+ for _,r in ipairs(self.Records)do
+  r.Part.CFrame=ground*CFrame.new(r.Center*scale)
+  local size=r.Part.MeshSize or r.Size
+  r.Part.Size=Vector3.new(math.max(size.X,.001),math.max(size.Y,.001),math.max(size.Z,.001))*scale
+ end
+end
+function Editable:Dispose()
+ if self.Closed then return end;self.Closed=true
+ for _,r in ipairs(self.Records)do
+  if typeof(r.Part)=='Instance'and r.Part.Parent==nil then r.Part:Destroy()end
+  r.Editable:Destroy()
+ end
+ table.clear(self.Records)
+end
+return Editable
+
+]========]
 sources.WaterSurface = [========[
 -- Ocean render geometry may be non-queryable. Read its horizontal surface
 -- directly; a raycast alone cannot discover CanQuery=false water tiles.
@@ -330,6 +407,7 @@ local Assets=requireModule('AquaAssets')
 local Pose=requireModule('AquaPose')
 local Mesh=requireModule('AquaMesh')
 local Effects=requireModule('AquaEffects')
+local Editable=requireModule('AquaEditable')
 local Model={};Model.__index=Model
 local V1=Vector3.new(1,1,1)
 local function vector(v)return Vector3.new(table.unpack(v,1,3))end
@@ -389,7 +467,13 @@ function Model.Build(context,valid,status)
         if not nativeOk then
             check();self.NativeError=tostring(nativeError)
             self.Model:Destroy();fresh()
-            self:BuildFiles(valid,status);check()
+            local editableOk,editableError=pcall(self.BuildEditable,self,valid,status);check()
+            if not editableOk then
+                self.EditableError=tostring(editableError)
+                if self.Editable then self.Editable:Dispose();self.Editable=nil end
+                self.Model:Destroy();fresh()
+                self:BuildFiles(valid,status);check()
+            end
         end
         self.Model.Parent=context.Workspace;check()
         status('Aqua ready')
@@ -413,8 +497,20 @@ function Model.Build(context,valid,status)
             if context.Spawn then context.Spawn(continuePreparing)else continuePreparing()end
         end
     end)
-    if not ok then self:Dispose();error(message,0)end
+    if not ok then
+        local reasons={'Aqua loading failed: '..tostring(message)}
+        if self.NativeError then reasons[#reasons+1]='Native mesh: '..self.NativeError end
+        if self.EditableError then reasons[#reasons+1]='EditableMesh: '..self.EditableError end
+        self:Dispose();error(table.concat(reasons,'\n'),0)
+    end
     return self
+end
+function Model:BuildEditable(valid,status)
+    self.Editable=Editable.Build(self.Context,self.Data,self.Pose,Assets,self.Textures,valid,status)
+    self.Parts=self.Editable.Parts
+    for _,p in pairs(self.Parts)do properties(p);pcall(function()p.DoubleSided=true end);p.Parent=self.Model end
+    self.Context.Preload({self.Model},valid);assert(valid(),'Aqua loading cancelled')
+    self.Mode='EditableMesh';self.Model.PrimaryPart=self.Parts.Main
 end
 function Model:BuildLids(valid)
     local uri=Assets.Get('LidMesh',self.Context.Files,valid);local texture=Assets.Get('LidTexture',self.Context.Files,valid)
@@ -502,7 +598,7 @@ function Model:SetScale(value)
     value=math.clamp(value,.65,1.35)
     if math.abs(value-self.Scale)<.0001 then return end
     if self.Mode=='Skinned'then self.Model:ScaleTo(value)
-    else for _,mesh in pairs(self.Meshes)do mesh.Scale=V1*value end end
+    elseif self.Mode=='FileMesh'then for _,mesh in pairs(self.Meshes)do mesh.Scale=V1*value end end
     self.Scale=value
 end
 function Model:IsReady()
@@ -539,6 +635,9 @@ function Model:Render(pose,ground,hidden)
                 if bone.Parent then bone.Transform=scaled(self.Pose.Bind[i]:Inverse()*frame[i],scale)end
             end
         end
+    elseif self.Mode=='EditableMesh'then
+        local frame=self.Pose:Resolve(pose);head=self.Pose:World(frame)[self.Pose.ByName.head_0]
+        self.Editable:Render(frame,ground,self.Pose,scale)
     else
         local frame=self:FileFrame(pose);head=frame.Head
         for _,spec in ipairs(self.Data.Parts)do
@@ -564,12 +663,13 @@ function Model:SetVisible(value)
     if not value then for _,lid in ipairs(self.Lids)do lid.Part.LocalTransparencyModifier=1 end end
 end
 function Model:DescribeRig()
-    return {Name=self.Name,Source=self.Data.Source,Mode=self.Mode,NativeError=self.NativeError,Parts=#self.Data.Parts,
+    return {Name=self.Name,Source=self.Data.Source,Mode=self.Mode,NativeError=self.NativeError,EditableError=self.EditableError,Parts=#self.Data.Parts,
         BoneCount=#self.Data.Bones,SourceVertices=self.Data.Source.SourceVertices,FaceRig=#self.Lids>0 and 'Eyelid overlays'or 'Unavailable',EffectError=self.EffectError,AnimationError=self.AnimationError}
 end
 function Model:Dispose()
     if self.Closed then return end;self.Closed=true
     if self.Model then self.Model:Destroy()end
+    if self.Editable then self.Editable:Dispose();self.Editable=nil end
     for _,part in pairs(self.Parts)do pcall(part.Destroy,part)end
     for _,lid in ipairs(self.Lids)do pcall(lid.Part.Destroy,lid.Part)end;table.clear(self.Lids)
     self.Pose=nil
@@ -609,7 +709,7 @@ function Mesh.Parse(data,part)
                 end
             end
             assert(sum==255,'Aqua vertex weights must add up to 255')
-            vertices[i+1]={Position=vec(b,vo+i*40)+center,Normal=vec(b,vo+i*40+12),Weights=weights,Bones=ids}
+            vertices[i+1]={Position=vec(b,vo+i*40)+center,Normal=vec(b,vo+i*40+12),Weights=weights,Bones=ids,UV={buffer.readf32(b,vo+i*40+24),buffer.readf32(b,vo+i*40+28)}}
         end
     end
     assert(#vertices==nv,'Incomplete Aqua vertex ranges')
@@ -624,7 +724,9 @@ function Mesh.Parse(data,part)
         buffer.writeu32(template,target+4,buffer.readu32(b,source+8))
         buffer.writeu32(template,target+8,buffer.readu32(b,source+4))
     end
-    return {Vertices=vertices,Template=template,VertexCount=nv,FaceCount=nf}
+    local faces={}
+    for i=0,nf-1 do local o=fo+i*12;faces[i+1]={buffer.readu32(b,o)+1,buffer.readu32(b,o+4)+1,buffer.readu32(b,o+8)+1}end
+    return {Vertices=vertices,Faces=faces,Template=template,VertexCount=nv,FaceCount=nf}
 end
 function Mesh.Bake(parsed,matrices,valid)
     local result=buffer.create(buffer.len(parsed.Template));buffer.copy(result,0,parsed.Template)
@@ -712,8 +814,8 @@ end
 local function body(part,character)
     return part and part:IsA("BasePart")and part.Parent==character
 end
-function Rig.new()
-    return setmetatable({Records={},States={},Connections={}},Rig)
+function Rig.new(context)
+    return setmetatable({Context=context or{},Records={},States={},Connections={}},Rig)
 end
 function Rig:Call(fn,...)
     local ok,message=pcall(fn,...)
@@ -729,6 +831,8 @@ function Rig:Record(v)
         (v.Name=="BallSocketConstraint"or v.Name:lower():find("ragdoll",1,true))then
         local a,b=v.Attachment0,v.Attachment1
         if a and b and body(a.Parent,self.Character)and body(b.Parent,self.Character)then kind="Constraint";property="Enabled"end
+    elseif(v:IsA('Weld')or v:IsA('WeldConstraint'))and v.Name=='WeldHRP'and body(v.Part0,self.Character)and body(v.Part1,self.Character)then
+        kind='Constraint';property='Enabled'
     elseif v:IsA("BasePart")and v.Name=="RagdollLimbPart"and body(v.Parent,self.Character)then
         kind="Collider";property="CanCollide"
     end
@@ -743,14 +847,19 @@ function Rig:Record(v)
         end)
     end
 end
-function Rig:Bind(c,r,h)
+function Rig:Bind(c,r,h,held)
     if self.Character==c and self.Root==r and self.Humanoid==h then return end
     self:Unbind()
     self.Character=c;self.Root=r;self.Humanoid=h
-    self.CapturedRagdoll=ragged(h)
-    self.Properties={PlatformStand=h.PlatformStand,AutoRotate=h.AutoRotate}
+    self.CapturedRagdoll=ragged(h);self.CapturedGrab=held==true
+    self.Properties={PlatformStand=h.PlatformStand,AutoRotate=h.AutoRotate,Sit=h.Sit}
     for _,s in ipairs(falling)do self.States[s]=h:GetStateEnabled(s)end
     for _,v in ipairs(c:GetDescendants())do self:Record(v)end
+    if h.GetPropertyChangedSignal then for _,name in ipairs({'PlatformStand','AutoRotate','Sit'})do
+        self.Connections[#self.Connections+1]=h:GetPropertyChangedSignal(name):Connect(function()
+            if self.Active and not self.Applying then self:Call(self.ApplyHumanoid,self)end
+        end)
+    end end
     self.Connections[#self.Connections+1]=c.DescendantAdded:Connect(function(v)
         if self.Character~=c then return end
         self:Call(self.Record,self,v)
@@ -758,7 +867,16 @@ function Rig:Bind(c,r,h)
     end)
 end
 function Rig:ApplyRecord(v,record)
-    if not v.Parent or not v:IsDescendantOf(self.Character)then return end
+    if not v.Parent or(record.Kind~='Grab'and not v:IsDescendantOf(self.Character))then return end
+    if record.Kind=='Grab'and not self:IsGrabLink(v)then
+        -- A server may reuse the same grab weld for a different player.
+        -- Restore our own previous write before forgetting that connection.
+        if record.Forced~=nil and v.Enabled==record.Forced then
+            self.Applying=true;local ok,why=pcall(function()v.Enabled=record.Original end);self.Applying=false
+            if not ok then error(why,0)end
+        end
+        record.Forced=nil;return
+    end
     local value=false
     if record.Kind=="Motor"then
         if ragged(self.Humanoid)then record.RecoveredRagdoll=true end
@@ -772,6 +890,31 @@ function Rig:ApplyRecord(v,record)
     end
     record.Forced=value
 end
+function Rig:IsGrabLink(v)
+    if not v:IsA('WeldConstraint')and not v:IsA('Weld')then return false end
+    local a,b=v.Part0,v.Part1
+    return a and b and((body(a,self.Character)and not b:IsDescendantOf(self.Character))or(body(b,self.Character)and not a:IsDescendantOf(self.Character)))or false
+end
+function Rig:RecordGrab(v)
+    if self.Records[v]or not self:IsGrabLink(v)then return end
+    local record={Kind='Grab',Property='Enabled',Original=v.Enabled};self.Records[v]=record
+    for _,property in ipairs({'Enabled','Part0','Part1'})do
+        self.Connections[#self.Connections+1]=v:GetPropertyChangedSignal(property):Connect(function()
+            if self.Active and not self.Applying then self:Call(self.ApplyRecord,self,v,record)end
+        end)
+    end
+end
+function Rig:ApplyHumanoid()
+    local h=self.Humanoid
+    if not h or h.Parent~=self.Character or h.SeatPart then return end
+    self.Applying=true
+    local ok,why=pcall(function()
+        if h.Sit then h.Sit=false end
+        if h.PlatformStand then h.PlatformStand=false end
+        if not h.AutoRotate then h.AutoRotate=true end
+    end)
+    self.Applying=false;if not ok then error(why,0)end
+end
 function Rig:Restore()
     if not self.Active then return end
     self.Active=false
@@ -782,8 +925,10 @@ function Rig:Restore()
         self:Call(function()
             if not v.Parent or v[record.Property]~=record.Forced then return end
             local value=record.Original
-            if stillRagdolled then value=record.Kind~="Motor"
-            elseif record.CapturedRagdoll or record.RecoveredRagdoll then value=record.Kind=="Motor"end
+            if record.Kind~='Grab'then
+                if stillRagdolled then value=record.Kind~="Motor"
+                elseif record.CapturedRagdoll or record.RecoveredRagdoll then value=record.Kind=="Motor"end
+            end
             v[record.Property]=value
         end)
         record.Forced=nil
@@ -791,16 +936,19 @@ function Rig:Restore()
     if h.Parent==self.Character then
         for state,enabled in pairs(self.States)do self:Call(h.SetStateEnabled,h,state,enabled)end
         local platform,rotate=self.Properties.PlatformStand,self.Properties.AutoRotate
-        if self.CapturedRagdoll and not stillRagdolled then platform=false;rotate=true end
+        if(self.CapturedRagdoll or self.CapturedGrab)and not stillRagdolled then platform=false;rotate=true end
         if h.PlatformStand==false then h.PlatformStand=platform end
         if h.AutoRotate==true then h.AutoRotate=rotate end
+        local sit=self.Properties.Sit
+        if(self.CapturedRagdoll or self.CapturedGrab)and not stillRagdolled then sit=false end
+        if h.Sit==false and not h.SeatPart then h.Sit=sit end
     end
 end
 function Rig:Step(c,r,h,enabled,held,now)
     if not enabled or not c or not r or not r.Parent or r.Anchored or not h or h.Parent~=c or h.Health<=0 then self:Unbind();return end
-    self:Bind(c,r,h)
+    self:Bind(c,r,h,held)
     -- A real seat/vehicle owns its own controller. Do not force it to stand.
-    if h.SeatPart or h.Sit then self:Restore();return end
+    if h.SeatPart then self:Restore();return end
     local attacking=held or ragged(h)
     if attacking then self.Until=now+.2 end
     if not attacking and now>=(self.Until or 0)then self:Restore();return end
@@ -808,9 +956,9 @@ function Rig:Step(c,r,h,enabled,held,now)
     for state in pairs(self.States)do
         if h:GetStateEnabled(state)then h:SetStateEnabled(state,false)end
     end
+    if self.Context.GrabWelds then for _,v in ipairs(self.Context.GrabWelds())do self:RecordGrab(v)end end
     for v,record in pairs(self.Records)do self:ApplyRecord(v,record)end
-    if h.PlatformStand then h.PlatformStand=false end
-    if not h.AutoRotate then h.AutoRotate=true end
+    self:ApplyHumanoid()
     local state=h:GetState()
     if state==Enum.HumanoidStateType.Physics or state==Enum.HumanoidStateType.Ragdoll or state==Enum.HumanoidStateType.FallingDown
         or state==Enum.HumanoidStateType.PlatformStanding or state==Enum.HumanoidStateType.GettingUp then
@@ -839,7 +987,7 @@ local nativeModes={Normal=true,["No Ragdoll"]=true}
 local knownModes={Normal=true,["No Ragdoll"]=true,["Anti-Kill"]=true,["Escapes Anything, but buggy"]=true}
 function Guard.Install(context)
     local self=setmetatable({Context=context,Calls=0,ClearCalls=0,Status="Disabled",Generation=0},Guard)
-    self.Rig=WalkingRig.new()
+    self.Rig=WalkingRig.new({GrabWelds=context.GrabWelds})
     local signal=context.RunService.PreSimulation or context.RunService.Heartbeat
     self.PhysicsConnection=signal:Connect(function()
         if self.Closed then return end
@@ -916,6 +1064,7 @@ function Guard:Step()
     if now>=session.NextStruggle then
         session.NextStruggle=now+1/30
         if self:Call(ctx.Struggle)then self.Calls+=1 end
+        if nativeModes[mode]and ctx.RecoverAnimation then self:Call(ctx.RecoverAnimation,h)end
     end
     if mode~="Escapes Anything, but buggy"and now>=session.NextClear then
         session.NextClear=now+1/30
@@ -19318,7 +19467,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.57 | FTAP")
+                                warn("Astral v4.58 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -22647,6 +22796,7 @@ end
                     CanSpawn=function()return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
                     Spawn=function()return tbl12.SpawnToy("PalletLightBrown",nil,0,true)end,
                     Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value and true or nil end,
+                    Touch=type(firetouchinterest)=="function"and function(part,target,begin)firetouchinterest(part,target,begin and 0 or 1)end or nil,
                     Owned=function(part)return tbl12.KickNetworkOwned(part)and tbl12.IsPartOwner(part)end,
                     Acquire=function(part,valid)if tbl7.States.Owning then return false end;return tbl12.SNO(part,.65,valid)end,
                     Destroy=function(model)if model and model.Parent==v17 then tbl12.DestroyToy(model)end end,
@@ -22979,6 +23129,18 @@ end
                         Blocked=function()return tbl8.Flight==true end,
                         Mode=function()return tbl8.AntiGrab and tbl9.AGType or "No Ragdoll"end,
                         Character=function()return tbl12.Char()end,
+                        GrabWelds=function()
+                            local parts=workspace:FindFirstChild("GrabParts");local found={}
+                            if parts then for _,v in ipairs(parts:GetDescendants())do
+                                if v:IsA("WeldConstraint")or v:IsA("Weld")then found[#found+1]=v end
+                            end end
+                            return found
+                        end,
+                        RecoverAnimation=function(humanoid)
+                            for _,track in ipairs(humanoid:GetPlayingAnimationTracks())do
+                                if track.Animation and track.Animation.AnimationId=="rbxassetid://7047322890"then track:Stop(.08)end
+                            end
+                        end,
                         Struggle=function()tbl11.Struggle:FireServer()end,
                         Ragdoll=function(root,duration)tbl11.RagdollRemote:FireServer(root,duration)end,
                         ExtraEscape=function(valid)if tbl12.ExtraEscape then return tbl12.ExtraEscape(valid)end end,
@@ -36595,7 +36757,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.57"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.58"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -36719,7 +36881,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.57",true)
+            box:AddLabel("Astral v4.58",true)
         end
 
         do
@@ -39578,6 +39740,11 @@ Escape Timer: %*]]
                 return game:GetService("AssetService"):CreateMeshPartAsync(Content.fromUri(uri),{
                     CollisionFidelity=Enum.CollisionFidelity.Box,RenderFidelity=Enum.RenderFidelity.Precise})
             end,
+            CreateEditableMesh=function()return game:GetService("AssetService"):CreateEditableMesh()end,
+            CreateEditablePart=function(mesh)
+                return game:GetService("AssetService"):CreateMeshPartAsync(Content.fromObject(mesh),{
+                    CollisionFidelity=Enum.CollisionFidelity.Box,RenderFidelity=Enum.RenderFidelity.Precise})
+            end,
             LoadAsset=function(id)
                 return game:GetObjects("rbxassetid://"..tostring(id))
             end,
@@ -39610,23 +39777,27 @@ Escape Timer: %*]]
         lib:OnUnload(function()tbl12.LocalModels:Dispose()end)
         local box=tbl15.Fun:AddLeftTabbox("Models")
         local models=box:AddTab("Models","contact-round")
-        models:AddDropdown("AstralLocalModelChoice",{Text="Character Model",Values={"Tung Tung Tung Sahur","Aqua (CS:GO)"},Default=1,AllowNull=false,
+        local modelChoice=models:AddDropdown("AstralLocalModelChoice",{Text="Character Model",Values={"Tung Tung Tung Sahur","Aqua (CS:GO)"},Default=1,AllowNull=false,
             Tooltip="Sahur loads from Creator Store. Aqua uses the supplied CS:GO model with original textures and skeleton.",
             Callback=function(value)tbl12.LocalModels:SetChoice(value)end})
-        models:AddToggle("AstralLocalModelEnabled",{Text="Selected Model (Local)",Default=false,Callback=function(v)tbl12.LocalModels:SetEnabled(v)end})
+        models:AddToggle("AstralLocalModelEnabled",{Text="Selected Model (Local)",Default=false,Callback=function(v)
+            if v and not tbl12.LocalModels:SetChoice(modelChoice.Value)then fn18(tbl12.LocalModels.Status);return end
+            tbl12.LocalModels:SetEnabled(v)
+        end})
         models:AddToggle("AstralLocalModelWalk",{Text="Walk Animation",Default=true,Tooltip="Blends standing, walking, running, jumping and seated poses.",Callback=function(v)tbl12.LocalModels.AnimeWalk=v end})
         models:AddToggle("AstralLocalModelCrouch",{Text="Crouch Pose [Ctrl / C]",Default=true,Callback=function(v)tbl12.LocalModels.CrouchInput=v end})
         models:AddSlider("AstralLocalModelScale",{Text="Model Scale",Default=1,Min=.65,Max=1.35,Rounding=2,Compact=true,Suffix="x",Callback=function(v)tbl12.LocalModels.Scale=v end})
         models:AddSlider("AstralLocalModelAnimationSpeed",{Text="Animation Speed",Default=1,Min=.5,Max=1.7,Rounding=2,Compact=true,Suffix="x",Callback=function(v)tbl12.LocalModels.AnimationSpeed=v end})
         models:AddToggle("AstralLocalModelFirstPerson",{Text="Hide In First Person",Default=true,Callback=function(v)tbl12.LocalModels.HideFirstPerson=v end})
-        models:AddButton({Text="Reload Model",Func=function()tbl12.LocalModels:Retry()end})
+        models:AddButton({Text="Reload Model",Func=function()
+            local selected=requireModule("LocalModels").ResolveChoice(modelChoice.Value)
+            if selected==tbl12.LocalModels.Choice then tbl12.LocalModels:Retry()else tbl12.LocalModels:SetChoice(modelChoice.Value)end
+        end})
         models:AddButton({Text="Copy Model Info",Func=function()
-            local renderer=tbl12.LocalModels.Renderer
-            if not renderer then fn18("Enable the selected model and wait for loading first.");return end
             local copy=setclipboard or toclipboard
             if type(copy)~="function"then fn18("Clipboard is unavailable in this executor.");return end
-            copy(game:GetService("HttpService"):JSONEncode(renderer:DescribeRig()))
-            fn18("Loaded model structure copied.")
+            copy(game:GetService("HttpService"):JSONEncode(tbl12.LocalModels:Describe()))
+            fn18("Selected model status and loader information copied.")
         end})
         models:AddLabel("Aqua keeps the supplied CS skeleton and textures; movement is adapted for Roblox. Hold Ctrl or C to crouch. Copy Model Info reports the loaded rig.",true)
         local status=models:AddLabel("Disabled",true);local elapsed=0
@@ -42968,9 +43139,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.57: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.58: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.57 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.58 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -91190,6 +91361,8 @@ function Pallet.Install(context)
             context.Wait(self.MaximumSpeed and .05 or math.max(.05,self.IntervalSeconds))
             if not valid()then error(CANCELLED,0)end
         end,
+        EndContact=function()self:EndContact()end,
+        Contact=function(part,target)self:BeginContact(part,target)end,
         BeginStrike=function(character)
             self.StrikeAttempts+=1
             local entry=self.Active
@@ -91232,6 +91405,20 @@ end
 function Pallet:ContinuousValid(entry)
     return entry and entry.Continuous==true and self:EntryValid(entry)or false
 end
+function Pallet:EndContact()
+    local pair=self.TouchPair;self.TouchPair=nil
+    if not pair or not self.Context.Touch then return end
+    if not pair[1].Parent or not pair[2].Parent then return end
+    local ok,why=pcall(self.Context.Touch,pair[1],pair[2],false)
+    if not ok then self.TouchError=tostring(why)end
+end
+function Pallet:BeginContact(part,target)
+    self:EndContact()
+    if not self.Context.Touch or not self:EntryValid(self.Active)or not self.Context.Owned(part)then return end
+    self.TouchPair={part,target}
+    local ok,why=pcall(self.Context.Touch,part,target,true)
+    if not ok then self.TouchError=tostring(why)else self.TouchBegins=(self.TouchBegins or 0)+1 end
+end
 function Pallet:Park()
     local sound=self.Sound
     if not alive(sound)or sound.Anchored or not self.Context.Owned(sound)then return end
@@ -91245,6 +91432,7 @@ function Pallet:Park()
     if position then assembly.CFrame=assembly.CFrame+(position-sound.Position)end
 end
 function Pallet:SafePark()
+    self:EndContact()
     local ok,message=pcall(self.Park,self)
     if not ok then self.LastError="Pallet cleanup: "..tostring(message)end
     return ok
@@ -91694,6 +91882,15 @@ sources.LocalModels = [========[
 -- movement/physics, writes network ownership or invokes gameplay remotes.
 local requireModule=...
 local Models={};Models.__index=Models
+local definitions={['Tung Tung Tung Sahur']='SahurModel',['Aqua (CS:GO)']='AquaModel'}
+function Models.ResolveChoice(value)
+    if type(value)~='string'then return nil end
+    if definitions[value]then return value end
+    local key=value:lower():gsub('<[^>]+>',''):gsub('[^%w]','')
+    if key=='aqua'or key=='aquacsgo'then return 'Aqua (CS:GO)'end
+    if key=='sahur'or key=='tungtungtungsahur'then return 'Tung Tung Tung Sahur'end
+    return nil
+end
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
 function Models.Install(context)
     local self=setmetatable({Context=context,Enabled=false,Closed=false,Generation=0,Scale=1,AnimationSpeed=1,AnimeWalk=true,CrouchInput=true,HideFirstPerson=true,
@@ -91701,7 +91898,7 @@ function Models.Install(context)
     self.Connection=context.BindRender(function(dt)
         if self.Closed or not self.Enabled then return end
         local ok,err=pcall(self.Step,self,dt)
-        if not ok then self:Restore();if self.Renderer then self.Renderer:SetVisible(false)end;self.Status="Model error: "..tostring(err)end
+        if not ok then self:Restore();if self.Renderer then self.Renderer:SetVisible(false)end;self.LastError=tostring(err);self.Status=self.Choice.." · Model error: "..self.LastError:sub(1,220) end
     end)
     return self
 end
@@ -91726,10 +91923,13 @@ function Models:Attach(character)
 end
 function Models:SetChoice(value)
     if self.Closed then return end
-    value=value=="Aqua (CS:GO)"and value or "Tung Tung Tung Sahur"
-    if self.Choice==value then return end
+    local resolved=Models.ResolveChoice(value)
+    if not resolved then self.LastError='Unknown model selection: '..tostring(value);self.Status=self.LastError;return false end
+    value=resolved
+    if self.Choice==value then return true end
     self.Choice=value
-    if self.Enabled then self:Retry()end
+    if self.Enabled then self:Retry()else self.Status="Selected: "..value end
+    return true
 end
 function Models:SetEnabled(value)
     if self.Closed then return end
@@ -91739,7 +91939,7 @@ function Models:SetEnabled(value)
     self:Restore();if self.Renderer then self.Renderer:Dispose();self.Renderer=nil end
     self.Loading=false
     if not value then self.Status="Disabled";return end
-    local choice=self.Choice
+    local choice=self.Choice;self.LastError=nil
     self.Status="Loading "..choice.."…";self.Loading=true
     local function valid()return not self.Closed and self.Enabled and self.Generation==generation end
     self.Context.Spawn(function()
@@ -91747,15 +91947,16 @@ function Models:SetEnabled(value)
         local built
         local ok,err=pcall(function()
             local build=self.Context.BuildRenderer
-            if not build then build=requireModule(choice=="Aqua (CS:GO)"and "AquaModel"or "SahurModel").Build end
-            built=build(self.Context.RendererContext,valid,function(text)if valid()then self.Status=text end end)
+            if not build then build=requireModule(assert(definitions[choice],"Unknown model: "..tostring(choice))).Build end
+            built=build(self.Context.RendererContext,valid,function(text)if valid()then self.Status=choice.." · "..text end end)
             if not valid()then if built then built:Dispose()end;return end
             assert(built and type(built.Render)=="function","Requested model renderer is unavailable")
-            self.Renderer=built;self.Status="Ready — waiting for your character"
+            assert(not built.Name or built.Name==choice,'Renderer mismatch: requested '..choice..', received '..tostring(built.Name))
+            self.Renderer=built;self.Status=choice.." · Ready — waiting for your character"
         end)
         if not valid()then if built then built:Dispose()end;return end
         self.Loading=false
-        if not ok then if built then built:Dispose()end;self.Renderer=nil;self.Status="Model unavailable: "..tostring(err)end
+        if not ok then if built then built:Dispose()end;self.Renderer=nil;self.LastError=tostring(err);self.Status=choice.." · Model unavailable: "..self.LastError:sub(1,220) end
     end)
 end
 function Models:Retry()
@@ -91824,8 +92025,8 @@ function Models:Step(dt)
     renderer:SetScale(self.Scale)
     local anchor=root.CFrame
     if renderer.Upright then
-        local look=Vector3.new(anchor.LookVector.X,0,anchor.LookVector.Z)
-        if look.Magnitude>.001 then anchor=CFrame.lookAt(root.Position,root.Position+look.Unit)end
+        local flatLook=Vector3.new(anchor.LookVector.X,0,anchor.LookVector.Z)
+        if flatLook.Magnitude>.001 then anchor=CFrame.lookAt(root.Position,root.Position+flatLook.Unit)end
     end
     local rendered=renderer:Render(pose,anchor*CFrame.new(0,-footOffset,0),hidden)
     if rendered==false then self:Restore();self.Status="Model unavailable; use Reload Model";return end
@@ -91843,6 +92044,11 @@ function Models:Step(dt)
     self.Status=(renderer.Name or self.Choice).." · "..activity
     if renderer.RigidOnly then self.Status..=" · rigid asset: a rigged mesh is required"
     elseif renderer.HasFaceRig==false then self.Status..=" · static face texture"end
+end
+function Models:Describe()
+    local info={RequestedModel=self.Choice,Loading=self.Loading,Enabled=self.Enabled,Status=self.Status,Error=self.LastError}
+    if self.Renderer and self.Renderer.DescribeRig then info.Loaded=self.Renderer:DescribeRig()end
+    return info
 end
 function Models:Dispose()
     if self.Closed then return end
@@ -92321,8 +92527,10 @@ function Native.new(context)
    mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
    -- Position deliberately matches the source. CFrame on AssemblyRootPart
    -- changes a different body and does not reproduce this contact operation.
+   if context.EndContact then context.EndContact()end
    sound.Position=torso.Position
    sound.Velocity=Vector3.new(0,-10,0)
+   if context.Contact then context.Contact(sound,torso)end
    if context.BeginStrike then context.BeginStrike(character)end
    context.Record(sound,character) -- a local contact attempt, not a server hit
    if continuous then

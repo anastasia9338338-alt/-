@@ -46,7 +46,8 @@ def run_feature_checks(modules,runner,folder):
         program=read('model_mock.luau')+'\n'+read('aqua_mock.luau')
         for name,alias in [('AquaAssets','Assets'),('AquaPose','Pose'),('AquaMesh','Mesh'),('AquaEffects','Effects')]:
             program+='\nlocal '+alias+'=(function()\n'+modules[name]+'\nend)()\n'
-        program+='local function BuildModel(meshModule) return (function(...)\n'+modules['AquaModel']+'\nend)(function(name)if name=="AquaAssets"then return Assets elseif name=="AquaPose"then return Pose elseif name=="AquaMesh"then return meshModule elseif name=="AquaEffects"then return Effects end;error(name)end)end\nlocal Model=BuildModel(Mesh)\n'
+        program+='local Editable=(function(...)\n'+modules['AquaEditable']+'\nend)(function(name)assert(name=="AquaMesh");return Mesh end)\n'
+        program+='local function BuildModel(meshModule) return (function(...)\n'+modules['AquaModel']+'\nend)(function(name)if name=="AquaAssets"then return Assets elseif name=="AquaPose"then return Pose elseif name=="AquaMesh"then return meshModule elseif name=="AquaEffects"then return Effects elseif name=="AquaEditable"then return Editable end;error(name)end)end\nlocal Model=BuildModel(Mesh)\n'
         run('aqua',program+read('aqua_body.luau'))
     if 'SahurModel'in modules and 'LocalModels'in modules:
         program=read('model_mock.luau')+'\nlocal Sahur=(function()\n'+modules['SahurModel']+'\nend)()\n'

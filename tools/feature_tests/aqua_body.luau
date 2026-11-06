@@ -149,4 +149,51 @@ do
  check(model:Render(model:Sample('walk',.5),CFrame.new(),false),'Background animation failure made the model unrenderable')
  model:Dispose()
 end
+-- Build and deform the real original triangles without loading any .mesh URI.
+do
+ local state,context,world=fixture();local editables={};local clock=0
+ context.Clock=function()return clock end;context.CreateSkinned=function()error('Mesh URI unsupported')end
+ context.CreateEditableMesh=function()
+  local e={Positions={},Normals={},UVs={},Faces={},Edits=0};editables[#editables+1]=e
+  function e:AddVertex(p)self.Positions[#self.Positions+1]=p;return #self.Positions end
+  function e:AddNormal(n)self.Normals[#self.Normals+1]=n;return #self.Normals end
+  function e:AddUV(uv)self.UVs[#self.UVs+1]=uv;return #self.UVs end
+  function e:AddTriangle(a,b,c)assert(self.Positions[a]and self.Positions[b]and self.Positions[c]);self.Faces[#self.Faces+1]={a,b,c};return #self.Faces end
+  function e:SetFaceNormals(id,ids)for _,n in ipairs(ids)do assert(self.Normals[n])end end
+  function e:SetFaceUVs(id,ids)for _,n in ipairs(ids)do assert(self.UVs[n])end end
+  function e:SetPosition(id,p)self.Positions[id]=p;self.Edits+=1 end
+  function e:SetNormal(id,n)self.Normals[id]=n end
+  function e:Destroy()self.Destroyed=true end
+  return e
+ end
+ context.CreateEditablePart=function(e)
+  local p=newNode('MeshPart','Editable');return p
+ end
+ local model=Model.Build(context,function()return state.Valid end,function()end)
+ check(model.Mode=='EditableMesh'and model:IsReady()and #editables==#data.Parts,'Editable geometry fallback was not selected')
+ local faces=0;for _,e in ipairs(editables)do faces+=#e.Faces;check(#e.Positions==#e.UVs and #e.Positions==#e.Normals,'Editable geometry lost source UVs or normals')end
+ check(faces==11783,'Editable fallback replaced the source geometry')
+ local stance={Crouch=.7,Walk=.2,Phase=.3};local expected=pose:Skin(pose:Resolve(stance));model:Render(stance,CFrame.new(),false)
+ for _,r in ipairs(model.Editable.Records)do
+  for i,v in ipairs(r.Parsed.Vertices)do
+   local p=Vector3.zero;for k,id in ipairs(v.Bones)do p+=(expected[id]*v.Position)*(v.Weights[k]/255)end
+   check((r.Editable.Positions[r.Vertices[i]]+r.Center-p).Magnitude<.001,'Editable deformation differs from the source skeleton')
+  end
+ end
+ local edits=editables[1].Edits
+ for _=1,60 do clock+=1/240;model:Render(stance,CFrame.new(),false)end
+ check(editables[1].Edits-edits<=#editables[1].Positions*9,'Editable CPU work grew with rendering FPS')
+ model:Dispose();for _,e in ipairs(editables)do check(e.Destroyed,'Editable resource leaked on unload')end
+ check(#world:GetChildren()==1,'Editable body cleanup removed the source avatar or leaked geometry')
+ -- A yielding part creator may complete after the requested model was cancelled.
+ local late
+ context.CreateEditablePart=function(e)late=newNode('MeshPart','Late');state.Valid=false;return late end
+ local ok=pcall(Model.Build,context,function()return state.Valid end,function()end)
+ check(not ok and late._destroyed and #world:GetChildren()==1,'Cancelled EditableMesh load leaked a late part')
+ for _,e in ipairs(editables)do check(e.Destroyed,'Cancelled EditableMesh load leaked source geometry')end
+ state.Valid=true;context.CreateEditablePart=function()return world:GetChildren()[1] end
+ local textures={MainTexture='custom://main',DetailTexture='custom://details',EyeTexture='custom://eyes'}
+ local accepted=pcall(Editable.Build,context,data,pose,Assets,textures,function()return state.Valid end,function()end)
+ check(not accepted and #world:GetChildren()==1 and not world:GetChildren()[1]._destroyed,'Editable loader could destroy an existing world part')
+end
 print('PASS: '..checks..' Aqua source geometry, texture, GPU rig, file fallback and cancellation assertions (mocked)')

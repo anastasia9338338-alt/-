@@ -62,4 +62,23 @@ do
  f.HumData.Health=0;f.Guard:Refresh();check(not f.Guard.Session and not f.Guard.Rig.Character,'Death retained the old rig')
  f.Guard:Dispose()
 end
+do
+ local f=fixture();f.Guard:Refresh();f.Grab();f.HumData.Sit=true;f.Guard:Refresh()
+ check(f.Guard.Rig.Active and not f.Hum.Sit and f.Motor.Enabled,'Grab-induced Sit incorrectly disabled walking protection')
+ local hrp=node('WeldConstraint',f.Root,{Name='WeldHRP',Enabled=true,Part0=f.Root,Part1=f.Torso});f.Character.DescendantAdded:Fire(hrp)
+ check(not hrp.Enabled,'Ragdoll HRP weld fought the restored root motor')
+ f.Hum.Sit=true;f.Hum.PlatformStand=true;f.Hum.AutoRotate=false
+ check(not f.Hum.Sit and not f.Hum.PlatformStand and f.Hum.AutoRotate,'Late humanoid writes bypassed active protection')
+ check((f.Data.AnimationRecoveries or 0)>0,'Struggle animation was not recovered during a native grab')
+ local foreign=node('Part',{},{});local weld=node('WeldConstraint',{}, {Enabled=true,Part0=f.Torso,Part1=foreign})
+ local other=node('Part',{},{});local irrelevant=node('WeldConstraint',{}, {Enabled=true,Part0=foreign,Part1=other})
+ f.Data.GrabWelds={weld,irrelevant};f.Guard:Refresh()
+ check(not weld.Enabled and irrelevant.Enabled,'Grab link suppression affected another avatar or ignored the local grab')
+ weld.Enabled=true;check(not weld.Enabled,'Active external grab link was re-enabled between physics frames')
+ weld.Part0=foreign;weld.Part1=other;check(weld.Enabled,'Reused grab weld remained disabled for another avatar')
+ weld.Part0=f.Torso;check(not weld.Enabled,'Reused grab weld did not protect the local avatar again')
+ f.Data.Held=false;f.Rag.Value=false;f.Step(20,60)
+ check(weld.Enabled and not f.Guard.Rig.Active and not f.Hum.Sit,'Released grab link or Sit flag remained latched')
+ f.Guard:Dispose();f.Hum.Sit=true;check(f.Hum.Sit,'Disposed guard retained humanoid hooks')
+end
 print('PASS: '..count..' walking-rig, native cadence, gravity, cancellation and lifecycle assertions (mocked)')

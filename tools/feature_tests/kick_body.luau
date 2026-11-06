@@ -125,4 +125,20 @@ do
  check(not f.Pallet:Prepare(f.Valid)and f.Data.Spawns==0 and not f.Pallet.Preparing,'Preparation spawned outside the allowed area or leaked its lock')
  f.Pallet:Dispose();check(not f.Pallet:Prepare(f.Valid),'Disposed pallet controller still prepared a toy')
 end
+for _,stop in ipairs({'cancel','pause','dispose'})do
+ local f=fixture(Pallet);local calls={};f.Pallet.Context.Touch=function(part,target,begin)
+  check(part==f.Sound and target==f.Target.Torso,'Touch bridge used another body')
+  calls[#calls+1]=begin
+ end
+ f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.3,240)
+ check(#calls>=5 and #calls<=15 and f.Pallet.TouchPair~=nil,'Explicit contact bridge did not repeat at a bounded rate')
+ for i=2,#calls do check(calls[i]~=calls[i-1],'Contact bridge missed a begin/end transition')end
+ if stop=='cancel'then f.Pallet:Cancel(f.Target.Character)elseif stop=='pause'then f.Pallet:Pause('bridge',true)else f.Pallet:Dispose()end
+ check(calls[#calls]==false and f.Pallet.TouchPair==nil,'Contact bridge left a touch active on '..stop)
+end
+do
+ local f=fixture(Pallet);f.Data.Owned=false;f.Data.Acquire=false;local calls=0
+ f.Pallet.Context.Touch=function()calls+=1 end;f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.3,240)
+ check(calls==0,'Contact bridge ran on an unowned pallet')
+end
 print('PASS: '..checks..' native pallet protocol, cadence, promotion, ownership and lifecycle checks (mocked; no server hits)')
