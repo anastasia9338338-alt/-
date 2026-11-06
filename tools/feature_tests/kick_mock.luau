@@ -99,6 +99,7 @@ function Sim:Tick(dt)
     self.RunService.Heartbeat:Fire(dt)
     local sleepers=self.Sleepers;self.Sleepers={}
     for _,v in ipairs(sleepers)do if v.At<=self.Now+1e-7 then self:Resume(v.Co,dt)else table.insert(self.Sleepers,v)end end
+    if self.After then self.After(dt)end
     check(#self.Errors==0,table.concat(self.Errors,'\n'))
 end
 function Sim:Run(seconds,fps)for _=1,math.ceil(seconds*fps)do self:Tick(1/fps)end end

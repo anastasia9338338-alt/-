@@ -1,9 +1,39 @@
--- Astral v4.56 | Blobman self-protection, stable water support and relaxed Aqua with wind and blinking.
+-- Astral v4.57 | Native pallet contacts, sea-level void platform and resilient Aqua loading.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
+sources.WaterSurface = [========[
+-- Ocean render geometry may be non-queryable. Read its horizontal surface
+-- directly; a raycast alone cannot discover CanQuery=false water tiles.
+local Surface={};Surface.__index=Surface
+function Surface.new(context)return setmetatable({Context=context,Parts={}},Surface)end
+function Surface:At(position)
+ local ctx=self.Context;local ocean=ctx.Ocean();local now=ctx.Clock()
+ if ocean~=self.Ocean or now>=(self.NextScan or 0)then
+  self.Ocean=ocean;self.NextScan=now+1;table.clear(self.Parts)
+  if ocean then
+   if ocean:IsA('BasePart')then self.Parts[#self.Parts+1]=ocean end
+   for _,p in ipairs(ocean:GetDescendants())do if p:IsA('BasePart')then self.Parts[#self.Parts+1]=p end end
+  end
+ end
+ local best
+ for _,part in ipairs(self.Parts)do
+  if part.Parent and math.abs(part.CFrame.UpVector.Y)>.95 and part.Size.X*part.Size.Z>=64 then
+   local point=part.CFrame:PointToObjectSpace(position);local half=part.Size*.5
+   if math.abs(point.X)<=half.X and math.abs(point.Z)<=half.Z then
+    local top=(part.CFrame*Vector3.new(point.X,half.Y,point.Z)).Y+(ctx.Offset and ctx.Offset()or 0)
+    if not best or top>best.Y then best=Vector3.new(position.X,top,position.Z)end
+   end
+  end
+ end
+ if best then return best end
+ if ctx.Fallback then return ctx.Fallback(position)end
+end
+return Surface
+
+]========]
 sources.WaterWalk = [========[
--- A local flat support over a detected water surface; no ocean collision or
--- transparency edits and no character CFrame/velocity writes.
+-- A broad anchored platform with its top at sea level. No ocean edits or
+-- automatic character CFrame/velocity writes; explicit teleport is a UI action.
 local Walk={};Walk.__index=Walk
 function Walk.Install(ctx)
  local self=setmetatable({Context=ctx,Enabled=false},Walk)
@@ -21,6 +51,16 @@ function Walk:Stop()
  if self.Part then self.Part:Destroy();self.Part=nil end
  self:RestoreSwimming();self.Surface=nil
 end
+function Walk:Place(point)
+ if not self.Part or not self.Part.Parent then
+  if self.Part then self.Part:Destroy()end
+  local p=Instance.new('Part');p.Name='AstralWaterVoidPlatform';p.Anchored=true;p.Transparency=.82;p.CanTouch=false;p.CanQuery=false;p.CanCollide=true
+  p.Size=Vector3.new(250,5,250);p.CustomPhysicalProperties=PhysicalProperties.new(.7,0,0,100,100)
+  p.Parent=self.Context.Workspace;self.Part=p
+ end
+ self.Surface=point.Y;self.Part.CFrame=CFrame.new(point.X,point.Y-2.5,point.Z)
+ return self.Part
+end
 function Walk:SetEnabled(value)self.Enabled=value==true;if not self.Enabled then self:Stop()else self:Refresh()end end
 function Walk:Step()
  if self.Closed or not self.Enabled then self:Stop();return end
@@ -31,22 +71,17 @@ function Walk:Step()
  local leg=c:FindFirstChild('Left Leg');local offset=leg and r.Size.Y*.5+leg.Size.Y or h.HipHeight+r.Size.Y*.5
  local feet=r.Position.Y-offset
  -- Do not lift an already submerged swimmer onto an invisible floor.
- if point.Y>feet+.75 or feet-point.Y>4 then self:Stop();return end
+ if point.Y>feet+.75 or feet-point.Y>64 then self:Stop();return end
  if self.Part and not self.Part.Parent then self:Stop()end
  if self.Humanoid~=h then self:RestoreSwimming();self.Humanoid=h;self.Swimming=h:GetStateEnabled(Enum.HumanoidStateType.Swimming)end
  h:SetStateEnabled(Enum.HumanoidStateType.Swimming,false)
  if h:GetState()==Enum.HumanoidStateType.Swimming then h:ChangeState(Enum.HumanoidStateType.Running)end
- if not self.Part then
-  local p=Instance.new('Part');p.Name='AstralWaterSupport';p.Anchored=true;p.Transparency=1;p.CanTouch=false;p.CanQuery=false;p.CanCollide=true
-  p.Size=Vector3.new(32,.5,32);p.CustomPhysicalProperties=PhysicalProperties.new(.7,0,0,100,100)
-  p.Parent=self.Context.Workspace;self.Part=p;self.Surface=point.Y
-  p.CFrame=CFrame.new(r.Position.X,self.Surface-.25,r.Position.Z)
- end
+ if not self.Part then self:Place(point)end
  -- A stable height removes wave/triangle seam jitter. Recenter horizontally
  -- only after sufficient travel, with zero-friction support and no Y snap.
  if math.abs(point.Y-self.Surface)>1 then self:Stop();return end
  local d=r.Position-self.Part.Position
- if Vector3.new(d.X,0,d.Z).Magnitude>8 then self.Part.CFrame=CFrame.new(r.Position.X,self.Surface-.25,r.Position.Z)end
+ if Vector3.new(d.X,0,d.Z).Magnitude>72 then self.Part.CFrame=CFrame.new(r.Position.X,self.Surface-2.5,r.Position.Z)end
 end
 function Walk:Refresh()
  local ok,err=pcall(self.Step,self);if not ok then self.LastError=tostring(err);pcall(self.Stop,self)end
@@ -308,7 +343,7 @@ end
 function Model.Build(context,valid,status)
     local self=setmetatable({Context=context,Data=Assets.Metadata,Name='Aqua (CS:GO)',Scale=1,Parts={},Bones={},Meshes={},Visible=false,
         RigidOnly=false,HasFaceRig=true,Upright=true,Lids={},RunStart=9,RunRange=7},Model)
-    local function check()assert(valid(),'Aqua loading cancelled')end
+    local function check()assert(valid()and not self.Closed,'Aqua loading cancelled')end
     local function fresh()
         self.Model=Instance.new('Model');self.Model.Name='AstralLocalAqua'
         self.Parts={};self.Bones={};self.Meshes={}
@@ -356,21 +391,41 @@ function Model.Build(context,valid,status)
             self.Model:Destroy();fresh()
             self:BuildFiles(valid,status);check()
         end
-        self:BuildLids(valid);check()
         self.Model.Parent=context.Workspace;check()
         status('Aqua ready')
+        -- The body is usable before optional face textures or later file poses
+        -- finish loading. Cancellation remains tied to this model generation.
+        local function loadFace()
+            local function faceValid()return valid()and not self.Closed end
+            local lidsOk,lidsError=pcall(self.BuildLids,self,faceValid)
+            if not lidsOk then
+                self.EffectError='Eyelids: '..tostring(lidsError)
+                for _,lid in ipairs(self.Lids)do lid.Part:Destroy()end;table.clear(self.Lids)
+            end
+        end
+        if context.Spawn then context.Spawn(loadFace)else loadFace();check()end
+        if self.PreparePending then
+            local prepare=self.PreparePending;self.PreparePending=nil
+            local function continuePreparing()
+                local prepared,why=pcall(prepare)
+                if not prepared and valid()and not self.Closed then self.AnimationError=tostring(why)end
+            end
+            if context.Spawn then context.Spawn(continuePreparing)else continuePreparing()end
+        end
     end)
     if not ok then self:Dispose();error(message,0)end
     return self
 end
 function Model:BuildLids(valid)
     local uri=Assets.Get('LidMesh',self.Context.Files,valid);local texture=Assets.Get('LidTexture',self.Context.Files,valid)
+    assert(valid()and not self.Closed,'Aqua loading cancelled')
     for i,eye in ipairs(self.Data.Eyes or{})do
         local p=Instance.new('Part');properties(p);p.Name='AquaEyelid'..i;p.CastShadow=false;p.Size=Vector3.new(.1,.1,.1);p.Parent=self.Model
         local mesh=Instance.new('SpecialMesh');mesh.MeshType=Enum.MeshType.FileMesh;mesh.MeshId=uri;mesh.TextureId=texture;mesh.VertexColor=V1;mesh.Parent=p
         self.Lids[i]={Part=p,Mesh=mesh,Eye=eye}
     end
-    self.Context.Preload({uri,texture},valid)
+    local parts={};for _,lid in ipairs(self.Lids)do parts[#parts+1]=lid.Part end
+    self.Context.Preload(parts,valid);assert(valid()and not self.Closed,'Aqua loading cancelled')
 end
 function Model:BuildFiles(valid,status)
     local files=self.Context.Files
@@ -379,7 +434,7 @@ function Model:BuildFiles(valid,status)
     for _,spec in ipairs(self.Data.Parts)do parsed[spec.Key]=Mesh.Parse(Assets.Bytes(spec.Key,valid,files.Wait),spec)end
     local prepared=0
     local function bake(key,frame)
-        assert(valid(),'Aqua loading cancelled')
+        assert(valid()and not self.Closed,'Aqua loading cancelled')
         if not key:match('^air')and not key:match('^sit')then frame=self.Pose:Ground(frame)end
         local matrices=self.Pose:Skin(frame);local result={Head=self.Pose:World(frame)[self.Pose.ByName.head_0]}
         for _,spec in ipairs(self.Data.Parts)do
@@ -398,26 +453,37 @@ function Model:BuildFiles(valid,status)
             end
             if not center then
                 data,center=Mesh.Bake(parsed[spec.Key],matrices,valid)
-                assert(valid(),'Aqua loading cancelled');files.Write(path,data)
+                assert(valid()and not self.Closed,'Aqua loading cancelled');files.Write(path,data)
                 files.Write(path..'.center',string.format('%.9g,%.9g,%.9g',center.X,center.Y,center.Z))
             end
-            assert(valid(),'Aqua loading cancelled')
+            assert(valid()and not self.Closed,'Aqua loading cancelled')
             local uri=files.CustomAsset(path);assert(type(uri)=='string'and #uri>0,'Aqua pose file could not be loaded')
             result[spec.Key]={URI=uri,Center=center};self.FileRequests[#self.FileRequests+1]=uri
         end
         prepared+=1;status('Preparing Aqua movement… '..prepared..'/73')
         if files.Wait then files.Wait()end
-        assert(valid(),'Aqua loading cancelled')
+        assert(valid()and not self.Closed,'Aqua loading cancelled')
         return result
     end
-    for _,style in ipairs({'idle','walk','run','crouch_idle','crouch_walk','sit','air'})do
-        local list={};self.Prepared[style]=list
-        for i,frame in ipairs(self.Pose.Clips[style].Frames)do list[i]=bake(style..'_'..i,frame)end
-    end
-    for _,name in ipairs({'crouch','sit'})do
-        local frames={};self.Prepared[name..'_transition']=frames
-        local finish=name=='crouch'and self.Pose.Clips.crouch_idle.Frames[1]or self.Pose.Clips.sit.Frames[1]
-        for i=0,4 do frames[i+1]=bake(name..'_transition_'..i,self.Pose:Lerp(self.Pose.Clips.idle.Frames[1],finish,i/4))end
+    local idle=self.Pose.Clips.idle.Frames
+    self.Prepared.idle={bake('idle_1',idle[1])}
+    self.PreparePending=function()
+        for _,style in ipairs({'idle','walk','run','crouch_idle','crouch_walk','sit','air'})do
+            local list=self.Prepared[style]or{};self.Prepared[style]=list
+            for i,frame in ipairs(self.Pose.Clips[style].Frames)do
+                assert(valid()and not self.Closed,'Aqua loading cancelled')
+                if not list[i]then list[i]=bake(style..'_'..i,frame)end
+            end
+        end
+        for _,name in ipairs({'crouch','sit'})do
+            local frames={};self.Prepared[name..'_transition']=frames
+            local finish=name=='crouch'and self.Pose.Clips.crouch_idle.Frames[1]or self.Pose.Clips.sit.Frames[1]
+            for i=0,4 do
+                assert(valid()and not self.Closed,'Aqua loading cancelled')
+                frames[i+1]=bake(name..'_transition_'..i,self.Pose:Lerp(idle[1],finish,i/4))
+            end
+        end
+        self.AnimationReady=true
     end
     for _,spec in ipairs(self.Data.Parts)do
         local part=Instance.new('Part');properties(part);part.Name=spec.Key;part.Size=Vector3.new(.1,.1,.1);part.CFrame=CFrame.new()
@@ -425,8 +491,8 @@ function Model:BuildFiles(valid,status)
         mesh.MeshId=self.Prepared.idle[1][spec.Key].URI;mesh.TextureId=self.Textures[spec.Texture];mesh.VertexColor=V1;mesh.Scale=V1;mesh.Parent=part
         part.Parent=self.Model;self.Parts[spec.Key]=part;self.Meshes[spec.Key]=mesh
     end
-    self.Context.Preload(self.FileRequests,valid);self.Context.Preload({self.Model},valid)
-    assert(valid(),'Aqua loading cancelled')
+    self.Context.Preload({self.Model},valid)
+    assert(valid()and not self.Closed,'Aqua loading cancelled')
     self.Mode='FileMesh';self.Model.PrimaryPart=self.Parts.Main
 end
 function Model:Sample(style,phase)return Pose.Sample(style,phase)end
@@ -446,20 +512,23 @@ function Model:IsReady()
 end
 function Model:FileFrame(pose)
     local walk=pose.Walk or 0;local crouch=pose.Crouch or 0;local sit=pose.SitAmount or(pose.Sit and 1 or 0)
-    if sit>.02 and sit<.98 then return self.Prepared.sit_transition[math.clamp(math.floor(sit*4+.5)+1,1,5)]end
-    if walk<.2 and crouch>.02 and crouch<.98 then return self.Prepared.crouch_transition[math.clamp(math.floor(crouch*4+.5)+1,1,5)]end
+    if sit>.02 and sit<.98 and self.Prepared.sit_transition and #self.Prepared.sit_transition>0 then local frames=self.Prepared.sit_transition;return frames[math.min(#frames,math.clamp(math.floor(sit*4+.5)+1,1,5))]end
+    if walk<.2 and crouch>.02 and crouch<.98 and self.Prepared.crouch_transition and #self.Prepared.crouch_transition>0 then local frames=self.Prepared.crouch_transition;return frames[math.min(#frames,math.clamp(math.floor(crouch*4+.5)+1,1,5))]end
     local style,phase='idle',pose.Idle or 0
     if sit>=.5 then style='sit';phase=0
     elseif(pose.Air or 0)>.5 then style='air';phase=0
     elseif crouch>.5 then style=walk>.2 and'crouch_walk'or'crouch_idle';phase=pose.Phase or 0
     elseif(pose.Run or 0)>.5 then style='run';phase=pose.Phase or 0
     elseif walk>.2 then style='walk';phase=pose.Phase or 0 end
-    local frames=self.Prepared[style];return frames[math.floor((phase%1)*#frames+.5)%#frames+1]
+    local frames=self.Prepared[style];if not frames or #frames==0 then frames=self.Prepared.idle end;return frames[math.floor((phase%1)*#frames+.5)%#frames+1]
 end
 function Model:Render(pose,ground,hidden)
     if not self:IsReady()then return false end
     local scale=self.Scale
-    local effects=self.Effects:Step(ground,self.Model);pose=table.clone(pose);pose.WindX=effects.WindX;pose.WindZ=effects.WindZ
+    local effects={WindX=0,WindZ=0,Blink=0}
+    local ok,value=pcall(self.Effects.Step,self.Effects,ground,self.Model)
+    if ok then effects=value else self.EffectError='Wind/blink: '..tostring(value)end
+    pose=table.clone(pose);pose.WindX=effects.WindX;pose.WindZ=effects.WindZ
     local head
     if self.Mode=='Skinned'then
         local frame=self.Pose:Resolve(pose)
@@ -496,7 +565,7 @@ function Model:SetVisible(value)
 end
 function Model:DescribeRig()
     return {Name=self.Name,Source=self.Data.Source,Mode=self.Mode,NativeError=self.NativeError,Parts=#self.Data.Parts,
-        BoneCount=#self.Data.Bones,SourceVertices=self.Data.Source.SourceVertices,FaceRig="Eyelid overlays"}
+        BoneCount=#self.Data.Bones,SourceVertices=self.Data.Source.SourceVertices,FaceRig=#self.Lids>0 and 'Eyelid overlays'or 'Unavailable',EffectError=self.EffectError,AnimationError=self.AnimationError}
 end
 function Model:Dispose()
     if self.Closed then return end;self.Closed=true
@@ -19249,7 +19318,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.56 | FTAP")
+                                warn("Astral v4.57 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -36526,7 +36595,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.56"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.57"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -36650,7 +36719,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.56",true)
+            box:AddLabel("Astral v4.57",true)
         end
 
         do
@@ -37934,20 +38003,27 @@ Escape Timer: %*]]
 			end,
 		})
 
+        tbl12.WaterSurface=requireModule("WaterSurface").new({Clock=os.clock,
+            Ocean=function()
+                local map=workspace:FindFirstChild("Map");local objects=map and map:FindFirstChild("AlwaysHereTweenedObjects")
+                local ocean=objects and objects:FindFirstChild("Ocean");local object=ocean and ocean:FindFirstChild("Object")
+                return object and object:FindFirstChild("ObjectModel")or ocean
+            end,
+            Offset=function()return toggles.CustomWaterT and toggles.CustomWaterT.Value and tbl9.WaterYOffset or 0 end,
+            Fallback=function(position)
+                local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include
+                params.FilterDescendantsInstances={terrain};params.IgnoreWater=false
+                local hit=workspace:Raycast(position+Vector3.new(0,64,0),Vector3.new(0,-256,0),params)
+                if hit and hit.Material==Enum.Material.Water then return Vector3.new(position.X,hit.Position.Y,position.Z)end
+            end,
+        })
         tbl12.WaterWalk=requireModule("WaterWalk").Install({RunService=RunService,Workspace=workspace,Character=tbl12.Char,
             Blocked=function()return flag11 or tbl8.Flight or tbl8.Noclip end,
             OtherSwimBlock=function()return toggles.CustomWaterT and toggles.CustomWaterT.Value and tbl8.NonSwimmableWater end,
-            Surface=function(character,root)
-                local map=workspace:FindFirstChild("Map");local objects=map and map:FindFirstChild("AlwaysHereTweenedObjects")
-                local ocean=objects and objects:FindFirstChild("Ocean")
-                local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include
-                params.FilterDescendantsInstances=ocean and{ocean,terrain}or{terrain};params.IgnoreWater=false
-                local hit=workspace:Raycast(root.Position+Vector3.new(0,3,0),Vector3.new(0,-24,0),params)
-                if hit and(hit.Material==Enum.Material.Water or ocean and hit.Instance:IsDescendantOf(ocean))then return hit.Position end
-            end,
+            Surface=function(character,root)return tbl12.WaterSurface:At(root.Position)end,
         })
         lib:OnUnload(function()tbl12.WaterWalk:Dispose()end)
-        Miscellaneous:AddToggle("WaterWalk",{Text="Water Walk",Default=false,Tooltip="Stable local support on detected water, without changing ocean collisions.",
+        Miscellaneous:AddToggle("WaterWalk",{Text="Water Walk",Default=false,Tooltip="Broad Void Platform at sea level. Ocean tiles do not need to support raycasts.",
             Callback=function(value)tbl12.WaterWalk:SetEnabled(value)end})
 
 		Miscellaneous:AddToggle("DeleteBarriers", {
@@ -38506,18 +38582,28 @@ Escape Timer: %*]]
 			end,
 		})
 
-		v21:AddButton({
-			Text = "TP To Void Platform",
-			Tooltip = "Teleports you to a platform where victim cant spawn anti-kick shurikens, though it affects you as well [ONLY WORKS WHEN YOU HAVE ASTRAL ANTI-KICK ON AND ONLY WORKS GOOD ON CHEATERS]",
-			Func = function()
-				local v22
-				v22, v22 = tbl12.Char()
-
-				if v22 then
-					tbl12.Teleport(v22, part3.CFrame + Vector3.new(0, 10, 0))
-				end
-			end,
-		})
+        v21:AddButton({Text="TP To Void Platform",Tooltip="Places a platform on distant ocean water. A local platform does not directly disable another player's anti-kick.",Func=function()
+            local character,root,hum=tbl12.Char();if not root or not hum or hum.Health<=0 then return end
+            local spawn=workspace:FindFirstChild("SpawnLocation");local origin=spawn and spawn.Position or root.Position
+            local point
+            for _,distance in ipairs({4096,2048,1024})do
+                for _,offset in ipairs({Vector3.new(distance,0,0),Vector3.new(-distance,0,0),Vector3.new(0,0,distance),Vector3.new(0,0,-distance)})do
+                    point=tbl12.WaterSurface:At(origin+offset);if point then break end
+                end
+                if point then break end
+            end
+            point=point or tbl12.WaterSurface:At(root.Position)
+            if not point then lib:Notify({Title="astral",Description="Ocean surface unavailable; no teleport performed.",Time=5});return end
+            -- Prepare the real toy before leaving the game's build area.
+            local function current()local _,r,h=tbl12.Char();return not flag11 and r==root and h and h.Health>0 end
+            if not tbl12.PalletRagdoll:Prepare(current)then
+                lib:Notify({Title="astral",Description="Pallet is not ready. Prepare it in the normal map area before using the water platform.",Time=6});return
+            end
+            if not current()then return end
+            toggles.WaterWalk:SetValue(true);tbl12.WaterWalk:Place(point)
+            local leg=character:FindFirstChild("Left Leg");local feet=leg and root.Size.Y*.5+leg.Size.Y or hum.HipHeight+root.Size.Y*.5
+            tbl12.Teleport(root,CFrame.new(point+Vector3.new(0,feet+.2,0)))
+        end})
 
 		v21:AddDivider("Kick Server Settings")
 
@@ -39475,7 +39561,7 @@ Escape Timer: %*]]
 
     do
         local contentProvider=game:GetService("ContentProvider")
-        local modelContext={Workspace=workspace,
+        local modelContext={Workspace=workspace,Spawn=task.spawn,
             Files={Write=writefile,Read=readfile,IsFile=isfile,CustomAsset=getcustomasset or getsynasset,Wait=task.wait},
             Clock=os.clock,
             Wind=function(position,exclude)
@@ -39502,7 +39588,7 @@ Escape Timer: %*]]
                     if status==Enum.AssetFetchStatus.Failure or status==Enum.AssetFetchStatus.TimedOut then failed=uri end
                 end)
                 if not valid()then error("Model loading cancelled",0)end
-                assert(not failed,"Roblox could not load Sahur meshes/textures: "..tostring(failed))
+                assert(not failed,"Roblox could not load model meshes/textures: "..tostring(failed))
             end,
         }
         tbl12.LocalModels=requireModule("LocalModels").Install({RendererContext=modelContext,Character=function()
@@ -42882,9 +42968,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.56: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.57: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.56 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.57 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -91057,7 +91143,7 @@ function Pallet.Install(context)
         local entry=self.Active
         return self:EntryValid(entry)
     end
-    self.Native=Source.new({Data={States=self.States},Inventory={FindFirstChild=function()return context.Find()end},Clock=context.Clock,
+    self.Native=Source.new({Data={States=self.States},Inventory={FindFirstChild=function()return self.Model and self.Model.Parent and self.Model or context.Find()end},Clock=context.Clock,
         API={
             SpawnToy=function()
                 if not valid()then return end
@@ -91095,16 +91181,14 @@ function Pallet.Install(context)
         Valid=valid,
         ContinueContact=function()return self:ContinuousValid(self.Active)end,
         ContinueAttempt=function()return #self.Queue==0 and self:ContinuousValid(self.Active)end,
-        SliceSeconds=function()return .12 end,
+        SliceSeconds=function()return .2 end,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
-        -- Each separation spans several physics steps and a network sample.
-        -- Frame-rate-sized teleports never established a physical strike.
-        PhaseSeconds=function()return self.MaximumSpeed and .05 or math.max(self.IntervalSeconds*.5,.05)end,
-        WaitPhase=function()
+        -- Native source polling has a wall-clock cadence. It must not turn
+        -- into one placement per render frame on 240+ FPS executors.
+        WaitContact=function()
             if not valid()then error(CANCELLED,0)end
-            local dt=self.FrameSignal:Wait()
+            context.Wait(self.MaximumSpeed and .05 or math.max(.05,self.IntervalSeconds))
             if not valid()then error(CANCELLED,0)end
-            return dt
         end,
         BeginStrike=function(character)
             self.StrikeAttempts+=1
@@ -91123,7 +91207,7 @@ function Pallet.Install(context)
             self.Passes+=1;self.LastPassAt=context.Clock()
             if self.Context.Clock()>=(self.NextStatus or 0)then
                 self.NextStatus=self.Context.Clock()+.2
-                self.Status=self:ContinuousValid(self.Active)and "Pallet striking selected target"or "Native pallet ragdoll"
+                self.Status=self:ContinuousValid(self.Active)and "Native pallet contact on selected target"or "Native pallet ragdoll"
             end
             local entry=self.Active;if entry and entry.Character==character then entry.Passes=(entry.Passes or 0)+1 end
         end,
@@ -91224,7 +91308,7 @@ function Pallet:Apply(character,valid)
     return entry.Success==true
 end
 function Pallet:Step()
-    if self.Closed or self.Active or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
+    if self.Closed or self.Active or self.Preparing or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
     local entry
     while #self.Queue>0 do
         local candidate=table.remove(self.Queue,1)
@@ -91261,10 +91345,38 @@ function Pallet:Pause(token,value)
     self.Pauses[token]=value and true or nil
     if value then self:SafePark();self.Status="Native ragdoll paused during Gucci visit"end
 end
+function Pallet:Prepare(valid)
+    if self.Closed or self.Preparing or next(self.Pauses)then return false end
+    if self.Active then return alive(self.Sound)and self.Context.Owned(self.Sound)end
+    self.Preparing=true
+    local function current()return not self.Closed and not next(self.Pauses)and(not valid or valid())end
+    local ok,ready=pcall(function()
+        if not current()then return false end
+        local model=self.Model and self.Model.Parent and self.Model or self.Context.Find()
+        if not model then
+            local allowed,why=self.Context.CanSpawn()
+            if not allowed then self.Status=why or 'Cannot prepare pallet here';return false end
+            model=self.Context.Spawn()
+            if model and not current()then self.Context.Destroy(model);return false end
+        end
+        if not model or not model.Parent then return false end
+        self:Bind(model)
+        if not alive(self.Sound)then return false end
+        if not self.Context.Owned(self.Sound)then
+            if not self.Context.Acquire(self.Sound,current)or not current()then return false end
+            local deadline=self.Context.Clock()+.75
+            while current()and alive(self.Sound)and not self.Context.Owned(self.Sound)and self.Context.Clock()<deadline do self.FrameSignal:Wait()end
+        end
+        if not current()or not alive(self.Sound)or not self.Context.Owned(self.Sound)then return false end
+        model.Name='RagdollRSC';self:SafePark();self.Status='Native pallet ready';return true
+    end)
+    self.Preparing=false
+    if not ok then self.LastError=tostring(ready);self.Status='Pallet preparation failed: '..self.LastError end
+    return ok and ready==true
+end
 function Pallet:Warm()
-    if self.Closed then return end
-    local model=self.Context.Find();if model then self:Bind(model)end
-    self.Status=self.Model and "Native pallet cached"or "Native pallet spawns when ragdoll is requested"
+    if self.Closed or self.Preparing or self.Active then return end
+    self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:GetContactTime(character)local e=self.Entries[character];return e and e.ContactAt end
 function Pallet:GetCompletedTime(character)local e=self.Entries[character];return e and e.CompletedAt end
@@ -91274,7 +91386,7 @@ function Pallet:Describe()
         self.PassRate=(self.Passes-self.RatePasses)/dt;self.TouchRate=(self.Contacts-self.RateContacts)/dt
         self.RateAt=now;self.RatePasses=self.Passes;self.RateContacts=self.Contacts
     end
-    return self.Status..string.format("\nstrokes: %d | local touches: %d | game ragdolls: %d\nmeasured: %.1f strokes/s | %.1f local touches/s",self.Passes,self.Contacts,self.Confirmed,self.PassRate,self.TouchRate)
+    return self.Status..string.format("\nplacements: %d | local touches: %d | one-shot ragdolls: %d\nmeasured: %.1f placements/s | %.1f local touches/s",self.Passes,self.Contacts,self.Confirmed,self.PassRate,self.TouchRate)
 end
 function Pallet:Dispose()
     if self.Closed then return end
@@ -92162,128 +92274,69 @@ return Destroy
 
 ]========]
 sources.Resonance29Ragdoll = [========[
--- Adapted from the user-supplied Project Resonance v2.9 ragdoll body.
--- Keep the native pallet, ownership and movers. Explicit repeating requests
--- alternate contact and separation; one-shot ragdoll retains its stop flag.
+-- Source Resonance contact mechanism: move SoundPart, not the entire assembly,
+-- then apply its native downward velocity while Main retains RagdollBP lift.
+-- Continuous kick contacts do not stop merely because Ragdolled is already true.
 local Native={}
 function Native.new(context)
-    local states,api,inventory=context.Data.States,context.API,context.Inventory
-    local function alive(part)return part and part.Parent and part:IsA("BasePart")end
-    return function(character)
-        local function valid()return character and character.Parent and(not context.Valid or context.Valid())end
-        if not valid()or states.Ragdolling then return end
-        local head=character:FindFirstChild("Head")
-        local torso=character:FindFirstChild("Torso")or character:FindFirstChild("UpperTorso")
-        local humanoid=character:FindFirstChildOfClass("Humanoid")
-        local ragdolled=humanoid and humanoid:FindFirstChild("Ragdolled")
-        if not head or not torso or not ragdolled or humanoid.Health<=0 then return end
-        local function repeating()return context.ContinueContact and context.ContinueContact()==true end
-        if ragdolled.Value and not repeating()then return true end
-        local function current()
-            return valid()and head.Parent==character and torso.Parent==character
-                and humanoid.Parent==character and humanoid.Health>0
-                and ragdolled.Parent==humanoid and humanoid:FindFirstChild("Ragdolled")==ragdolled
-        end
-        states.Ragdolling=true
-        local function finish(value)states.Ragdolling=false;return value end
-        local model=inventory:FindFirstChild("RagdollRSC")or api.SpawnToy("PalletLightBrown")
-        if not current()then return finish(false)end
-        local sound=model and model:WaitForChild("SoundPart",.5)
-        if not current()then return finish(false)end
-        local main=model and model:WaitForChild("Main",.5)
-        if not current()then return finish(false)end
-        if not alive(sound)or not alive(main)then
-            api.DestroyToy(model);return finish(false)
-        end
-        local acquired=api.SNO(sound)
-        if not current()or not acquired then return finish(false)end
-        if ragdolled.Value and not repeating()then return finish(true)end
-        if sound.Parent~=model or main.Parent~=model then return finish(false)end
-        model.Name="RagdollRSC"
-        for _,part in pairs(model:GetChildren())do if part:IsA("BasePart")then part.CanCollide=false end end
-        sound.CanTouch=true
-        local mover=main:FindFirstChild("RagdollBP")
-        if not mover then mover=Instance.new("BodyPosition");mover.Name="RagdollBP";mover.Parent=main end
-        mover.D=1500
-        mover.Position=Vector3.new(0,100000,0)
-        local function ready()
-            local assembly=sound.AssemblyRootPart or sound
-            return current()and sound.Parent==model and main.Parent==model and not sound.Anchored
-                and alive(assembly)and not assembly.Anchored
-                and(not context.CanContact or context.CanContact(sound))
-        end
-        local function halfHeight(part)
-            local cf,size=part.CFrame,part.Size*.5
-            return math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z
-        end
-        local function velocity(value)
-            local assembly=sound.AssemblyRootPart or sound
-            assembly.AssemblyAngularVelocity=Vector3.zero
-            assembly.AssemblyLinearVelocity=value
-            sound.AssemblyAngularVelocity=Vector3.zero
-            sound.AssemblyLinearVelocity=value;sound.Velocity=value
-        end
-        local function followVertical(speed)
-            local difference=torso.Position-sound.Position
-            local lateral=Vector3.new(difference.X,0,difference.Z)*18
-            if lateral.Magnitude>64 then lateral=lateral.Unit*64 end
-            velocity(torso.AssemblyLinearVelocity+lateral+Vector3.new(0,-speed,0))
-        end
-        local started=context.Clock()
-        local physicsStep=1/60
-        while ready()do
-            if repeating()then
-                -- The original lift fights contact: with infinite force aimed
-                -- at Y=100000 it can eject the pallet before a touch is solved.
-                -- Keep it for one-shot source behavior, disable it for strokes.
-                mover.MaxForce=Vector3.zero
-                local half=halfHeight(sound)+halfHeight(torso)
-                local gap=.75
-                local assembly=sound.AssemblyRootPart or sound
-                -- Move the connected assembly once to a SEPARATED launch pose.
-                -- No CFrame/Position writes occur during the physical crossing.
-                local launch=torso.Position+Vector3.new(0,half+gap,0)
-                assembly.CFrame=assembly.CFrame+(launch-sound.Position)
-                followVertical(0)
-                if context.RecordClear then context.RecordClear(sound,character)end
-                local clearUntil=context.Clock()+context.PhaseSeconds()
-                repeat
-                    local dt=context.WaitPhase()
-                    if type(dt)=="number"and dt==dt and dt>0 then physicsStep=math.clamp(dt,1/240,1/10)end
-                    if not ready()or not repeating()then return finish(false)end
-                    followVertical(0)
-                until context.Clock()+1e-7>=clearUntil
-                -- A finite sweep gives the physics solver time to enter and
-                -- leave the trigger; at low FPS cap travel per solver step so
-                -- the whole overlap interval cannot be skipped in one frame.
-                local speed=math.clamp(half/math.max(physicsStep,1/240),24,96)
-                local strokeAt=context.Clock()
-                local deadline=strokeAt+math.clamp((2*half+2*gap)/speed+.15,.2,1)
-                if context.BeginStrike then context.BeginStrike(character)end
-                followVertical(speed)
-                context.Record(sound,character) -- attempted stroke, never a confirmed server hit
-                repeat
-                    local dt=context.WaitPhase()
-                    if type(dt)=="number"and dt==dt and dt>0 then physicsStep=math.clamp(dt,1/240,1/10)end
-                    if not ready()or not repeating()then return finish(false)end
-                    if sound.Position.Y<torso.Position.Y-half-gap and context.Clock()-strokeAt>=.05 then break end
-                    followVertical(speed)
-                until context.Clock()>=deadline
-                -- Fairness is checked after a complete physical stroke.
-                if context.Clock()-started>=(context.SliceSeconds and context.SliceSeconds()or .5)
-                    and not(context.ContinueAttempt and context.ContinueAttempt())then break end
-            else
-                if ragdolled.Value then break end
-                mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
-                sound.Position=torso.Position
-                sound.Velocity=Vector3.new(0,-10,0)
-                context.Record(sound,character)
-                context.Wait(.1)
-                if not current()or ragdolled.Value or not head:FindFirstChild("PartOwner")or context.Clock()-started>.5 then break end
-            end
-        end
-        return finish(current()and ragdolled.Value==true)
-    end
+ local states,api,inventory=context.Data.States,context.API,context.Inventory
+ local function alive(part)return part and part.Parent and part:IsA('BasePart')end
+ return function(character)
+  local function valid()return character and character.Parent and(not context.Valid or context.Valid())end
+  if not valid()or states.Ragdolling then return end
+  local head=character:FindFirstChild('Head')
+  local torso=character:FindFirstChild('Torso')or character:FindFirstChild('UpperTorso')
+  local humanoid=character:FindFirstChildOfClass('Humanoid')
+  local ragdolled=humanoid and humanoid:FindFirstChild('Ragdolled')
+  if not head or not torso or not ragdolled or humanoid.Health<=0 then return end
+  local function repeating()return context.ContinueContact and context.ContinueContact()==true end
+  if ragdolled.Value and not repeating()then return true end
+  local function current()
+   return valid()and head.Parent==character and torso.Parent==character and humanoid.Parent==character and humanoid.Health>0
+    and ragdolled.Parent==humanoid and humanoid:FindFirstChild('Ragdolled')==ragdolled
+  end
+  states.Ragdolling=true
+  local function finish(value)states.Ragdolling=false;return value end
+  local model=inventory:FindFirstChild('RagdollRSC')or api.SpawnToy('PalletLightBrown')
+  if not current()then return finish(false)end
+  local sound=model and model:WaitForChild('SoundPart',.5)
+  if not current()then return finish(false)end
+  local main=model and model:WaitForChild('Main',.5)
+  if not current()then return finish(false)end
+  if not alive(sound)or not alive(main)then api.DestroyToy(model);return finish(false)end
+  if not api.SNO(sound)or not current()then return finish(false)end
+  if sound.Parent~=model or main.Parent~=model then return finish(false)end
+  if ragdolled.Value and not repeating()then return finish(true)end
+  model.Name='RagdollRSC'
+  for _,p in ipairs(model:GetChildren())do if p:IsA('BasePart')then p.CanCollide=false end end
+  sound.CanTouch=true
+  local mover=main:FindFirstChild('RagdollBP')
+  if not mover then mover=Instance.new('BodyPosition');mover.Name='RagdollBP';mover.Parent=main end
+  mover.D=1500;mover.Position=Vector3.new(0,100000,0)
+  local started=context.Clock()
+  while current()and sound.Parent==model and main.Parent==model do
+   if sound.Anchored or main.Anchored or(context.CanContact and not context.CanContact(sound))then break end
+   local continuous=repeating()
+   if ragdolled.Value and not continuous then break end
+   mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
+   -- Position deliberately matches the source. CFrame on AssemblyRootPart
+   -- changes a different body and does not reproduce this contact operation.
+   sound.Position=torso.Position
+   sound.Velocity=Vector3.new(0,-10,0)
+   if context.BeginStrike then context.BeginStrike(character)end
+   context.Record(sound,character) -- a local contact attempt, not a server hit
+   if continuous then
+    context.WaitContact()
+    if not current()or not repeating()then return finish(false)end
+    if context.Clock()-started>=(context.SliceSeconds and context.SliceSeconds()or .2)
+     and not(context.ContinueAttempt and context.ContinueAttempt())then break end
+   else
+    context.Wait(.1)
+    if not current()or ragdolled.Value or not head:FindFirstChild('PartOwner')or context.Clock()-started>.5 then break end
+   end
+  end
+  return finish(current()and ragdolled.Value==true)
+ end
 end
 return Native
 

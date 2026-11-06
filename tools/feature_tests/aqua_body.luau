@@ -108,4 +108,45 @@ do
  for _=1,600 do t+=1/120;local e=fx:Step(CFrame.new(),nil);maxBlink=math.max(maxBlink,e.Blink);check(math.abs(e.WindX-previous)<.01,'Wind animation snapped');previous=e.WindX end
  check(maxBlink>.99,'Eyes did not fully close during a blink')
 end
+-- Optional face/preload errors must leave a usable body, including failures
+-- discovered after the local model has already been attached.
+do
+ local state,context,world=fixture();local preload=context.Preload
+ context.Preload=function(instances,valid)
+  if instances[1].Name=='AquaEyelid1'then error('forced optional lid load failure')end
+  preload(instances,valid)
+ end
+ local model=Model.Build(context,function()return state.Valid end,function()end)
+ check(model:IsReady()and #model.Lids==0 and model.EffectError~=nil,'Optional eyelids destroyed a working body')
+ model.Effects.Step=function()error('forced optional wind failure')end
+ check(model:Render(model:Sample('idle',0),CFrame.new(),false)and model.Parts.Main.LocalTransparencyModifier==0,'Optional wind failure hid the body')
+ model:Dispose()
+end
+do
+ local counts={Bakes=0};local tiny={}
+ function tiny.Parse(_,spec)return{Template=buffer.create(1),Spec=spec}end
+ function tiny.Bake(_,matrices,valid)assert(valid());counts.Bakes+=1;return'M',Vector3.zero end
+ local fallback=BuildModel(tiny);local state,context,world=fixture();local jobs={}
+ context.Files={Write=function()end,CustomAsset=function(path)return'custom://'..path end}
+ context.CreateSkinned=function()error('No native loader')end
+ context.Spawn=function(fn)jobs[#jobs+1]=fn end
+ local model=fallback.Build(context,function()return state.Valid end,function()end)
+ check(model:IsReady()and counts.Bakes==#data.Parts and #jobs==2,'Fallback waited for every animation before showing Aqua')
+ check(model:Render(model:Sample('jump',0),CFrame.new(),false),'Missing background clip hid the ready idle pose')
+ model:Dispose();local before=counts.Bakes
+ for _,job in ipairs(jobs)do job()end
+ check(counts.Bakes==before and #world:GetChildren()==1,'Canceled background animation or lids leaked into the world')
+end
+do
+ local counts=0;local tiny={}
+ function tiny.Parse(_,spec)return{Template=buffer.create(1),Spec=spec}end
+ function tiny.Bake(_,matrices,valid)assert(valid());counts+=1;if counts>#data.Parts then error('forced later animation failure')end;return'M',Vector3.zero end
+ local state,context=fixture();local jobs={};context.Files={Write=function()end,CustomAsset=function(path)return'custom://'..path end}
+ context.CreateSkinned=function()error('No native loader')end;context.Spawn=function(fn)jobs[#jobs+1]=fn end
+ local model=BuildModel(tiny).Build(context,function()return state.Valid end,function()end)
+ for _,job in ipairs(jobs)do job()end
+ check(model:IsReady()and model.AnimationError~=nil,'Background animation failure discarded a valid model')
+ check(model:Render(model:Sample('walk',.5),CFrame.new(),false),'Background animation failure made the model unrenderable')
+ model:Dispose()
+end
 print('PASS: '..checks..' Aqua source geometry, texture, GPU rig, file fallback and cancellation assertions (mocked)')

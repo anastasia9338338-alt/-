@@ -38,15 +38,26 @@ do
  local world=newNode('Workspace','World');local c,r,h=character(world);local pre=signal();local surface=Vector3.new(0,0,0);local blocked=false
  local walk=Walk.Install({RunService={PreSimulation=pre},Workspace=world,Character=function()return c,r,h end,Surface=function()return surface end,Blocked=function()return blocked end})
  local original=r.CFrame;walk:SetEnabled(true)
- check(walk.Part and walk.Part.Position.Y==-.25 and walk.Part.CanCollide,'Water support top is not at the detected surface')
+ check(walk.Part and walk.Part.Position.Y==-2.5 and walk.Part.CanCollide,'Water support top is not at the detected surface')
  check(r.CFrame==original and not h:GetStateEnabled(Enum.HumanoidStateType.Swimming),'Water walk changed the character transform or allowed swimming')
- surface=Vector3.new(0,.15,0);walk:Refresh();check(walk.Part.Position.Y==-.25,'Water waves caused support-height jitter')
+ surface=Vector3.new(0,.15,0);walk:Refresh();check(walk.Part.Position.Y==-2.5,'Water waves caused support-height jitter')
  walk.Part:Destroy();walk:Refresh();check(walk.Part and walk.Part.Parent==world and not h:GetStateEnabled(Enum.HumanoidStateType.Swimming),'Destroyed support was not safely recreated')
  local supportY=walk.Part.Position.Y
- r.CFrame=CFrame.new(12,3,0);walk:Refresh();check(walk.Part.Position.X==12 and walk.Part.Position.Y==supportY,'Horizontal support recenter changed height')
+ r.CFrame=CFrame.new(96,3,0);walk:Refresh();check(walk.Part.Position.X==96 and walk.Part.Position.Y==supportY,'Horizontal support recenter changed height')
  blocked=true;walk:Refresh();check(not walk.Part and h:GetStateEnabled(Enum.HumanoidStateType.Swimming),'Blocked/flight cleanup did not restore swimming')
  blocked=false;surface=Vector3.new(0,0,0);r.CFrame=CFrame.new(0,-2,0);walk:Refresh();check(not walk.Part,'Submerged player was lifted onto the water')
  r.CFrame=CFrame.new(0,3,0);walk:Refresh();surface=nil;walk:Refresh();check(not walk.Part,'Leaving water retained invisible land support')
  walk:Dispose();check(not pre.Connections[1].Connected,'Water walk leaked physics callback')
+end
+do
+ local world=newNode('Workspace','World');local ocean=newNode('Model','Ocean');ocean.Parent=world
+ local tile=newNode('Part','WaterTile');tile.Size=Vector3.new(500,4,500);tile.CFrame=CFrame.new(0,-2,0);tile.CanQuery=false;tile.Transparency=1;tile.Parent=ocean
+ local t=0;local offset=0;local queries=0
+ local surface=WaterSurface.new({Clock=function()return t end,Ocean=function()return ocean end,Offset=function()return offset end,Fallback=function()queries+=1 end})
+ local hit=surface:At(Vector3.new(0,12,0));check(hit and hit.Y==0 and queries==0,'Non-queryable ocean tile required a raycast')
+ tile.CFrame=CFrame.new(0,3,0);hit=surface:At(Vector3.new(0,12,0));check(hit.Y==5,'Surface cache froze a moving tile height')
+ offset=2;check(surface:At(Vector3.new(0,12,0)).Y==7,'Custom Water offset was ignored')
+ check(surface:At(Vector3.new(800,12,0))==nil and queries==1,'Outside-ocean point produced a floating platform')
+ ocean=nil;t=2;check(surface:At(Vector3.new(0,12,0))==nil,'Removed ocean retained stale tile geometry')
 end
 print('PASS: '..checks..' Blobman self-only protection, drop cadence, water support and cleanup checks (mocked)')

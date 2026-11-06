@@ -16,6 +16,7 @@ def run_feature_checks(modules,runner,folder):
         print(result.stdout.strip())
     if 'BlobmanAura'in modules and 'WaterWalk'in modules:
         program=read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{}end}\n'
+        program+='local WaterSurface=(function()\n'+modules['WaterSurface']+'\nend)()\n'
         program+='local Aura=(function()\n'+modules['BlobmanAura']+'\nend)()\nlocal Walk=(function()\n'+modules['WaterWalk']+'\nend)()\n'+read('survival_body.luau')
         run('survival',program)
     if 'ESPMotion'in modules:
