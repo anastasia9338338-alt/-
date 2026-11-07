@@ -55,6 +55,7 @@ end
 vectorMT.__mul=function(a,b)if type(a)=='number'then a,b=b,a end;return Vector3.new(a.X*b,a.Y*b,a.Z*b)end
 vectorMT.__div=function(a,b)return Vector3.new(a.X/b,a.Y/b,a.Z/b)end
 vectorMT.__unm=function(a)return a*-1 end
+vectorMT.__eq=function(a,b)return a.X==b.X and a.Y==b.Y and a.Z==b.Z end
 Vector3.zero=Vector3.new(0,0,0);Vector3.yAxis=Vector3.new(0,1,0);Vector3.xAxis=Vector3.new(1,0,0);Vector3.zAxis=Vector3.new(0,0,1)
 local Vector2={new=function(x,y)return Vector3.new(x,y,0)end};Vector2.zero=Vector2.new(0,0)
 local identity={1,0,0,0,1,0,0,0,1}

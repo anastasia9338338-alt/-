@@ -1,4 +1,5 @@
 local Guard
+local Vector3={new=function()error('Sentinel fixture must not receive a velocity rewrite')end}
 -- Small rig/state fixture; it does not emulate a Roblox server or ownership.
 local Enum={Material={Air='Air',Grass='Grass'},HumanoidStateType={Running='Running',Physics='Physics',Ragdoll='Ragdoll',FallingDown='FallingDown',Freefall='Freefall',PlatformStanding='PlatformStanding',GettingUp='GettingUp'}}
 local count=0
