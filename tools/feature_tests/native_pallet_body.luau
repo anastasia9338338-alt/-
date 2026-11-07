@@ -13,6 +13,7 @@ local function sourceFixture(options)
  local valid=true;local result,done
  local native=Source.new({Data={States=states},Inventory={FindFirstChild=function()return f.Model end},
   Clock=function()return f.Sim.Now end,Valid=function()return valid and f.Data.Valid end,
+  Repeating=function()return options.Repeating==true end,
   CanContact=function()return f.Data.Owned and not f.Sound.Anchored and not f.Main.Anchored end,
   API={SpawnToy=function()f.Data.Spawns+=1 end,SNO=function()acquires+=1;return f.Data.Owned end,
    DestroyToy=function(model)if model then model:Destroy()end end},
@@ -58,6 +59,25 @@ do
  check(f.Target.Flag.Value==false and not states.Ragdolling,'Native retry manufactured game state or leaked its busy flag')
  for _,seconds in ipairs(waits)do check(seconds==.1,'Retry substituted arbitrary cadence timing')end
 end
+-- A maintained operation uses the SAME source placement/force parameters,
+-- but an already-true state must not suppress those attempts or become a new
+-- success acknowledgement. The fixture never changes this target's state.
+do
+ local f,states,start,read=sourceFixture({Repeating=true});f.Target.Flag.Value=true
+ start();f.Sim:Run(1,240)
+ local records,waits,acquires,result,done=read()
+ check(done and result~=true and records>=5 and records<=7 and acquires==1,'Maintained source operation skipped a ragdolled target or falsely acknowledged it')
+ check(f.Target.Flag.Value==true and f.Data.GameReactions==0,'Maintained source operation manufactured recovery or a new game hit')
+ check(not states.Ragdolling,'Maintained source slice leaked its busy state')
+ for _,seconds in ipairs(waits)do check(seconds==.1,'Maintained source operation changed the original retry interval')end
+end
+do
+ local f,states,start,read=sourceFixture({Repeating=true,Record=function(f,n)if n==1 then f.Target.Flag.Value=true elseif n==3 then f.Target.Flag.Value=false end end})
+ start();f.Sim:Run(1,240)
+ local records,_,_,result,done=read()
+ check(done and result~=true and records>=5 and records<=7,'Changing game state stopped a maintained native source slice')
+ check(f.Target.Flag.Value==false and not states.Ragdolling,'External state changes were overwritten or stranded the maintained source')
+end
 do
  local f,states,start,read=sourceFixture({Record=function(f,n)if n==1 then f.Target.Head:FindFirstChild('PartOwner'):Destroy()end end})
  start();f.Sim:Run(.3,240)
@@ -79,29 +99,44 @@ for _,mode in ipairs({'invalid','dead','respawn','replace_flag'})do
  local records,_,_,result,done=read()
  check(done and result~=true and records==1 and not states.Ragdolling,'Old source binding survived lifecycle change: '..mode)
 end
--- A maintenance request is pending while the GAME state is true. No elapsed
--- interval or prechosen number of placements may release that state gate.
+-- A maintenance request keeps the original native operation active while the
+-- victim is held and its game flag stays true. Hold objects and character
+-- transforms below are inert fixture references: this is not a live hold test.
 for _,fps in ipairs({20,60,240,1000})do
  local f=nativeFixture();f.Target.Flag.Value=true
+ local root=newNode('Part','HumanoidRootPart',f.Target.Character);root.Position=f.Target.Torso.Position
+ local hold=newNode('BodyPosition','KickAP',root);hold.Position=root.Position;hold.D=200;hold.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
+ local orientation=newNode('BodyGyro','KickAO',root);orientation.CFrame=CFrame.new();orientation.D=200
+ local rootPosition=root.Position;local torsoPosition=f.Target.Torso.Position
+ local rootMoves=root.Teleports;local torsoMoves=f.Target.Torso.Teleports
  local entry=f.Pallet:Maintain(f.Target.Character,f.Valid)
  f.Sim:Run(2,fps)
- check(entry and not entry.Done and f.Pallet.Passes==0,'Latched true game state did not remain pending at '..fps)
- check(f.Pallet.StrikeAttempts==0 and f.Data.Acquires==0 and f.Data.Spawns==0,'State wait attempted native contact or ownership acquisition')
+ check(entry and not entry.Done and f.Pallet.Passes>=10,'Latched true held state suppressed maintained native attempts at '..fps)
+ check(f.Pallet.StrikeAttempts==f.Pallet.Passes and f.Data.Acquires==0 and f.Data.Spawns==0,'Maintained native attempts respawned or reacquired a healthy pallet')
+ check(f.Target.Flag.Value==true and f.Data.GameReactions==0,'Held target was forced out of ragdoll or given a fake state acknowledgement')
+ check(root.Parent==f.Target.Character and hold.Parent==root and orientation.Parent==root,'Maintained pallet removed a fixture hold object')
+ check(equalVector(root.Position,rootPosition)and equalVector(f.Target.Torso.Position,torsoPosition)and root.Teleports==rootMoves and f.Target.Torso.Teleports==torsoMoves,'Maintained pallet moved or dropped the held fixture character')
+ check(equalVector(hold.Position,rootPosition)and hold.D==200 and hold.MaxForce.Y==math.huge and orientation.D==200,'Maintained pallet rewrote the fixture hold parameters')
+ local evidence=f.Pallet:Evidence().Entries[1]
+ check(evidence.StateAlreadyRagdolled==true and evidence.ContinuousStrikes==true and evidence.WaitingForGameRecovery==nil,'Evidence retained the obsolete recovery-wait contract')
+ check(evidence.SourcePlacements>0 and evidence.ObservedRagdollRises==0,'Existing ragdoll state was claimed as a new hit')
+ local count=f.Pallet.Passes
  f.Target.Flag.Value=false;f.Sim:Run(.16,fps)
- check(f.Pallet.Passes>0,'Game false state did not make the source operation eligible at '..fps)
- local count=f.Pallet.Passes;f.Target.Flag.Value=true;f.Sim:Run(.2,fps);count=f.Pallet.Passes
+ check(f.Pallet.Passes>count,'External false state stopped maintained native attempts at '..fps)
+ f.Target.Flag.Value=true;f.Sim:Run(.2,fps);count=f.Pallet.Passes
  f.Sim:Run(2,fps)
- check(f.Pallet.Passes==count and not entry.Done and not f.Pallet.Active,'Latched true state was bypassed by a timer/burst at '..fps)
- check(f.Main:FindFirstChild('RagdollBP').MaxForce.Magnitude==0,'Native lift remained active while waiting for game recovery')
+ check(f.Pallet.Passes>count and not entry.Done,'External true state stopped a maintained operation at '..fps)
  f.Target.Flag.Value=false;f.Sim:Run(.2,fps)
- check(f.Pallet.Passes>count,'A later external game recovery failed to re-arm native operation')
+ check(f.Pallet.Passes>count,'A later external game state stopped native operation')
  f.Pallet:Cancel(f.Target.Character);f.Sim:Run(.2,fps)
- check(entry.Done and not f.Pallet.Active and not f.Pallet.States.Ragdolling,'State-driven cancellation leaked work')
+ check(entry.Done and not f.Pallet.Active and not f.Pallet.States.Ragdolling,'Maintained native cancellation leaked work')
+ check(f.Main:FindFirstChild('RagdollBP').MaxForce.Magnitude==0,'Stopped maintained operation left the native lift enabled')
 end
 -- Original retry polling must retain its source interval at every rendering
 -- rate. A new pass is not a catch-up event or a server hit acknowledgement.
 for _,fps in ipairs({20,60,240,1000})do
- local f=nativeFixture();f.Pallet:Maintain(f.Target.Character,f.Valid)
+ for _,initialTrue in ipairs({false,true})do
+ local f=nativeFixture();f.Target.Flag.Value=initialTrue;f.Pallet:Maintain(f.Target.Character,f.Valid)
  local count=f.Pallet.Passes;local last=0;local samples=0
  f.Sim.After=function()
   if f.Pallet.Passes~=count then
@@ -112,15 +147,18 @@ for _,fps in ipairs({20,60,240,1000})do
  end
  f.Sim:Run(1,fps)
  check(samples>=5 and f.Pallet.Passes<=11,'Native retry interval no longer follows the source bounded cadence')
+ check(f.Target.Flag.Value==initialTrue,'Maintained native retry rewrote the game state')
+ end
 end
--- A maintained target already waiting on game state cannot starve a ready one.
+-- A maintained target already ragdolled cannot monopolize the native worker.
 do
  local f=nativeFixture();f.Target.Flag.Value=true
  local second=target('ReadySecond',Vector3.new(30,15,0));f.Data.Targets[#f.Data.Targets+1]=second
- local waiting=f.Pallet:Maintain(f.Target.Character,f.Valid)
- local ready=f.Pallet:Maintain(second.Character,f.Valid);f.Sim:Run(.25,240)
- check((waiting.Passes or 0)==0 and(ready.Passes or 0)>0,'Game-state waiting target occupied the shared native worker')
- check(not waiting.Done,'Scheduling another target discarded a valid game-state waiter')
+ local first=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ local other=f.Pallet:Maintain(second.Character,f.Valid);f.Sim:Run(1.5,240)
+ check((first.Passes or 0)>0 and(other.Passes or 0)>0,'Ragdolled maintained target starved another target')
+ check(not first.Done and not other.Done,'Shared native scheduling discarded a maintained target')
+ check(f.Target.Flag.Value==true and second.Flag.Value==false,'Shared native scheduling rewrote the targets game states')
 end
 -- Neither a local contact callback nor direct writes may stand in for the
 -- native game state. The original operation has no synthetic touch requirement.
@@ -149,14 +187,20 @@ do
  check(evidence.SourcePlacements>0 and evidence.PlacementAttempts>0 and evidence.PhysicalTraversals==nil,'Evidence still mislabeled source placements as physical traversals')
  check(t.Flag.Value==false and not entry.Success and f.Pallet.Confirmed==0,'Local callback manufactured native state or confirmed a game result')
 end
--- A game state received during the yielding ownership handoff must be
--- rechecked before the original placement operation begins.
+-- A maintained target becoming ragdolled during ownership handoff stays
+-- eligible; a one-shot effect retains the original state-completion rule.
 do
  local f=nativeFixture();f.Data.Owned=false;f.Data.Acquire=false
  local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.05,240)
  f.Target.Flag.Value=true;f.Data.Owned=true;f.Sim:Run(.25,240)
- check(f.Pallet.Passes==0 and f.Pallet.StrikeAttempts==0,'Ownership handoff placed a board after the game already ragdolled the target')
- check(not entry.Done and not f.Pallet.Active and f.Data.Destroyed==0,'State update during ownership destroyed or ended a maintained target')
+ check(f.Pallet.Passes>0 and f.Pallet.StrikeAttempts>0,'Ownership handoff suppressed maintained attempts at an already ragdolled target')
+ check(not entry.Done and f.Data.Destroyed==0 and f.Target.Flag.Value==true,'State update during ownership destroyed a maintained target or changed its state')
+end
+do
+ local f=nativeFixture();f.Data.Owned=false;f.Data.Acquire=false
+ local entry=f.Pallet:Request(f.Target.Character,f.Valid);f.Sim:Run(.05,240)
+ f.Target.Flag.Value=true;f.Data.Owned=true;f.Sim:Run(.25,240)
+ check(entry.Done and entry.Success and f.Pallet.Passes==0 and f.Pallet.StrikeAttempts==0,'One-shot ownership handoff ignored the original state-completion guard')
 end
 for _,mode in ipairs({'cancel','pause','dispose','dead','respawn'})do
  for _,initialTrue in ipairs({false,true})do
@@ -207,6 +251,7 @@ do
  local promoted=f.Pallet:Maintain(f.Target.Character,f.Valid);effect=false;f.Sim:Run(.15,240)
  check(one==promoted and not promoted.Done and f.Pallet.Passes>0,'One-shot predicate invalidated a promoted maintenance request')
  f.Target.Flag.Value=true;f.Sim:Run(.2,240)
- check(not promoted.Done and not f.Pallet.Active,'Promoted native request did not wait on game state')
+ local before=f.Pallet.Passes;f.Sim:Run(.4,240)
+ check(not promoted.Done and f.Pallet.Passes>before,'Promoted maintained request stopped when game state became true')
 end
-print('PASS: '..checks..' source-native operation parameters, state eligibility, ownership, waiting fairness and lifecycle checks (mocked; no real game hit/blur/kick proof)')
+print('PASS: '..checks..' source-native operation parameters, maintained held contacts, unchanged one-shot state contract, ownership, fairness and lifecycle checks (mocked; no real game hit/blur/kick proof)')

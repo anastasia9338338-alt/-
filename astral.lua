@@ -1,4 +1,4 @@
--- Astral v4.63 | Restore source ragdoll operation and game-state eligibility; remove invented stroke and burst schedules.
+-- Astral v4.64 | Continuous native pallet attempts during hold; ragdoll state gating remains only for one-shot effects.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.PalletReaction = [========[
@@ -19707,7 +19707,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.63 | FTAP")
+                                warn("Astral v4.64 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -37019,7 +37019,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.63"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.64"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -37143,7 +37143,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.63",true)
+            box:AddLabel("Astral v4.64",true)
         end
 
         do
@@ -43407,9 +43407,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.63: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.64: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.63 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.64 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -91560,8 +91560,8 @@ return Builds
 
 ]========]
 sources.PalletRagdoll = [========[
--- Shared source ragdoll operation. Continuous requests wait for the game
--- to clear Ragdolled before asking again; there is no local burst schedule.
+-- Shared source pallet operation. One-shot effects wait for ragdoll state;
+-- continuous kick requests keep attempting while held, even if already ragdolled.
 local requireModule=...
 local Source=requireModule("Resonance29Ragdoll")
 local Ownership=requireModule("PalletOwnership")
@@ -91615,6 +91615,7 @@ function Pallet.Install(context)
             end,
         },
         Valid=valid,
+        Repeating=function()return self:ContinuousValid(self.Active)end,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
         BeginStrike=function(character)
             self.StrikeAttempts+=1
@@ -91760,8 +91761,8 @@ end
 function Pallet:Step()
     if self.Closed or self.Active or self.Preparing or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
     local entry
-    -- Only the source's eligibility state controls a continuous request.
-    -- Rotate ragdolled targets so another recovered target can use the pallet.
+    -- A one-shot effect can finish on Ragdolled=true. A continuous kick must
+    -- still dispatch the native operation for a target held in that state.
     local count=#self.Queue
     for _=1,count do
         local candidate=table.remove(self.Queue,1)
@@ -91769,20 +91770,10 @@ function Pallet:Step()
             candidate.Done=true;candidate.Success=false
             if candidate.Reaction then candidate.Reaction:Dispose()end
         else
-            local value=state(candidate.Character)
-            if not candidate.Continuous or(value and value.Value==false)then
-                entry=candidate;break
-            end
-            self.Queue[#self.Queue+1]=candidate
+            entry=candidate;break
         end
     end
-    if not entry then
-        if #self.Queue>0 then
-            self:SafePark()
-            self.Status='Waiting for the game to clear target Ragdolled'
-        end
-        return
-    end
+    if not entry then return end
     self.Active=entry;entry.WorkerStartedAt=self.Context.Clock()
     local passesBefore=entry.Passes or 0
     self.Context.SpawnThread(function()
@@ -91831,15 +91822,13 @@ function Pallet:Watchdog()
     local entry=self.Active or self.Queue[1]
     if self.Closed or not entry or entry.Done or not self:EntryValid(entry)or not self.Context.Notify then return end
     local now=self.Context.Clock()
-    local value=state(entry.Character)
-    if entry.Continuous and value and value.Value then return end
     local reaction=entry.Reaction and entry.Reaction:Describe()
     if now-((reaction and reaction.LastRiseAt)or entry.StartedAt or now)<3 or now<(self.NextWarning or 0)then return end
     local reason
     if not alive(self.Sound)then reason='Доска ещё не создана: '..tostring(self.Status)
     elseif not self.Context.Owned(self.Sound)then reason='Нет физического владения доской. Повторяю захват.'
     elseif now-math.max(self.LastPassAt or 0,entry.WorkerStartedAt or 0)>.75 then reason='Цикл доски остановлен: '..tostring(self.Status)
-    elseif reaction and reaction.Ragdolled then reason='Ragdolled остаётся true: новые удары по этому флагу не различить.'
+    elseif reaction and reaction.Ragdolled then return
     else reason='Исходная операция палетки повторяется, но Ragdolled не включается. Нужен отчёт принимающего аккаунта.'end
     self.NextWarning=now+10;pcall(self.Context.Notify,reason)
 end
@@ -91880,7 +91869,7 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=3,Mechanism='Source ragdoll state eligibility; no scheduled burst',Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
+    local info={Version=4,Mechanism='Continuous source-native attempts; ragdoll state completes only one-shot effects',Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
         local value=state(entry.Character)
@@ -91888,7 +91877,7 @@ function Pallet:Evidence()
             ReceiverKind=entry.ReceiverKind,PlacementAttempts=entry.StrikeAttempts or 0,SourcePlacements=entry.Passes or 0,
             LocalReceiverContacts=entry.ReceiverContacts or 0,
             ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.LastStateReason,
-            WaitingForGameRecovery=entry.Continuous and value and value.Value==true or false,Reaction=reaction}
+            StateAlreadyRagdolled=value and value.Value==true or false,ContinuousStrikes=entry.Continuous==true,Reaction=reaction}
     end end
     return info
 end
@@ -92833,8 +92822,9 @@ return Destroy
 
 ]========]
 sources.Resonance29Ragdoll = [========[
--- Source-backed ragdoll operation. Eligibility follows the source's
--- Ragdolled=false condition; this is not a hit counter or kick prediction.
+-- Source-backed pallet operation. One-shot ragdoll requests stop at true;
+-- maintained kick contacts can run while the target is already ragdolled.
+-- An existing state is not a new hit acknowledgement or kick prediction.
 local Native={}
 function Native.new(context)
  local states,api,inventory=context.Data.States,context.API,context.Inventory
@@ -92847,7 +92837,9 @@ function Native.new(context)
   local humanoid=character:FindFirstChildOfClass('Humanoid')
   local ragdolled=humanoid and humanoid:FindFirstChild('Ragdolled')
   if not head or not alive(torso)or not ragdolled or not ragdolled:IsA('BoolValue')or humanoid.Health<=0 then return end
-  if ragdolled.Value then return true end
+  local function repeating()return context.Repeating and context.Repeating()==true or false end
+  local function completedState()return ragdolled.Value and not repeating()end
+  if completedState()then return true end
   local function current()
    return valid()and head.Parent==character and torso.Parent==character and humanoid.Parent==character and humanoid.Health>0
     and ragdolled.Parent==humanoid and humanoid:FindFirstChild('Ragdolled')==ragdolled
@@ -92856,17 +92848,17 @@ function Native.new(context)
   local function finish(value)states.Ragdolling=false;return value end
   local model=inventory:FindFirstChild('RagdollRSC')or api.SpawnToy('PalletLightBrown')
   if not current()then return finish(false)end
-  if ragdolled.Value then return finish(true)end
+  if completedState()then return finish(true)end
   local sound=model and model:WaitForChild('SoundPart',.5)
   if not current()then return finish(false)end
-  if ragdolled.Value then return finish(true)end
+  if completedState()then return finish(true)end
   local main=model and model:WaitForChild('Main',.5)
   if not current()then return finish(false)end
-  if ragdolled.Value then return finish(true)end
+  if completedState()then return finish(true)end
   if not alive(sound)or not alive(main)then api.DestroyToy(model);return finish(false)end
   local acquired=api.SNO(sound)
   if not current()then return finish(false)end
-  if ragdolled.Value then return finish(true)end
+  if completedState()then return finish(true)end
   if not acquired or sound.Parent~=model or main.Parent~=model then return finish(false)end
   model.Name='RagdollRSC'
   for _,part in ipairs(model:GetChildren())do if part:IsA('BasePart')then part.CanCollide=false end end
@@ -92876,22 +92868,24 @@ function Native.new(context)
   mover.D=1500;mover.Position=Vector3.new(0,100000,0)
   local started=context.Clock()
   while current()and sound.Parent==model and main.Parent==model do
-   if ragdolled.Value then break end
+   if completedState()then break end
    if sound.Anchored or main.Anchored or(context.CanContact and not context.CanContact(sound))then break end
-   if not current()or ragdolled.Value or sound.Parent~=model or main.Parent~=model then break end
+   if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
    -- Park clears this force, so re-enable the original lift for each real
    -- attempt. Preserve Position on SoundPart rather than substituting an
    -- AssemblyRootPart transform or an invented crossing/impulse sequence.
    if context.BeginStrike then context.BeginStrike(character)end
-   if not current()or ragdolled.Value or sound.Parent~=model or main.Parent~=model then break end
+   if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
    mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
    sound.Position=torso.Position
    sound.Velocity=Vector3.new(0,-10,0)
    if context.Record then context.Record(sound,character)end -- placement telemetry only
    context.Wait(.1)
-   if not current()or ragdolled.Value or not head:FindFirstChild('PartOwner')or context.Clock()-started>.5 then break end
+   if not current()or completedState()or not head:FindFirstChild('PartOwner')or context.Clock()-started>.5 then break end
   end
-  return finish(current()and ragdolled.Value==true)
+  -- Completion of a bounded repeating slice is never a new ragdoll-state
+  -- acknowledgement, even when the target's bool was already true.
+  return finish(current()and completedState())
  end
 end
 return Native
