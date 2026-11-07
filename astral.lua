@@ -1,4 +1,4 @@
--- Astral v4.61 | Game ragdoll receiver targeting and read-only reaction observation; no synthetic camera effects.
+-- Astral v4.62 | Isolated single strokes, parked gaps and identical compact burst strokes; scheduled cadence, not server kick prediction.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.PalletReaction = [========[
@@ -136,34 +136,52 @@ return Reaction
 
 ]========]
 sources.PalletCadence = [========[
--- Per-target physical stroke plans. Planning/retries do not advance the pattern;
--- the caller reports completion only after a successful physical traversal.
+-- Per-target physical plans: two isolated strokes, then four compact strokes.
+-- Only successful completed traversals advance this local schedule. It does
+-- not infer accepted game hits, camera blur or an imminent server disconnect.
 local Cadence={}
+local function finite(value)
+ return type(value)=='number'and value==value and math.abs(value)<math.huge
+end
 local function pingSeconds(value)
- if type(value)~='number'or value~=value or value<0 or math.abs(value)==math.huge then return .1 end
+ if not finite(value)or value<0 then return .1 end
  return value
 end
 local function state(entry)
  local current=entry.PalletCadence
- if not current then current={Step=0,Initial=true};entry.PalletCadence=current end
+ if not current then current={Step=0};entry.PalletCadence=current end
  return current
 end
 function Cadence.Plan(entry,ping)
  local current=state(entry)
  if current.Plan then return current.Plan end
- local speed,clear=48,.06
- if current.Step==0 then
-  speed=28
-  clear=current.Initial and .06 or math.clamp(.15+pingSeconds(ping)*.5,.18,.35)
- elseif current.Step==1 then
-  clear=math.clamp(.1+pingSeconds(ping)*.5,.12,.25)
- end
- current.Plan=table.freeze({Speed=speed,ClearSeconds=clear})
+ local single=current.Step<2
+ local index=single and current.Step+1 or current.Step-1
+ local gap=single and math.clamp(.6+pingSeconds(ping)*.5,.65,1)or(index==4 and 1 or 0)
+ current.Plan=table.freeze({Speed=48,ClearSeconds=.06,Phase=single and'Single'or'Burst',Index=index,GapSeconds=gap})
  return current.Plan
 end
-function Cadence.Completed(entry)
- local current=state(entry)
- current.Step=(current.Step+1)%5;current.Initial=false;current.Plan=nil
+function Cadence.Ready(entry,now)
+ local current=entry.PalletCadence
+ if not current then return true end
+ if not finite(now)or(current.CompletedAt and now<current.CompletedAt)then return false end
+ return not current.Deadline or now+1e-7>=current.Deadline
+end
+function Cadence.WaitSeconds(entry,now)
+ local current=entry.PalletCadence
+ if not current then return 0 end
+ if not finite(now)or(current.CompletedAt and now<current.CompletedAt)then return 1 end
+ return current.Deadline and math.clamp(current.Deadline-now,0,1)or 0
+end
+function Cadence.Completed(entry,now)
+ local current=entry.PalletCadence
+ -- An unplanned, duplicate or stale callback must not advance the sequence.
+ if not current or not current.Plan or not finite(now)or not Cadence.Ready(entry,now)then return false end
+ local gap=current.Plan.GapSeconds
+ local deadline=now+gap
+ if not finite(deadline)or(gap>0 and deadline<=now)then return false end
+ current.Step=(current.Step+1)%6;current.CompletedAt=now;current.Deadline=deadline;current.Plan=nil
+ return true
 end
 function Cadence.Reset(entry)entry.PalletCadence=nil end
 return Cadence
@@ -19810,7 +19828,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.61 | FTAP")
+                                warn("Astral v4.62 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -37123,7 +37141,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.61"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.62"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -37247,7 +37265,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.61",true)
+            box:AddLabel("Astral v4.62",true)
         end
 
         do
@@ -43511,9 +43529,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.61: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.62: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.61 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.62 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -91721,7 +91739,7 @@ function Pallet.Install(context)
         },
         Valid=valid,
         ContinueContact=function()return self:ContinuousValid(self.Active)end,
-        ContinueAttempt=function()return #self.Queue==0 and self:ContinuousValid(self.Active)end,
+        ContinueAttempt=function()return #self.Queue==0 and self:ContinuousValid(self.Active)and Cadence.Ready(self.Active,context.Clock())end,
         SliceSeconds=function()return .2 end,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
         Stroke=function(sound,main,torso,character,current)
@@ -91733,6 +91751,7 @@ function Pallet.Install(context)
             entry.Receiver=receiver;entry.ReceiverKind=kind
             local attempt
             local plan=Cadence.Plan(entry,context.PingSeconds and context.PingSeconds()or .1)
+            entry.LastStrokePhase=plan.Phase;entry.LastStrokeIndex=plan.Index
             self:ShowPallet()
             local complete,why=Stroke.Run({Clock=context.Clock,Gravity=context.Gravity,Speed=plan.Speed,ClearSeconds=plan.ClearSeconds,
                 Ready=function()return current()and context.Owned(sound)and Reaction.Resolve(character)==receiver end,
@@ -91756,7 +91775,7 @@ function Pallet.Install(context)
                 local observed,reason=entry.Reaction:ObservedSince(attempt)
                 if observed then entry.ReactionReason=nil else entry.ReactionReason=reason end
                 self.Status=observed and 'New Ragdolled transition observed' or 'Pallet traversal; game reaction not established'
-                Cadence.Completed(entry)
+                Cadence.Completed(entry,context.Clock())
             end
             return complete,why
         end,
@@ -91875,7 +91894,7 @@ function Pallet:Bind(model)
     end)
 end
 function Pallet:Request(character,valid,continuous)
-    if self.Closed then return end
+    if self.Closed or next(self.Pauses)then return end
     local value=state(character);if not value then return end
     if value.Value and not continuous then return {Done=true,Success=true,Character=character}end
     local entry=self.Entries[character]
@@ -91919,14 +91938,28 @@ end
 function Pallet:Step()
     if self.Closed or self.Active or self.Preparing or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
     local entry
-    while #self.Queue>0 do
+    -- Rotate waiting targets once; an intentional gap must not occupy the
+    -- worker or prevent another ready target from using the shared pallet.
+    local count=#self.Queue
+    for _=1,count do
         local candidate=table.remove(self.Queue,1)
-        if self:EntryValid(candidate)then entry=candidate;break end
-        candidate.Done=true;candidate.Success=false
-        if candidate.Reaction then candidate.Reaction:Dispose()end
+        if not self:EntryValid(candidate)then
+            candidate.Done=true;candidate.Success=false
+            if candidate.Reaction then candidate.Reaction:Dispose()end
+        elseif Cadence.Ready(candidate,self.Context.Clock())then
+            entry=candidate;break
+        else
+            self.Queue[#self.Queue+1]=candidate
+        end
     end
-    if not entry then return end
-    self.Active=entry
+    if not entry then
+        if #self.Queue>0 then
+            self:SafePark() -- follow the moving local park point during the whole gap
+            self.Status='Pallet parked between isolated strikes'
+        end
+        return
+    end
+    self.Active=entry;entry.WorkerStartedAt=self.Context.Clock()
     local passesBefore=entry.Passes or 0
     self.Context.SpawnThread(function()
         local ok,value=pcall(self.Native,entry.Character)
@@ -91954,19 +91987,26 @@ function Pallet:Step()
 end
 function Pallet:Pause(token,value)
     self.Pauses[token]=value and true or nil
-    if value then self:SafePark();self.Status="Native ragdoll paused during Gucci visit"end
+    if value then
+        local characters={}
+        for character in pairs(self.Entries)do characters[#characters+1]=character end
+        for _,character in ipairs(characters)do self:Cancel(character)end
+        table.clear(self.Queue)
+        self:SafePark();self.Status="Native ragdoll paused during Gucci visit"
+    end
 end
 function Pallet:Watchdog()
     local entry=self.Active or self.Queue[1]
     if self.Closed or not entry or entry.Done or not self:EntryValid(entry)or not self.Context.Notify then return end
     local now=self.Context.Clock()
+    if not self.Active and not Cadence.Ready(entry,now)then return end
     local reaction=entry.Reaction and entry.Reaction:Describe()
     if now-((reaction and reaction.LastRiseAt)or entry.StartedAt or now)<3 or now<(self.NextWarning or 0)then return end
     local reason
     if not alive(self.Sound)then reason='Доска ещё не создана: '..tostring(self.Status)
     elseif not self.Context.Owned(self.Sound)then reason='Нет физического владения доской. Повторяю захват.'
     elseif self.StrokeFailure then reason='Доска не завершила проход через цель: '..tostring(self.StrokeFailure)
-    elseif now-(self.LastPassAt or 0)>.75 then reason='Цикл доски остановлен: '..tostring(self.Status)
+    elseif now-math.max(self.LastPassAt or 0,entry.WorkerStartedAt or 0)>.75 then reason='Цикл доски остановлен: '..tostring(self.Status)
     elseif reaction and reaction.Ragdolled then reason='Ragdolled остаётся true: новые удары по этому флагу не различить.'
     else reason='Доска движется, но перехода Ragdolled не видно. Нужна проверка на втором экране.'end
     self.NextWarning=now+10;pcall(self.Context.Notify,reason)
@@ -92015,7 +92055,8 @@ function Pallet:Evidence()
             ReceiverKind=entry.ReceiverKind,StrokeAttempts=entry.StrikeAttempts or 0,PhysicalTraversals=entry.CompletedTraversals or 0,
             LocalReceiverContacts=entry.ReceiverContacts or 0,
             ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.ReactionReason,
-            Reaction=reaction}
+            StrokePhase=entry.LastStrokePhase,StrokeIndex=entry.LastStrokeIndex,
+            ScheduledWaitSeconds=Cadence.WaitSeconds(entry,self.Context.Clock()),Reaction=reaction}
     end end
     return info
 end
