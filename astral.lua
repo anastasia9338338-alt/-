@@ -1,4 +1,4 @@
--- Astral v4.62 | Isolated single strokes, parked gaps and identical compact burst strokes; scheduled cadence, not server kick prediction.
+-- Astral v4.63 | Restore source ragdoll operation and game-state eligibility; remove invented stroke and burst schedules.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.PalletReaction = [========[
@@ -135,58 +135,7 @@ end
 return Reaction
 
 ]========]
-sources.PalletCadence = [========[
--- Per-target physical plans: two isolated strokes, then four compact strokes.
--- Only successful completed traversals advance this local schedule. It does
--- not infer accepted game hits, camera blur or an imminent server disconnect.
-local Cadence={}
-local function finite(value)
- return type(value)=='number'and value==value and math.abs(value)<math.huge
-end
-local function pingSeconds(value)
- if not finite(value)or value<0 then return .1 end
- return value
-end
-local function state(entry)
- local current=entry.PalletCadence
- if not current then current={Step=0};entry.PalletCadence=current end
- return current
-end
-function Cadence.Plan(entry,ping)
- local current=state(entry)
- if current.Plan then return current.Plan end
- local single=current.Step<2
- local index=single and current.Step+1 or current.Step-1
- local gap=single and math.clamp(.6+pingSeconds(ping)*.5,.65,1)or(index==4 and 1 or 0)
- current.Plan=table.freeze({Speed=48,ClearSeconds=.06,Phase=single and'Single'or'Burst',Index=index,GapSeconds=gap})
- return current.Plan
-end
-function Cadence.Ready(entry,now)
- local current=entry.PalletCadence
- if not current then return true end
- if not finite(now)or(current.CompletedAt and now<current.CompletedAt)then return false end
- return not current.Deadline or now+1e-7>=current.Deadline
-end
-function Cadence.WaitSeconds(entry,now)
- local current=entry.PalletCadence
- if not current then return 0 end
- if not finite(now)or(current.CompletedAt and now<current.CompletedAt)then return 1 end
- return current.Deadline and math.clamp(current.Deadline-now,0,1)or 0
-end
-function Cadence.Completed(entry,now)
- local current=entry.PalletCadence
- -- An unplanned, duplicate or stale callback must not advance the sequence.
- if not current or not current.Plan or not finite(now)or not Cadence.Ready(entry,now)then return false end
- local gap=current.Plan.GapSeconds
- local deadline=now+gap
- if not finite(deadline)or(gap>0 and deadline<=now)then return false end
- current.Step=(current.Step+1)%6;current.CompletedAt=now;current.Deadline=deadline;current.Plan=nil
- return true
-end
-function Cadence.Reset(entry)entry.PalletCadence=nil end
-return Cadence
 
-]========]
 sources.KickHandoff = [========[
 -- Request phases are observations of the local ownership state, never proof of
 -- a server kick. Hold movers and the independent pallet are outside this gate.
@@ -233,77 +182,7 @@ end
 return Handoff
 
 ]========]
-sources.PalletStroke = [========[
--- A contact attempt moves the owned pallet through a real separated -> overlap
--- -> separated path. It does not equate a solver touch with a server hit.
-local Stroke={}
-local function alive(part)return part and part.Parent and part:IsA('BasePart')end
-local function halfHeight(part)
- local cf,size=part.CFrame,part.Size*.5
- return math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z
-end
-local function validDt(dt)
- return type(dt)=='number'and dt==dt and dt>0 and math.clamp(dt,1/1000,.1)or 1/60
-end
--- Required ctx: Clock(), WaitPhase()->dt, Ready()->bool. Ready must include
--- the target session token and pallet network ownership. Optional callbacks
--- RecordClear(sound,character), BeginStrike(character), Record(sound,character).
--- Run executes ONE stroke and returns (complete, reason). Caller handles
--- repeat/fairness and parks after false. No writes to the target character.
-function Stroke.Run(ctx,sound,main,torso,character)
- local function ready()
-  local root=alive(sound)and(sound.AssemblyRootPart or sound)
-  return alive(sound)and alive(main)and alive(torso)and alive(root)
-   and not sound.Anchored and not main.Anchored and not root.Anchored and ctx.Ready()
- end
- if not ready()then return false,'unavailable'end
- local mover=main:FindFirstChild('RagdollBP')
- if mover then mover.MaxForce=Vector3.zero end
- local half=math.max(.05,halfHeight(sound)+halfHeight(torso))
- local gap=.75;local dt=validDt(ctx.StepSeconds or 1/60)
- local function velocity(speed,clear)
-  local difference=torso.Position-sound.Position
-  local lateral=Vector3.new(difference.X,0,difference.Z)*22
-  if lateral.Magnitude>64 then lateral=lateral.Unit*64 end
-  local vertical=clear and math.clamp((half+gap-(sound.Position.Y-torso.Position.Y))*18,-16,16)or -speed
-  -- Optional gravity compensation is limited to the PALLET. It preserves
-  -- the commanded crossing velocity through a physical solver step.
-  local gravity=ctx.Gravity and ctx.Gravity()or 0
-  local value=torso.AssemblyLinearVelocity+lateral+Vector3.new(0,vertical+gravity*dt*.5,0)
-  local assembly=sound.AssemblyRootPart or sound
-  assembly.AssemblyAngularVelocity=Vector3.zero;assembly.AssemblyLinearVelocity=value
-  sound.AssemblyAngularVelocity=Vector3.zero;sound.AssemblyLinearVelocity=value;sound.Velocity=value
- end
- local assembly=sound.AssemblyRootPart or sound
- local launch=torso.Position+Vector3.new(0,half+gap,0)
- assembly.CFrame=assembly.CFrame+(launch-sound.Position)
- velocity(0,true)
- if ctx.RecordClear then ctx.RecordClear(sound,character)end
- local clearUntil=ctx.Clock()+math.clamp(ctx.ClearSeconds or .06,.06,.35)
- repeat
-  dt=validDt(ctx.WaitPhase())
-  if not ready()then return false,'cancelled'end
-  velocity(0,true)
- until ctx.Clock()+1e-7>=clearUntil
- if sound.Position.Y-torso.Position.Y<=half+.1 then return false,'clearance lost'end
- local maxSpeed=math.clamp(ctx.Speed or 28,1,48)
- local function speed()return math.min(maxSpeed,half*.75/dt)end
- local initialSpeed=speed()
- local untilAt=ctx.Clock()+math.clamp((2*half+2*gap)/math.max(initialSpeed,.1)+.25,.3,1.5)
- if ctx.BeginStrike then ctx.BeginStrike(character)end
- velocity(initialSpeed,false)
- if ctx.Record then ctx.Record(sound,character)end
- repeat
-  dt=validDt(ctx.WaitPhase())
-  if not ready()then return false,'cancelled'end
-  if sound.Position.Y<torso.Position.Y-half-gap then return true,'crossed'end
-  velocity(speed(),false)
- until ctx.Clock()>=untilAt
- return false,'blocked'
-end
-return Stroke
 
-]========]
 sources.PalletOwnership = [========[
 -- A PartOwner marker and local simulation ownership are independent facts.
 -- Repair a stale marker with fresh bounded requests; never move an unowned toy.
@@ -19828,7 +19707,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.62 | FTAP")
+                                warn("Astral v4.63 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23160,7 +23039,6 @@ end
                     CanSpawn=function()return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
                     Spawn=function(valid)return tbl12.SpawnToy("PalletLightBrown",nil,0,true,valid)end,
                     Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value and true or nil end,
-                    Touch=type(firetouchinterest)=="function"and function(part,target,begin)firetouchinterest(part,target,begin and 0 or 1)end or nil,
                     Owned=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
                     MarkerOwned=tbl12.IsPartOwner,PhysicsOwned=tbl12.IsNetworkOwner,Grab=tbl12.Grab,
                     OwnershipBusy=function()return tbl7.States.Owning==true end,
@@ -37141,7 +37019,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.62"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.63"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -37265,7 +37143,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.62",true)
+            box:AddLabel("Astral v4.63",true)
         end
 
         do
@@ -43529,9 +43407,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.62: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.63: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.62 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.63 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -91682,12 +91560,11 @@ return Builds
 
 ]========]
 sources.PalletRagdoll = [========[
--- Shared native pallet. Kick requests keep striking; Apply remains one-shot.
+-- Shared source ragdoll operation. Continuous requests wait for the game
+-- to clear Ragdolled before asking again; there is no local burst schedule.
 local requireModule=...
 local Source=requireModule("Resonance29Ragdoll")
 local Ownership=requireModule("PalletOwnership")
-local Stroke=requireModule("PalletStroke")
-local Cadence=requireModule("PalletCadence")
 local Reaction=requireModule("PalletReaction")
 local Pallet={};Pallet.__index=Pallet
 local CANCELLED={}
@@ -91698,7 +91575,7 @@ local function state(character)
     return value and value:IsA("BoolValue")and value
 end
 function Pallet.Install(context)
-    local self=setmetatable({Context=context,Queue={},Entries={},Passes=0,ClearPasses=0,StrikeAttempts=0,Contacts=0,Confirmed=0,Misses=0,
+    local self=setmetatable({Context=context,Queue={},Entries={},Passes=0,StrikeAttempts=0,Contacts=0,Confirmed=0,Misses=0,
         MaximumSpeed=context.MaximumSpeed==true,IntervalSeconds=.1,Status="Pallet ragdoll idle",
         RateAt=context.Clock(),RatePasses=0,RateContacts=0,PassRate=0,TouchRate=0,Pauses={}},Pallet)
     self.States=context.States or {}
@@ -91738,68 +91615,28 @@ function Pallet.Install(context)
             end,
         },
         Valid=valid,
-        ContinueContact=function()return self:ContinuousValid(self.Active)end,
-        ContinueAttempt=function()return #self.Queue==0 and self:ContinuousValid(self.Active)and Cadence.Ready(self.Active,context.Clock())end,
-        SliceSeconds=function()return .2 end,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
-        Stroke=function(sound,main,torso,character,current)
-            self:EndContact()
-            self.StrokeFailure=nil
-            local entry=self.Active
-            local receiver,kind,receiverError=Reaction.Resolve(character)
-            if not receiver then self.Status=tostring(receiverError);return false,receiverError end
-            entry.Receiver=receiver;entry.ReceiverKind=kind
-            local attempt
-            local plan=Cadence.Plan(entry,context.PingSeconds and context.PingSeconds()or .1)
-            entry.LastStrokePhase=plan.Phase;entry.LastStrokeIndex=plan.Index
-            self:ShowPallet()
-            local complete,why=Stroke.Run({Clock=context.Clock,Gravity=context.Gravity,Speed=plan.Speed,ClearSeconds=plan.ClearSeconds,
-                Ready=function()return current()and context.Owned(sound)and Reaction.Resolve(character)==receiver end,
-                WaitPhase=function()
-                    if not valid()then error(CANCELLED,0)end
-                    local dt=self.FrameSignal:Wait()
-                    if not valid()then error(CANCELLED,0)end;return dt
-                end,
-                RecordClear=function()self.ClearPasses+=1 end,
-                BeginStrike=function()
-                    attempt=entry.Reaction:StartAttempt()
-                    self.StrikeAttempts+=1;entry.StrikeAttempts=(entry.StrikeAttempts or 0)+1
-                end,
-                Record=function()self.Passes+=1;self.LastPassAt=context.Clock();local e=self.Active;if e then e.Passes=(e.Passes or 0)+1 end;self.Status='Pallet crossing selected target'end,
-            },sound,main,receiver,character)
-            if complete then
-                entry.CompletedTraversals=(entry.CompletedTraversals or 0)+1
-                -- The game's bool is a state, not a per-hit acknowledgement.
-                -- Observe it without delaying/rejecting repeated physical strokes:
-                -- a real hit can refresh ragdoll while this value remains true.
-                local observed,reason=entry.Reaction:ObservedSince(attempt)
-                if observed then entry.ReactionReason=nil else entry.ReactionReason=reason end
-                self.Status=observed and 'New Ragdolled transition observed' or 'Pallet traversal; game reaction not established'
-                Cadence.Completed(entry,context.Clock())
-            end
-            return complete,why
-        end,
-        StrokeFailed=function(reason)self.StrokeFailure=reason;self.Status='Pallet stroke stopped: '..tostring(reason)end,
-        EndContact=function()self:EndContact()end,
-        Contact=function(part,target)self:BeginContact(part,target)end,
         BeginStrike=function(character)
             self.StrikeAttempts+=1
             local entry=self.Active
-            if entry and entry.Character==character then entry.StrikeAttempts=(entry.StrikeAttempts or 0)+1 end
+            if entry and entry.Character==character then
+                entry.StrikeAttempts=(entry.StrikeAttempts or 0)+1
+                entry.Attempt=entry.Reaction:StartAttempt()
+                entry.Receiver=character:FindFirstChild('Torso')or character:FindFirstChild('UpperTorso')
+                entry.ReceiverKind='SourceTorso'
+            end
+            self:ShowPallet()
         end,
-        RecordClear=function()self.ClearPasses+=1 end,
         Wait=function(seconds)
-            -- Keep the source's contact and ragdoll conditions. Only replace
-            -- its polling delay with the next real physics frame in auto mode.
-            if self.MaximumSpeed and seconds==.1 then self.FrameSignal:Wait()
-            else context.Wait(seconds==.1 and self.IntervalSeconds or seconds)end
+            -- Source polling interval, not an invented single/burst cooldown.
+            context.Wait(seconds)
             if not valid()then error(CANCELLED,0)end
         end,
         Record=function(part,character)
             self.Passes+=1;self.LastPassAt=context.Clock()
             if self.Context.Clock()>=(self.NextStatus or 0)then
                 self.NextStatus=self.Context.Clock()+.2
-                self.Status=self:ContinuousValid(self.Active)and "Native pallet contact on selected target"or "Native pallet ragdoll"
+                self.Status="Source pallet placement attempt"
             end
             local entry=self.Active;if entry and entry.Character==character then entry.Passes=(entry.Passes or 0)+1 end
         end,
@@ -91824,20 +91661,6 @@ end
 function Pallet:ContinuousValid(entry)
     return entry and entry.Continuous==true and self:EntryValid(entry)or false
 end
-function Pallet:EndContact()
-    local pair=self.TouchPair;self.TouchPair=nil
-    if not pair or not self.Context.Touch then return end
-    if not pair[1].Parent or not pair[2].Parent then return end
-    local ok,why=pcall(self.Context.Touch,pair[1],pair[2],false)
-    if not ok then self.TouchError=tostring(why)end
-end
-function Pallet:BeginContact(part,target)
-    self:EndContact()
-    if not self.Context.Touch or not self:EntryValid(self.Active)or not self.Context.Owned(part)then return end
-    self.TouchPair={part,target}
-    local ok,why=pcall(self.Context.Touch,part,target,true)
-    if not ok then self.TouchError=tostring(why)else self.TouchBegins=(self.TouchBegins or 0)+1 end
-end
 function Pallet:Park()
     local sound=self.Sound
     local main=self.Model and self.Model:FindFirstChild("Main")
@@ -91851,7 +91674,6 @@ function Pallet:Park()
     if position then assembly.CFrame=assembly.CFrame+(position-sound.Position)end
 end
 function Pallet:SafePark()
-    self:EndContact()
     local ok,message=pcall(self.Park,self)
     if not ok then self.LastError="Pallet cleanup: "..tostring(message)end
     return ok
@@ -91888,7 +91710,7 @@ function Pallet:Bind(model)
         local entry=self.Active
         if entry and not entry.Done and part and part:IsDescendantOf(entry.Character)then
             self.Contacts+=1;entry.ContactAt=self.Context.Clock()
-            local receiver=Reaction.Resolve(entry.Character)
+            local receiver=entry.Receiver
             if receiver and part==receiver then entry.ReceiverContactAt=self.Context.Clock();entry.ReceiverContacts=(entry.ReceiverContacts or 0)+1 end
         end
     end)
@@ -91938,24 +91760,26 @@ end
 function Pallet:Step()
     if self.Closed or self.Active or self.Preparing or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
     local entry
-    -- Rotate waiting targets once; an intentional gap must not occupy the
-    -- worker or prevent another ready target from using the shared pallet.
+    -- Only the source's eligibility state controls a continuous request.
+    -- Rotate ragdolled targets so another recovered target can use the pallet.
     local count=#self.Queue
     for _=1,count do
         local candidate=table.remove(self.Queue,1)
         if not self:EntryValid(candidate)then
             candidate.Done=true;candidate.Success=false
             if candidate.Reaction then candidate.Reaction:Dispose()end
-        elseif Cadence.Ready(candidate,self.Context.Clock())then
-            entry=candidate;break
         else
+            local value=state(candidate.Character)
+            if not candidate.Continuous or(value and value.Value==false)then
+                entry=candidate;break
+            end
             self.Queue[#self.Queue+1]=candidate
         end
     end
     if not entry then
         if #self.Queue>0 then
-            self:SafePark() -- follow the moving local park point during the whole gap
-            self.Status='Pallet parked between isolated strikes'
+            self:SafePark()
+            self.Status='Waiting for the game to clear target Ragdolled'
         end
         return
     end
@@ -91970,6 +91794,14 @@ function Pallet:Step()
         end
         local cancelled=not self:EntryValid(entry)or(not ok and value==CANCELLED)
         local repeatEntry=not cancelled and self:ContinuousValid(entry)
+        if ok and value==true and entry.Reaction then
+            if entry.Attempt then
+                local observed,reason=entry.Reaction:ObservedSince(entry.Attempt)
+                entry.LastStateReason=reason;entry.NewStateObserved=observed==true
+            else
+                entry.LastStateReason='Ragdolled observed before any source placement'
+            end
+        end
         if repeatEntry then
             self.Queue[#self.Queue+1]=entry
         elseif not entry.Done then
@@ -91999,16 +91831,16 @@ function Pallet:Watchdog()
     local entry=self.Active or self.Queue[1]
     if self.Closed or not entry or entry.Done or not self:EntryValid(entry)or not self.Context.Notify then return end
     local now=self.Context.Clock()
-    if not self.Active and not Cadence.Ready(entry,now)then return end
+    local value=state(entry.Character)
+    if entry.Continuous and value and value.Value then return end
     local reaction=entry.Reaction and entry.Reaction:Describe()
     if now-((reaction and reaction.LastRiseAt)or entry.StartedAt or now)<3 or now<(self.NextWarning or 0)then return end
     local reason
     if not alive(self.Sound)then reason='Доска ещё не создана: '..tostring(self.Status)
     elseif not self.Context.Owned(self.Sound)then reason='Нет физического владения доской. Повторяю захват.'
-    elseif self.StrokeFailure then reason='Доска не завершила проход через цель: '..tostring(self.StrokeFailure)
     elseif now-math.max(self.LastPassAt or 0,entry.WorkerStartedAt or 0)>.75 then reason='Цикл доски остановлен: '..tostring(self.Status)
     elseif reaction and reaction.Ragdolled then reason='Ragdolled остаётся true: новые удары по этому флагу не различить.'
-    else reason='Доска движется, но перехода Ragdolled не видно. Нужна проверка на втором экране.'end
+    else reason='Исходная операция палетки повторяется, но Ragdolled не включается. Нужен отчёт принимающего аккаунта.'end
     self.NextWarning=now+10;pcall(self.Context.Notify,reason)
 end
 function Pallet:Prepare(valid)
@@ -92048,15 +91880,15 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Status=self.Status,StrokeFailure=self.StrokeFailure,OwnershipReason=self.OwnershipReason,Entries={}}
+    local info={Version=3,Mechanism='Source ragdoll state eligibility; no scheduled burst',Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
+        local value=state(entry.Character)
         info.Entries[#info.Entries+1]={Character=entry.Character.Name,Receiver=entry.Receiver and entry.Receiver.Name,
-            ReceiverKind=entry.ReceiverKind,StrokeAttempts=entry.StrikeAttempts or 0,PhysicalTraversals=entry.CompletedTraversals or 0,
+            ReceiverKind=entry.ReceiverKind,PlacementAttempts=entry.StrikeAttempts or 0,SourcePlacements=entry.Passes or 0,
             LocalReceiverContacts=entry.ReceiverContacts or 0,
-            ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.ReactionReason,
-            StrokePhase=entry.LastStrokePhase,StrokeIndex=entry.LastStrokeIndex,
-            ScheduledWaitSeconds=Cadence.WaitSeconds(entry,self.Context.Clock()),Reaction=reaction}
+            ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.LastStateReason,
+            WaitingForGameRecovery=entry.Continuous and value and value.Value==true or false,Reaction=reaction}
     end end
     return info
 end
@@ -92068,7 +91900,7 @@ function Pallet:Describe()
         self.PassRate=(self.Passes-self.RatePasses)/dt;self.TouchRate=(self.Contacts-self.RateContacts)/dt
         self.RateAt=now;self.RatePasses=self.Passes;self.RateContacts=self.Contacts
     end
-    return self.Status..string.format("\nplacements: %d | local touches: %d | one-shot ragdolls: %d\nmeasured: %.1f placements/s | %.1f local touches/s",self.Passes,self.Contacts,self.Confirmed,self.PassRate,self.TouchRate)
+    return self.Status..string.format("\nplacements: %d | local touches: %d | one-shot ragdoll states: %d\nmeasured: %.1f placements/s | %.1f local touches/s",self.Passes,self.Contacts,self.Confirmed,self.PassRate,self.TouchRate)
 end
 function Pallet:Dispose()
     if self.Closed then return end
@@ -93001,8 +92833,8 @@ return Destroy
 
 ]========]
 sources.Resonance29Ragdoll = [========[
--- Preserve the source one-shot ragdoll operation. Continuous kick requests
--- use separated physical pallet strokes with independent ownership recovery.
+-- Source-backed ragdoll operation. Eligibility follows the source's
+-- Ragdolled=false condition; this is not a hit counter or kick prediction.
 local Native={}
 function Native.new(context)
  local states,api,inventory=context.Data.States,context.API,context.Inventory
@@ -93014,9 +92846,8 @@ function Native.new(context)
   local torso=character:FindFirstChild('Torso')or character:FindFirstChild('UpperTorso')
   local humanoid=character:FindFirstChildOfClass('Humanoid')
   local ragdolled=humanoid and humanoid:FindFirstChild('Ragdolled')
-  if not head or not torso or not ragdolled or humanoid.Health<=0 then return end
-  local function repeating()return context.ContinueContact and context.ContinueContact()==true end
-  if ragdolled.Value and not repeating()then return true end
+  if not head or not alive(torso)or not ragdolled or not ragdolled:IsA('BoolValue')or humanoid.Health<=0 then return end
+  if ragdolled.Value then return true end
   local function current()
    return valid()and head.Parent==character and torso.Parent==character and humanoid.Parent==character and humanoid.Health>0
     and ragdolled.Parent==humanoid and humanoid:FindFirstChild('Ragdolled')==ragdolled
@@ -93025,42 +92856,38 @@ function Native.new(context)
   local function finish(value)states.Ragdolling=false;return value end
   local model=inventory:FindFirstChild('RagdollRSC')or api.SpawnToy('PalletLightBrown')
   if not current()then return finish(false)end
+  if ragdolled.Value then return finish(true)end
   local sound=model and model:WaitForChild('SoundPart',.5)
   if not current()then return finish(false)end
+  if ragdolled.Value then return finish(true)end
   local main=model and model:WaitForChild('Main',.5)
   if not current()then return finish(false)end
+  if ragdolled.Value then return finish(true)end
   if not alive(sound)or not alive(main)then api.DestroyToy(model);return finish(false)end
-  if not api.SNO(sound)or not current()then return finish(false)end
-  if sound.Parent~=model or main.Parent~=model then return finish(false)end
-  if ragdolled.Value and not repeating()then return finish(true)end
+  local acquired=api.SNO(sound)
+  if not current()then return finish(false)end
+  if ragdolled.Value then return finish(true)end
+  if not acquired or sound.Parent~=model or main.Parent~=model then return finish(false)end
   model.Name='RagdollRSC'
-  for _,p in ipairs(model:GetChildren())do if p:IsA('BasePart')then p.CanCollide=false end end
+  for _,part in ipairs(model:GetChildren())do if part:IsA('BasePart')then part.CanCollide=false end end
   sound.CanTouch=true
   local mover=main:FindFirstChild('RagdollBP')
   if not mover then mover=Instance.new('BodyPosition');mover.Name='RagdollBP';mover.Parent=main end
   mover.D=1500;mover.Position=Vector3.new(0,100000,0)
-  if repeating()then
-   repeat
-    local completed,reason=context.Stroke(sound,main,torso,character,function()return current()and repeating()end)
-    if not completed then if context.StrokeFailed then context.StrokeFailed(reason)end;return finish(false)end
-    if not current()or not repeating()then return finish(false)end
-   until not(context.ContinueAttempt and context.ContinueAttempt())
-   return finish(false)
-  end
   local started=context.Clock()
   while current()and sound.Parent==model and main.Parent==model do
-   if repeating()then return finish(false)end
-   if sound.Anchored or main.Anchored or(context.CanContact and not context.CanContact(sound))then break end
    if ragdolled.Value then break end
+   if sound.Anchored or main.Anchored or(context.CanContact and not context.CanContact(sound))then break end
+   if not current()or ragdolled.Value or sound.Parent~=model or main.Parent~=model then break end
+   -- Park clears this force, so re-enable the original lift for each real
+   -- attempt. Preserve Position on SoundPart rather than substituting an
+   -- AssemblyRootPart transform or an invented crossing/impulse sequence.
+   if context.BeginStrike then context.BeginStrike(character)end
+   if not current()or ragdolled.Value or sound.Parent~=model or main.Parent~=model then break end
    mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
-   -- Position deliberately matches the source. CFrame on AssemblyRootPart
-   -- changes a different body and does not reproduce this contact operation.
-   if context.EndContact then context.EndContact()end
    sound.Position=torso.Position
    sound.Velocity=Vector3.new(0,-10,0)
-   if context.Contact then context.Contact(sound,torso)end
-   if context.BeginStrike then context.BeginStrike(character)end
-   context.Record(sound,character) -- a local contact attempt, not a server hit
+   if context.Record then context.Record(sound,character)end -- placement telemetry only
    context.Wait(.1)
    if not current()or ragdolled.Value or not head:FindFirstChild('PartOwner')or context.Clock()-started>.5 then break end
   end

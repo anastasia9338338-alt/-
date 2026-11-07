@@ -29,12 +29,15 @@ def run_feature_checks(modules,runner,folder):
         run('antigrab',program)
     if 'PalletRagdoll'in modules and 'Resonance29Ragdoll'in modules:
         program=read('kick_mock.luau')+'\nlocal Source=(function()\n'+modules['Resonance29Ragdoll']+'\nend)()\n'
-        program+='local Ownership=(function()\n'+modules['PalletOwnership']+'\nend)()\nlocal Stroke=(function()\n'+modules['PalletStroke']+'\nend)()\n'
-        program+='local Cadence=(function()\n'+modules['PalletCadence']+'\nend)()\nlocal Reaction=(function()\n'+modules['PalletReaction']+'\nend)()\n'
-        program+='local Pallet=(function(...)\n'+modules['PalletRagdoll']+'\nend)(function(name)if name=="Resonance29Ragdoll"then return Source elseif name=="PalletOwnership"then return Ownership elseif name=="PalletStroke"then return Stroke elseif name=="PalletCadence"then return Cadence elseif name=="PalletReaction"then return Reaction end;error(name)end)\n'+read('kick_body.luau')
+        program+='local Ownership=(function()\n'+modules['PalletOwnership']+'\nend)()\nlocal Reaction=(function()\n'+modules['PalletReaction']+'\nend)()\n'
+        if 'PalletStroke'in modules:
+            program+='local Stroke=(function()\n'+modules['PalletStroke']+'\nend)()\nlocal Cadence=(function()\n'+modules['PalletCadence']+'\nend)()\n'
+        program+='local Pallet=(function(...)\n'+modules['PalletRagdoll']+'\nend)(function(name)if name=="Resonance29Ragdoll"then return Source elseif name=="PalletOwnership"then return Ownership elseif name=="PalletReaction"then return Reaction elseif name=="PalletStroke"then return Stroke elseif name=="PalletCadence"then return Cadence end;error(name)end)\n'
+        program+=read('kick_body.luau'if 'PalletStroke'in modules else 'native_pallet_body.luau')
         run('kick',program)
         run('pallet_reaction',read('model_mock.luau')+'\nlocal Reaction=(function()\n'+modules['PalletReaction']+'\nend)()\n'+read('pallet_reaction_body.luau'))
-        run('pallet_cadence','local Cadence=(function()\n'+modules['PalletCadence']+'\nend)()\n'+read('pallet_cadence_body.luau'))
+        if 'PalletCadence'in modules:
+            run('pallet_cadence','local Cadence=(function()\n'+modules['PalletCadence']+'\nend)()\n'+read('pallet_cadence_body.luau'))
         run('pallet_ownership',read('kick_mock.luau')+'\nlocal Ownership=(function()\n'+modules['PalletOwnership']+'\nend)()\n'+read('pallet_ownership_body.luau'))
         loop_source='\nlocal Handoff=(function()\n'+modules['KickHandoff']+'\nend)()\nlocal Loop=(function(...)\n'+modules['KickLoop']+'\nend)(function(name)assert(name=="KickHandoff");return Handoff end)\n'
         run('kick_channel',read('kick_mock.luau')+loop_source+read('kick_channel_body.luau'))
