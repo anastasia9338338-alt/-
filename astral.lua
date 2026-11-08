@@ -1,6 +1,233 @@
--- Astral v4.65 | Blobman ride/flight, grab impulse protection, native food removal, Z teleport, volumetric blackholes and physical UFO blaster.
+-- Astral v4.66 | Shared smooth cursor/water movement, pallet magnet, full water coverage, configurable Blobman cadence and game UFO preparation.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
+sources.WaterRescue = [========[
+-- Recover to actual nearby dry shore, never a fixed spawn/guessed coordinate.
+-- Uses the same cancellable smooth movement as cursor teleport.
+local Rescue={};Rescue.__index=Rescue
+local V=Vector3.new
+function Rescue.Install(ctx)
+ local self=setmetatable({Context=ctx,Enabled=false,Generation=0,Status='Disabled',Cooldown=1.5},Rescue)
+ self.Connection=ctx.RunService.Heartbeat:Connect(function(dt)
+  if self.Closed then return end
+  self.Elapsed=(self.Elapsed or 0)+(dt or 1/60);if self.Elapsed<.08 then return end;self.Elapsed=0
+  local ok,why=pcall(self.Step,self)
+  if not ok then self.Status='Water recovery: '..tostring(why)end
+ end)
+ return self
+end
+function Rescue:SetEnabled(value)
+ self.Enabled=value==true and not self.Closed
+ if not self.Enabled then
+  self.Generation+=1;self.Status='Disabled'
+  if self.Context.Slide.Session and self.Context.Slide.Session.Source=='water'then self.Context.Slide:Cancel('water recovery disabled')end
+ end
+end
+function Rescue:DryAt(point,level)
+ local hit=self.Context.Probe(point,level)
+ if not hit or not hit.Position or not hit.Normal or hit.Normal.Y<.7 or hit.Material==Enum.Material.Water then return end
+ if hit.Position.Y<level-.15 or hit.Position.Y>level+18 then return end
+ if self.Context.Clear and not self.Context.Clear(hit.Position)then return end
+ return hit.Position
+end
+function Rescue:FindShore(position,level)
+ local best,cost
+ local function consider(point)
+  local dry=self:DryAt(point,level);if not dry then return end
+  local distance=(V(dry.X,0,dry.Z)-V(position.X,0,position.Z)).Magnitude
+  if distance<5 or distance>320 then return end
+  local score=distance+math.max(0,dry.Y-level)*.6
+  if not cost or score<cost then best,cost=dry,score end
+ end
+ if self.LastSafe and(position-self.LastSafe).Magnitude<160 then consider(self.LastSafe)end
+ if not best then
+  for _,radius in ipairs({12,20,32,48,72,104,144,200,280})do
+   for i=0,15 do local a=i*math.pi/8;consider(position+V(math.cos(a)*radius,0,math.sin(a)*radius))end
+   if best then break end
+  end
+ end
+ if not best then return end
+ -- Refine toward the water boundary, then land several studs inside the dry
+ -- area so feet do not clip the bank's edge.
+ local wet=V(position.X,level,position.Z);local dry=best
+ for _=1,5 do
+  local middle=(wet+dry)*.5;local p=self:DryAt(middle,level)
+  if p then dry=p else wet=middle end
+ end
+ local direction=V(best.X-position.X,0,best.Z-position.Z)
+ if direction.Magnitude>.01 then
+  local inset=dry+direction.Unit*5;local safe=self:DryAt(inset,level)
+  if safe then return safe end
+ end
+ return best
+end
+function Rescue:Step()
+ if not self.Enabled then return end
+ local ctx=self.Context;local c,r,h=ctx.Character()
+ if c~=self.Character then self.Character=c;self.LastSafe=nil;self.Generation+=1 end
+ if not c or not r or not h or h.Health<=0 or r.Anchored or h.SeatPart or(ctx.Blocked and ctx.Blocked())then return end
+ local surface=ctx.Surface(r.Position);if not surface then self.Status='Waiting for nearby water';return end
+ local leg=c:FindFirstChild('Left Leg');local offset=leg and r.Size.Y*.5+leg.Size.Y or h.HipHeight+r.Size.Y*.5
+ local feet=r.Position.Y-offset;local swimming=h:GetState()==Enum.HumanoidStateType.Swimming
+ local dry=self:DryAt(r.Position,surface.Y)
+ if not swimming and dry and math.abs(feet-dry.Y)<2 then self.LastSafe=dry;self.Status='Ready near shore';return end
+ if ctx.Supported and ctx.Supported(r,h,surface)then return end
+ local submerged=swimming or feet<surface.Y-.7 and r.Position.Y<surface.Y+4 and not dry
+ if not submerged or ctx.Slide:IsMoving()or ctx.Clock()<(self.NextAt or 0)then return end
+ self.NextAt=ctx.Clock()+self.Cooldown;self.Status='Finding nearest dry shore'
+ local target=self:FindShore(r.Position,surface.Y)
+ if not target then self.Status='No clear nearby shore found';return end
+ local destination=target+V(0,offset+.2,0);local token=self.Generation
+ local distance=(destination-r.Position).Magnitude;local duration=math.clamp(.45+distance/180,.5,1.6)
+ if h.Health<25 then duration=math.min(duration,.55)end
+ local moved=ctx.Slide:Go(destination,{Source='water',Smooth=true,Style='Smooth',Duration=duration,Arc=math.clamp(distance*.04,1,5),Finished=function(reason)
+  if self.Closed or token~=self.Generation then return end
+  if reason=='completed'then
+   local cc,rr,hh=ctx.Character()
+   if cc==c and rr==r and hh==h and h.Health>0 then h:ChangeState(Enum.HumanoidStateType.Running)end
+   self.Status='Recovered to shore'
+  else self.Status='Water recovery canceled'end
+ end})
+ if moved then self.Status='Moving smoothly to shore'end
+end
+function Rescue:Dispose()if self.Closed then return end;self:SetEnabled(false);self.Closed=true;self.Connection:Disconnect()end
+return Rescue
+
+]========]
+sources.PalletMagnet = [========[
+-- Keep a real, owned pallet under the local player's feet. This controller
+-- never welds the avatar, changes its root/velocity or borrows the kick pallet.
+local Magnet={};Magnet.__index=Magnet
+local V=Vector3.new
+local function alive(v)return v and v.Parent~=nil end
+local function modelFor(part)
+ local p=part
+ while p do
+  if p:IsA('Model')and p.Name:lower():find('pallet',1,true)then return p end
+  p=p.Parent
+ end
+end
+function Magnet.Install(ctx)
+ local self=setmetatable({Context=ctx,Enabled=false,Generation=0,Status='Disabled'},Magnet)
+ self.Connection=ctx.RunService.PreSimulation:Connect(function(dt)
+  if self.Closed then return end
+  local ok,why=pcall(self.Step,self,dt or 1/60)
+  if not ok then self:Detach();self.Status='Pallet magnet: '..tostring(why)end
+ end)
+ return self
+end
+function Magnet:Detach()
+ self.Generation+=1;self.Acquiring=nil
+ local s=self.Session;self.Session=nil;if not s then return end
+ for _,p in ipairs(s.Created)do pcall(p.Destroy,p)end
+ for part,record in pairs(s.Props)do if alive(part)then
+  if part.CanCollide then part.CanCollide=record.Collide end
+  if part.CanTouch==false then part.CanTouch=record.Touch end
+  if part.CustomPhysicalProperties==s.Physics then part.CustomPhysicalProperties=record.Physics end
+ end end
+ if self.Context.Reserve then self.Context.Reserve(s.Model,s.Reserved)end
+end
+function Magnet:SetEnabled(value)
+ self.Enabled=value==true and not self.Closed
+ if not self.Enabled then self:Detach();self.Status='Disabled'end
+end
+function Magnet:Candidate(part)
+ local model=part and modelFor(part);if not model then return end
+ if model:FindFirstChildOfClass('Humanoid')then return end
+ if self.Context.Reserved and self.Context.Reserved(model)then return end
+ local root=part.AssemblyRootPart or part
+ if root.Anchored or not root:IsDescendantOf(model)then return end
+ local parts={root};local seen={[root]=true}
+ for _,p in ipairs(root:GetConnectedParts(true))do
+  if p.Anchored or not p:IsDescendantOf(model)then return end
+  if not seen[p]then seen[p]=true;parts[#parts+1]=p end
+ end
+ return model,root,parts
+end
+function Magnet:Attach(model,root,parts,contact,normal,c,r,h)
+ if not self.Context.Owned(root)then return end
+ local s={Model=model,Root=root,Character=c,Avatar=r,Humanoid=h,Created={},Props={},
+  Contact=root.CFrame:PointToObjectSpace(contact),Reserved=self.Context.Reserved and self.Context.Reserved(model)}
+ self.Session=s;self.Generation+=1
+ if self.Context.Reserve then self.Context.Reserve(model,true)end
+ s.Physics=PhysicalProperties.new(.7,1,0,100,100)
+ for _,p in ipairs(parts)do
+  s.Props[p]={Collide=p.CanCollide,Touch=p.CanTouch,Physics=p.CustomPhysicalProperties}
+  p.CanCollide=true;p.CanTouch=false;p.CustomPhysicalProperties=s.Physics
+ end
+ local pos=Instance.new('BodyPosition');pos.Name='AstralPalletMagnetPosition';pos.Position=root.Position;pos.MaxForce=V(0,0,0);pos.Parent=root;s.Position=pos;s.Created[#s.Created+1]=pos
+ local gyro=Instance.new('BodyGyro');gyro.Name='AstralPalletMagnetUpright';gyro.CFrame=root.CFrame;gyro.MaxTorque=V(0,0,0);gyro.Parent=root;s.Gyro=gyro;s.Created[#s.Created+1]=gyro
+ local tangent=root.CFrame.LookVector-normal*root.CFrame.LookVector:Dot(normal)
+ if tangent.Magnitude<.01 then tangent=root.CFrame.RightVector-normal*root.CFrame.RightVector:Dot(normal)end
+ local forward=V(tangent.X,0,tangent.Z)
+ if tangent.Magnitude>.01 and forward.Magnitude>.01 then
+  s.Rotation=CFrame.lookAt(V(0,0,0),forward.Unit)*CFrame.lookAt(V(0,0,0),tangent.Unit,normal):Inverse()*root.CFrame.Rotation
+ else s.Rotation=root.CFrame.Rotation end
+ s.Height=contact.Y;self.Status='Pallet magnet attached'
+ return s
+end
+function Magnet:Step(dt)
+ if not self.Enabled then return end
+ local ctx=self.Context;local c,r,h=ctx.Character()
+ if not c or not r or not h or h.Health<=0 or h.SeatPart or(ctx.Blocked and ctx.Blocked())then self:Detach();self.Status='Waiting for free movement';return end
+ local s=self.Session
+ if s and(s.Character~=c or s.Avatar~=r or s.Humanoid~=h or not alive(s.Root)or s.Root.Anchored or not ctx.Owned(s.Root))then self:Detach();s=nil end
+ if not s then
+  if self.Acquiring or ctx.Clock()<(self.NextFind or 0)then return end
+  self.NextFind=ctx.Clock()+.1;local part,point,normal=ctx.UnderFeet(c,r,h)
+  if not part or not point or not normal or normal.Y<.65 then self.Status='Stand on a pallet';return end
+  local model,root,parts=self:Candidate(part);if not model then self.Status='Stand on an unanchored pallet';return end
+  if ctx.Owned(root)then s=self:Attach(model,root,parts,point,normal,c,r,h)
+  elseif ctx.Acquire then
+   self.Status='Acquiring pallet';self.Generation+=1;local token=self.Generation;self.Acquiring=true
+   ctx.SpawnThread(function()
+    local function valid()local cc,rr,hh=ctx.Character();return not self.Closed and self.Enabled and self.Generation==token and cc==c and rr==r and hh==h and h.Health>0 and alive(root)end
+    pcall(ctx.Acquire,root,valid)
+    if self.Generation==token then self.Acquiring=nil end
+   end)
+  end
+  if not s then return end
+ end
+ local leg=c:FindFirstChild('Left Leg');local offset=leg and r.Size.Y*.5+leg.Size.Y or h.HipHeight+r.Size.Y*.5
+ local feet=r.Position-V(0,offset,0)
+ -- A stable support height prevents a platform that merely chases a falling
+ -- avatar from falling with it. A genuine jump can raise the attached board.
+ if feet.Y>s.Height+.15 and h:GetState()==Enum.HumanoidStateType.Jumping then s.Height=feet.Y end
+ if feet.Y<s.Height-2.5 or(r.Position-s.Root.Position).Magnitude>24 then self:Detach();self.Status='Pallet released';return end
+ local contact=V(feet.X,s.Height,feet.Z);local goal=CFrame.new(contact)*s.Rotation*CFrame.new(-s.Contact)
+ local mass=s.Root.AssemblyMass or 60
+ if mass~=mass or mass<=0 or mass>20000 or mass==math.huge then self:Detach();self.Status='Pallet assembly unavailable';return end
+ local gravity=ctx.Gravity and ctx.Gravity()or 196.2;local force=math.clamp(mass*math.max(gravity*12,1200),1e5,1e8)
+ s.Position.P=math.max(1e5,mass*1200);s.Position.D=math.max(1200,mass*45);s.Position.MaxForce=V(force,force,force);s.Position.Position=goal.Position
+ s.Gyro.P=math.max(20000,mass*500);s.Gyro.D=math.max(900,mass*30);s.Gyro.MaxTorque=V(force*2,force*2,force*2);s.Gyro.CFrame=goal
+ s.Root.AssemblyAngularVelocity=V(0,0,0)
+ self.Status='Pallet magnet attached'
+end
+function Magnet:Dispose()if self.Closed then return end;self.Closed=true;self.Enabled=false;self:Detach();self.Connection:Disconnect()end
+return Magnet
+
+]========]
+sources.BlobmanCadence = [========[
+-- Real Grab/Drop or Grab/Release half-cycles, bounded by actual simulation
+-- callbacks. Never queues a burst of missed actions after a delayed frame.
+local Cadence={};Cadence.__index=Cadence
+function Cadence.new(ctx)return setmetatable({Context=ctx,Speed=30},Cadence)end
+function Cadence:SetSpeed(value)
+ if type(value)~='number'or value~=value then return end
+ self.Speed=math.clamp(value,1,60)
+end
+function Cadence:Half(valid,maintain)
+ local start=self.Context.Clock()
+ repeat
+  if not valid()then return false end
+  if maintain then maintain()end
+  self.Context.Signal:Wait()
+ until self.Context.Clock()-start>=.5/self.Speed-1e-7
+ return valid()
+end
+return Cadence
+
+]========]
 sources.UFOBlaster = [========[
 -- A physical prop weapon built from original server toys. The projectile is
 -- a detached, owned piece of the actual UFO with its existing green effect.
@@ -14,10 +241,10 @@ local function greenSequence(sequence)
  for _,point in ipairs(sequence and sequence.Keypoints or{})do if green(point.Value)then return true end end
  return false
 end
-local function luminous(part)
+local function luminous(part,nativeUFO)
  if part:IsA('BasePart')and part.Material==Enum.Material.Neon and part.Transparency<.95 and green(part.Color)then return true end
  for _,v in ipairs(part:GetDescendants())do
-  if(v:IsA('Beam')or v:IsA('ParticleEmitter'))and v.Enabled and greenSequence(v.Color)
+  if(v:IsA('Beam')or v:IsA('ParticleEmitter'))and v.Enabled and(greenSequence(v.Color)or nativeUFO)
    or(v:IsA('PointLight')or v:IsA('SpotLight')or v:IsA('SurfaceLight'))and v.Enabled and green(v.Color)then return true end
  end
  return false
@@ -43,7 +270,7 @@ function Blaster.Candidates(models)
  local candidates={}
  for _,model in ipairs(models)do if alive(model)then
   for _,p in ipairs(model:GetDescendants())do
-   if p:IsA('BasePart')and luminous(p)then candidates[#candidates+1]={Part=p,Model=model}end
+   if p:IsA('BasePart')and luminous(p,model.Name=='FlyingToyUfo')then candidates[#candidates+1]={Part=p,Model=model,Green=luminous(p)}end
   end
  end end
  return candidates
@@ -58,6 +285,11 @@ function Blaster.Install(ctx)
  return self
 end
 function Blaster:Release(record)
+ if record.ForceConnection then record.ForceConnection:Disconnect()end
+ for object,saved in pairs(record.Forces or{})do
+  if saved.Connection then saved.Connection:Disconnect()end
+  pcall(function()if object.Parent and object[saved.Key]==saved.Forced then object[saved.Key]=saved.Value end end)
+ end
  for p,props in pairs(record.Props or{})do
   pcall(function()if alive(p)then
    if p.CanCollide==false then p.CanCollide=props.CanCollide end
@@ -70,6 +302,7 @@ function Blaster:Release(record)
  if record.Created then self.Context.Reserve(record.Model,false);self.Context.Destroy(record.Model)end
 end
 function Blaster:Stop(reason)
+ if self.SourceToy and self.SourceToy.Parent then local ok,info=pcall(self.Snapshot,self);if ok then self.LastInspection=info end end
  self.Enabled=false;self.Generation+=1;self.Shot=nil
  if self.Bound then self.Bound=false;self.Context.UnbindFire()end
  for i=#self.Records,1,-1 do self:Release(self.Records[i])end;table.clear(self.Records)
@@ -78,39 +311,108 @@ end
 function Blaster:Record(part,model,created)
  local root,parts=Blaster.Assembly(part,model)
  if not root or not self.Context.Owned(root)then return end
- local record={Model=model,Root=root,Parts=parts,Original=root.CFrame,Props={},Created=created,Borrowed=not created}
+ local record={Model=model,Root=root,Parts=parts,Original=root.CFrame,Props={},Forces={},Created=created,Borrowed=not created}
  for _,p in ipairs(parts)do record.Props[p]={CanCollide=p.CanCollide,CanTouch=p.CanTouch};p.CanCollide=false;p.CanTouch=false end
+ local function pause(object)
+  local key=(object:IsA('BodyPosition')or object:IsA('BodyVelocity'))and'MaxForce'or(object:IsA('BodyGyro')or object:IsA('BodyAngularVelocity'))and'MaxTorque'
+  local modern=object:IsA('AlignPosition')or object:IsA('AlignOrientation')or object:IsA('LinearVelocity')or object:IsA('AngularVelocity')
+   or object:IsA('VectorForce')or object:IsA('LineForce')or object:IsA('Torque')
+  if modern then key='Enabled'end
+  if key and not record.Forces[object]then
+   local forced=Vector3.zero
+   if key=='Enabled'then forced=false end
+   local saved={Key=key,Value=object[key],Forced=forced};record.Forces[object]=saved;object[key]=forced
+   saved.Connection=object:GetPropertyChangedSignal(key):Connect(function()if object.Parent and object[key]~=forced then object[key]=forced end end)
+  end
+ end
+ for _,object in ipairs(model:GetDescendants())do pause(object)end
+ record.ForceConnection=model.DescendantAdded:Connect(pause)
  return record
 end
 function Blaster:BindSource(valid)
  local ctx=self.Context;local candidates=Blaster.Candidates(ctx.UFOModels())
- if #candidates==0 then self.Status='UFO: no active native green effect found';return end
- local _,avatar=ctx.Character()
- table.sort(candidates,function(a,b)return(a.Part.Position-avatar.Position).Magnitude<(b.Part.Position-avatar.Position).Magnitude end)
- for _,candidate in ipairs(candidates)do
-  if not valid()then return end
-  local root=Blaster.Assembly(candidate.Part,candidate.Model)
-  if not root and not self.Prepared and ctx.Prepare and(candidate.Part.Position-avatar.Position).Magnitude<=28 then
-   self.Prepared=true;self.Status='Requesting native massless UFO grab'
-   ctx.Prepare(candidate.Part,valid)
+ local function try(list)
+  local _,avatar=ctx.Character();if not avatar then return end
+  table.sort(list,function(a,b)if a.Green~=b.Green then return a.Green end;return(a.Part.Position-avatar.Position).Magnitude<(b.Part.Position-avatar.Position).Magnitude end)
+  for _,candidate in ipairs(list)do
    if not valid()then return end
-   root=Blaster.Assembly(candidate.Part,candidate.Model)
-  end
-  if root and(root.Position-avatar.Position).Magnitude<=28 then
-   if not ctx.Owned(root)then ctx.RequestOwner(root);ctx.Wait(.12)end
-   if not valid()then return end
-   local record=self:Record(candidate.Part,candidate.Model,false)
-   if record then record.Effect=candidate.Part;record.EffectOffset=record.Root.CFrame:ToObjectSpace(candidate.Part.CFrame);self.Records[#self.Records+1]=record;self.Source=record;return record end
+   local root=Blaster.Assembly(candidate.Part,candidate.Model)
+   if root and(root.Position-avatar.Position).Magnitude<=28 then
+    if not ctx.Owned(root)then ctx.RequestOwner(root);ctx.Wait(.12)end
+    if not valid()then return end
+    local created=self.SourceToy==candidate.Model
+    local record=self:Record(candidate.Part,candidate.Model,created)
+    if record then
+     record.Effect=candidate.Part;record.NativeUFO=candidate.Model.Name=='FlyingToyUfo';record.EffectOffset=record.Root.CFrame:ToObjectSpace(candidate.Part.CFrame)
+     if created then
+      for i,pending in ipairs(self.Records)do if pending.Model==candidate.Model then self.Records[i]=record;break end end
+     else self.Records[#self.Records+1]=record end
+     self.Source=record;return record
+    end
+   end
   end
  end
- self.Status='UFO: approach a detached green piece (within 28 studs); whole/anchored saucers cannot be fired'
+ local existing=try(candidates);if existing then return existing end
+ -- FlyingToyUfo is an actual game catalog toy. The earlier implementation
+ -- searched only the two large map saucers and could never prepare a source.
+ if ctx.SpawnUFO and not self.UFOAttempted and valid()then
+  self.UFOAttempted=true;self.Status='Preparing game UFO emitter'
+  local model=ctx.SpawnUFO(valid)
+  if model then
+   if not valid()then ctx.Destroy(model);return end
+   self.SourceToy=model;ctx.Reserve(model,true);self.Records[#self.Records+1]={Model=model,Created=true}
+   if ctx.ActivateUFO and #Blaster.Candidates({model})==0 then ctx.ActivateUFO(model,valid)end
+   local deadline=ctx.Clock()+1.2
+   repeat
+    if not valid()then return end
+    local record=try(Blaster.Candidates({model}));if record then return record end
+    if ctx.Prepare and not self.Prepared then
+     local part=ctx.Part(model)
+     if part then self.Prepared=true;ctx.Prepare(part,valid)end
+    end
+    ctx.Wait(.08)
+   until ctx.Clock()>=deadline
+   self.Status='Game UFO has no free, owned green emitter; Copy UFO Info shows its actual parts/effects'
+   return
+  end
+  self.Status="Cannot spawn FlyingToyUfo here; leave another player's plot or wait for toy permission"
+  return
+ end
+ -- Older contexts may supply a real detached map piece, but it is never
+ -- unanchored locally or replaced with a fake client beam.
+ if ctx.Prepare and valid()then
+  local _,avatar=ctx.Character()
+  for _,candidate in ipairs(candidates)do
+   if avatar and(candidate.Part.Position-avatar.Position).Magnitude<=28 then
+    self.Prepared=true;ctx.Prepare(candidate.Part,valid);if not valid()then return end
+    local record=try({candidate});if record then return record end;break
+   end
+  end
+ end
+ self.Status=#candidates==0 and'UFO: no active native green effect found'or'UFO: no free owned green emitter'
 end
+function Blaster:Snapshot()
+ local models=self.Context.UFOModels();if self.SourceToy and self.SourceToy.Parent and not table.find(models,self.SourceToy)then models[#models+1]=self.SourceToy end
+ local report={Status=self.Status,Enabled=self.Enabled,Models={}}
+ for _,model in ipairs(models)do
+  local entry={Name=model.Name,Parts={},Effects={}};report.Models[#report.Models+1]=entry
+  for _,v in ipairs(model:GetDescendants())do
+   if v:IsA('BasePart')and#entry.Parts<100 then entry.Parts[#entry.Parts+1]={Name=v.Name,Anchored=v.Anchored,Owned=self.Context.Owned(v)==true,
+    Size={v.Size.X,v.Size.Y,v.Size.Z},Material=tostring(v.Material),Color={v.Color.R,v.Color.G,v.Color.B},Green=luminous(v)}
+   elseif(v:IsA('Beam')or v:IsA('ParticleEmitter')or v:IsA('PointLight')or v:IsA('SpotLight'))and#entry.Effects<80 then
+    entry.Effects[#entry.Effects+1]={Name=v.Name,Class=v.ClassName,Enabled=v.Enabled}
+   end
+  end
+ end
+ return report
+end
+
 function Blaster:Equip()
  self:Stop();if self.Closed then return end
  local ctx=self.Context;local c,r,h=ctx.Character()
  if not c or not r or not h or h.Health<=0 then self.Status='Character unavailable';return end
  if ctx.Blocked and ctx.Blocked()then self.Status='Exit flight, seating and other toy controllers first';return end
- self.Enabled=true;self.Avatar=c;self.Building=true;self.Prepared=false;self.Status='Finding native UFO emitter'
+ self.Enabled=true;self.Avatar=c;self.Building=true;self.Prepared=false;self.UFOAttempted=false;self.Status='Finding native UFO emitter'
  local token=self.Generation
  local function valid()
   local cc,rr,hh=ctx.Character()
@@ -157,7 +459,7 @@ function Blaster:Fire(allowUI)
  if not self.Enabled or self.Building or self.Closed or self.Shot or ctx.Clock()<(self.NextShot or 0)then return false end
  if ctx.Focused and ctx.Focused()and not allowUI then return false end
  local _,root,h=ctx.Character();local source=self.Source
- if not root or not h or h.Health<=0 or not source or not alive(source.Root)or not ctx.Owned(source.Root)or not luminous(source.Effect)then return false end
+ if not root or not h or h.Health<=0 or not source or not alive(source.Root)or not ctx.Owned(source.Root)or not luminous(source.Effect,source.NativeUFO)then return false end
  local mount=ctx.Mount();if not mount then return false end
  local muzzle=mount*CFrame.new(0,0,-3);local target=ctx.Aim()
  if not target then return false end
@@ -178,7 +480,7 @@ function Blaster:Step(_dt)
  for _,record in ipairs(self.Records)do
   local root=record.Root
   if record==self.Source then
-   if not alive(record.Effect)or not luminous(record.Effect)then self:Stop('Native UFO glow switched off');return end
+   if not alive(record.Effect)or not luminous(record.Effect,record.NativeUFO)then self:Stop('Native UFO glow switched off');return end
    local shot=self.Shot
    if shot and ctx.Clock()-shot.Started<shot.Duration then
     local position=shot.Origin+shot.Direction*math.min(shot.Distance,(ctx.Clock()-shot.Started)*120)
@@ -341,6 +643,10 @@ function Ride:SetFly(value)
  self.Flying=value==true and not self.Closed
  if self.Flying then self.Frozen=false end
  self:StopControl()
+end
+function Ride:FollowTeleport(delta)
+ local session=self.Session
+ if session and session.Mode=='Freeze'and session.Position and session.Position.Parent then session.Position.Position+=delta end
 end
 function Ride:SitOnce()
  if self.Closed or self.Seating or self:Current()then return false end
@@ -710,8 +1016,8 @@ end
 local function observe(phase,owned,wanted)
  if owned==wanted then phase.Observed=true end
 end
-function Handoff.Grabbed(session,frame,now,ping)
- session.Handoff={Phase='grab',Frame=frame,Earliest=now+.05,
+function Handoff.Grabbed(session,frame,now,ping,lowLatency)
+ session.Handoff={Phase='grab',Frame=frame,Earliest=now+(lowLatency and 0 or .05),Native=lowLatency=='Native',
   Deadline=now+math.clamp(.1+pingSeconds(ping),.15,.7),Observed=false}
 end
 function Handoff.CanRelease(session,frame,now,owned)
@@ -719,14 +1025,14 @@ function Handoff.CanRelease(session,frame,now,owned)
  if not phase or phase.Phase~='grab'then return false end
  observe(phase,owned,true)
  if frame<=phase.Frame or now+1e-7<phase.Earliest then return false end
- if phase.Observed or now+1e-7>=phase.Deadline then
-  session.LastHandoff={Phase='grab',Observed=phase.Observed,At=now}
+ if phase.Native or phase.Observed or now+1e-7>=phase.Deadline then
+  session.LastHandoff={Phase='grab',Observed=phase.Observed,Native=phase.Native,At=now}
   return true
  end
  return false
 end
-function Handoff.Released(session,frame,now,ping)
- session.Handoff={Phase='released',Frame=frame,Earliest=now+.05,
+function Handoff.Released(session,frame,now,ping,lowLatency)
+ session.Handoff={Phase='released',Frame=frame,Earliest=now+(lowLatency and 0 or .05),Native=lowLatency=='Native',
   Deadline=now+math.clamp(.05+pingSeconds(ping)*.5,.05,.3),Observed=false}
 end
 function Handoff.CanGrab(session,frame,now,owned)
@@ -735,8 +1041,8 @@ function Handoff.CanGrab(session,frame,now,owned)
  if phase.Phase~='released'then return false end
  observe(phase,owned,false)
  if frame<=phase.Frame or now+1e-7<phase.Earliest then return false end
- if phase.Observed or now+1e-7>=phase.Deadline then
-  session.LastHandoff={Phase='released',Observed=phase.Observed,At=now}
+ if phase.Native or phase.Observed or now+1e-7>=phase.Deadline then
+  session.LastHandoff={Phase='released',Observed=phase.Observed,Native=phase.Native,At=now}
   session.Handoff=nil
   return true
  end
@@ -882,32 +1188,56 @@ return Editable
 
 ]========]
 sources.WaterSurface = [========[
--- Ocean render geometry may be non-queryable. Read its horizontal surface
--- directly; a raycast alone cannot discover CanQuery=false water tiles.
+-- Non-queryable ocean meshes, rotated thin planes and seams share a coherent
+-- sea level. Coverage uses the full ocean footprint, not one raycast tile.
 local Surface={};Surface.__index=Surface
-function Surface.new(context)return setmetatable({Context=context,Parts={}},Surface)end
-function Surface:At(position)
+local V=Vector3.new
+function Surface.new(ctx)return setmetatable({Context=ctx,Parts={}},Surface)end
+local function plane(part)
+ local size=part.Size;local axis='Y';local thickness=size.Y
+ if size.X<thickness then axis='X';thickness=size.X end
+ if size.Z<thickness then axis='Z';thickness=size.Z end
+ local normal=axis=='X'and part.CFrame.RightVector or axis=='Y'and part.CFrame.UpVector or-part.CFrame.LookVector
+ local area=axis=='X'and size.Y*size.Z or axis=='Y'and size.X*size.Z or size.X*size.Y
+ if math.abs(normal.Y)<.7 or area<64 then return end
+ return axis,normal,area,thickness
+end
+function Surface:Refresh()
  local ctx=self.Context;local ocean=ctx.Ocean();local now=ctx.Clock()
  if ocean~=self.Ocean or now>=(self.NextScan or 0)then
-  self.Ocean=ocean;self.NextScan=now+1;table.clear(self.Parts)
+  self.Ocean=ocean;self.NextScan=now+.5;table.clear(self.Parts)
   if ocean then
    if ocean:IsA('BasePart')then self.Parts[#self.Parts+1]=ocean end
    for _,p in ipairs(ocean:GetDescendants())do if p:IsA('BasePart')then self.Parts[#self.Parts+1]=p end end
   end
  end
- local best
- for _,part in ipairs(self.Parts)do
-  if part.Parent and math.abs(part.CFrame.UpVector.Y)>.95 and part.Size.X*part.Size.Z>=64 then
-   local point=part.CFrame:PointToObjectSpace(position);local half=part.Size*.5
-   if math.abs(point.X)<=half.X and math.abs(point.Z)<=half.Z then
-    local top=(part.CFrame*Vector3.new(point.X,half.Y,point.Z)).Y+(ctx.Offset and ctx.Offset()or 0)
-    if not best or top>best.Y then best=Vector3.new(position.X,top,position.Z)end
-   end
-  end
- end
- if best then return best end
- if ctx.Fallback then return ctx.Fallback(position)end
 end
+function Surface:Geometry(position)
+ self:Refresh();local low,high;local largest,level;local direct=false
+ for _,part in ipairs(self.Parts)do if part.Parent then
+  local axis,normal,area,thickness=plane(part)
+  if axis then
+   local half=part.Size*.5;local cf=part.CFrame
+   local top=part.Position.Y+math.abs(normal.Y)*thickness*.5
+   if not largest or area>largest then largest=area;level=top end
+   local point=cf:PointToObjectSpace(V(position.X,part.Position.Y,position.Z))
+   if(axis=='X'or math.abs(point.X)<=half.X+1)and(axis=='Y'or math.abs(point.Y)<=half.Y+1)and(axis=='Z'or math.abs(point.Z)<=half.Z+1)then direct=true end
+   local extX=math.abs(cf.RightVector.X)*half.X+math.abs(cf.UpVector.X)*half.Y+math.abs(cf.LookVector.X)*half.Z
+   local extZ=math.abs(cf.RightVector.Z)*half.X+math.abs(cf.UpVector.Z)*half.Y+math.abs(cf.LookVector.Z)*half.Z
+   low=low and V(math.min(low.X,part.Position.X-extX),0,math.min(low.Z,part.Position.Z-extZ))or V(part.Position.X-extX,0,part.Position.Z-extZ)
+   high=high and V(math.max(high.X,part.Position.X+extX),0,math.max(high.Z,part.Position.Z+extZ))or V(part.Position.X+extX,0,part.Position.Z+extZ)
+  end
+ end end
+ self.Low,self.High=low,high
+ local covered=direct or low and position.X>=low.X-1 and position.X<=high.X+1 and position.Z>=low.Z-1 and position.Z<=high.Z+1
+ return covered and level or nil
+end
+function Surface:At(position)
+ local level=self:Geometry(position)
+ if level then return V(position.X,level+(self.Context.Offset and self.Context.Offset()or 0),position.Z)end
+ if self.Context.Fallback then return self.Context.Fallback(position)end
+end
+function Surface:Covers(position)return self:Geometry(position)~=nil end
 return Surface
 
 ]========]
@@ -917,7 +1247,7 @@ sources.WaterWalk = [========[
 local Walk={};Walk.__index=Walk
 function Walk.Install(ctx)
  local self=setmetatable({Context=ctx,Enabled=false},Walk)
- self.Connection=ctx.RunService.PreSimulation:Connect(function()self:Refresh()end)
+ self.Connection=ctx.RunService.PreSimulation:Connect(function(dt)self:Refresh(dt)end)
  return self
 end
 function Walk:RestoreSwimming()
@@ -929,7 +1259,7 @@ function Walk:RestoreSwimming()
 end
 function Walk:Stop()
  if self.Part then self.Part:Destroy();self.Part=nil end
- self:RestoreSwimming();self.Surface=nil
+ self:RestoreSwimming();self.Surface=nil;self.LastPoint=nil;self.MissingFor=0
 end
 function Walk:Place(point)
  if not self.Part or not self.Part.Parent then
@@ -942,16 +1272,22 @@ function Walk:Place(point)
  return self.Part
 end
 function Walk:SetEnabled(value)self.Enabled=value==true;if not self.Enabled then self:Stop()else self:Refresh()end end
-function Walk:Step()
+function Walk:Step(dt)
  if self.Closed or not self.Enabled then self:Stop();return end
  local c,r,h=self.Context.Character()
  if not c or not r or not h or h.Health<=0 or r.Anchored or h.SeatPart or(self.Context.Blocked and self.Context.Blocked())then self:Stop();return end
  local point=self.Context.Surface(c,r,h)
+ if not point and self.Part and self.LastPoint then
+  self.MissingFor=(self.MissingFor or 0)+math.clamp(dt or 1/60,0,.1)
+  local covered=self.Context.Covers and self.Context.Covers(r.Position)
+  if covered or self.MissingFor<=.6 and(r.Position-self.LastPoint).Magnitude<160 then point=Vector3.new(r.Position.X,self.Surface,r.Position.Z)end
+ else self.MissingFor=0 end
  if not point then self:Stop();return end
+ self.LastPoint=point
  local leg=c:FindFirstChild('Left Leg');local offset=leg and r.Size.Y*.5+leg.Size.Y or h.HipHeight+r.Size.Y*.5
  local feet=r.Position.Y-offset
  -- Do not lift an already submerged swimmer onto an invisible floor.
- if point.Y>feet+.75 or feet-point.Y>64 then self:Stop();return end
+ if point.Y>feet+(self.Part and 2 or .75)or feet-point.Y>64 then self:Stop();return end
  if self.Part and not self.Part.Parent then self:Stop()end
  if self.Humanoid~=h then self:RestoreSwimming();self.Humanoid=h;self.Swimming=h:GetStateEnabled(Enum.HumanoidStateType.Swimming)end
  h:SetStateEnabled(Enum.HumanoidStateType.Swimming,false)
@@ -959,12 +1295,17 @@ function Walk:Step()
  if not self.Part then self:Place(point)end
  -- A stable height removes wave/triangle seam jitter. Recenter horizontally
  -- only after sufficient travel, with zero-friction support and no Y snap.
- if math.abs(point.Y-self.Surface)>1 then self:Stop();return end
+ if math.abs(point.Y-self.Surface)>1 then
+  local change=math.clamp(point.Y-self.Surface,-3*math.clamp(dt or 1/60,0,.1),3*math.clamp(dt or 1/60,0,.1))
+  self.Surface+=change
+ end
  local d=r.Position-self.Part.Position
- if Vector3.new(d.X,0,d.Z).Magnitude>72 then self.Part.CFrame=CFrame.new(r.Position.X,self.Surface-2.5,r.Position.Z)end
+ if Vector3.new(d.X,0,d.Z).Magnitude>48 or math.abs(self.Part.Position.Y-(self.Surface-2.5))>.001 then
+  self.Part.CFrame=CFrame.new(r.Position.X,self.Surface-2.5,r.Position.Z)
+ end
 end
-function Walk:Refresh()
- local ok,err=pcall(self.Step,self);if not ok then self.LastError=tostring(err);pcall(self.Stop,self)end
+function Walk:Refresh(dt)
+ local ok,err=pcall(self.Step,self,dt);if not ok then self.LastError=tostring(err);pcall(self.Stop,self)end
 end
 function Walk:Dispose()if self.Closed then return end;self.Closed=true;self.Connection:Disconnect();self:Stop()end
 return Walk
@@ -20292,7 +20633,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.65 | FTAP")
+                                warn("Astral v4.66 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -32426,6 +32767,7 @@ end
             }
         end
         tbl14.Sit=function()return tbl12.BlobmanRide:SitOnce()end
+        tbl12.BlobmanCadence=requireModule("BlobmanCadence").new({Clock=os.clock,Signal=RunService.Heartbeat})
 
 		tbl14.Grab = function(arg, arg2)
 			if not parent then
@@ -32971,113 +33313,76 @@ end
 			end
 		end
 
-		tbl14.LoopKick = function(arg)
-			if not parent then
-				return
-			end
-			local v22, v23, v24 = tbl12.Char()
-			if not (v23 and v24 and v24.SeatPart) then
-				return
-			end
-			local v25, v26, v27 = tbl12.Char(arg)
-			local rootAttachment = v26 and v26:FindFirstChild("RootAttachment")
-			local flag12 = v26 and v27 and v27.Health > 0
-
-			if flag12 then
-				flag12 = not (v26.AssemblyRootPart or v26).Massless
-			end
-
-			if not (flag12 and rootAttachment) then
-				return
-			end
-			local firePlayerPart = v26:FindFirstChild("FirePlayerPart")
-			local weldConstraint = firePlayerPart and firePlayerPart:FindFirstChild("WeldConstraint")
-			if not (firePlayerPart and weldConstraint and weldConstraint.Enabled) then
-				return
-			end
-			local v28 = tbl14.GetBlobmanComponents()
-			if not (v28.CreatureGrab and v28.CreatureDrop and v28.CreatureRelease and v28.RightWeld and v28.RightOri) then
-				return
-			end
-			v28.RightWeld.Enabled = false
-			v28.RightOri.Enabled = false
-
-			if tbl12.SNO(v26) or tbl14.Release(arg) then
-				v27.Sit = true
-
-				task.delay(0.5, function()
-					v27.Sit = false
-				end)
-
-				local n36 = v23.CFrame * CFrame.new(options.BlobKickX.Value, options.BlobKickY.Value, options.BlobKickZ.Value)
-				tbl12.Teleport(v26, n36)
-				local v29, v30 = tbl12.CreateAlign(v26, true)
-				v29.Position = n36.Position
-
-				task.delay(0.2, function()
-					tbl12.Grab(v26)
-					tbl12.RNO(v26)
-				end)
-
-				v28.CreatureDrop:FireServer(v28.RightWeld)
-				v28.CreatureDrop:FireServer(v28.LeftWeld)
-				task.wait(0.06)
-				rootAttachment.Parent = v25
-
-				while arg.Parent and v26.Parent and v27.Parent and v27.Health > 0 and parent and parent.Parent and tbl7.SelectedPlayersBlob[arg] and tbl8.LoopApplyMethod and tbl9.BlobMethod == "Kick" and tbl12.GetMagnitude(v23, v26) <= 41 and not v27.SeatPart and v24.Sit do
-					task.spawn(function()
-						v27.RequiresNeck = false
-						tbl12.ToggleMotor6D(v25, false, true)
-						tbl12.RepositionLimbs(v25)
-					end)
-
-					task.spawn(tbl12.ToggleCollisions, v25, false)
-					v28.RightOri.Enabled = false
-					v28.RightWeld.Enabled = false
-					v28.RightOri.Attachment0 = nil
-					v28.RightWeld.Attachment0 = nil
-					v29.Position = (v23.CFrame * CFrame.new(options.BlobKickX.Value, options.BlobKickY.Value, options.BlobKickZ.Value)).Position
-					tbl12.ResetVelocity(v26)
-
-                    if tbl8.BlobRemoveInputFood then tbl12.FoodRemover:Request(arg,function()
-                        return not flag11 and tbl8.BlobRemoveInputFood and parent and v25.Parent and arg.Character==v25 and tbl7.SelectedPlayersBlob[arg] and tbl8.LoopApplyMethod and tbl9.BlobMethod=="Kick"
-                    end)end
-					if tbl8.DeleteShurInBlobK then
-						task.spawn(tbl12.RemoveSticky, v25)
-					end
-
-					if tbl9.BKMethod == 1 then
-						v28.CreatureGrab:FireServer(nil, v26, v28.RightWeld)
-						task.wait()
-						v28.CreatureDrop:FireServer(v28.RightWeld)
-						task.wait()
-
-						if tbl8.NetworkOwnerInKick then
-							tbl12.Grab(v26)
-							tbl12.RNO(v26)
-						end
-					else
-						v28.CreatureGrab:FireServer(nil, v26, v28.RightWeld)
-						task.wait()
-						v28.CreatureRelease:FireServer(v28.RightWeld)
-						tbl12.Grab(v26)
-						task.spawn(tbl12.Ragdoll, v25)
-
-						if weldConstraint.Enabled then
-							tbl12.RNO(v26)
-						end
-
-						task.wait()
-					end
-				end
-
-				rootAttachment.Parent = v26
-				task.spawn(tbl12.ToggleMotor6D, v25, true)
-				task.spawn(tbl12.ToggleCollisions, v25, true)
-				v30:Destroy()
-				v29:Destroy()
-			end
-		end
+        tbl14.BlobLoopTokens=setmetatable({},{__mode="k"})
+        tbl14.LoopKick=function(player)
+            if tbl14.BlobLoopTokens[player]then return end
+            local blob=tbl12.BlobmanRide:Current();local actor,avatar,driver=tbl12.Char()
+            local character,root,h=tbl12.Char(player);local attachment=root and root:FindFirstChild("RootAttachment")
+            local fire=root and root:FindFirstChild("FirePlayerPart");local fireWeld=fire and fire:FindFirstChild("WeldConstraint")
+            local parts=tbl14.GetBlobmanComponents()
+            if not(blob and avatar and driver and character and root and h and h.Health>0 and attachment and fireWeld and fireWeld.Enabled
+                and parts.CreatureGrab and parts.CreatureDrop and parts.CreatureRelease and parts.RightWeld and parts.RightOri)then return end
+            if(root.AssemblyRootPart or root).Massless then return end
+            local token={};tbl14.BlobLoopTokens[player]=token
+            local original={Weld=parts.RightWeld.Enabled,Ori=parts.RightOri.Enabled,AttachmentParent=attachment.Parent,Sit=h.Sit}
+            local position,anchor
+            local function valid()
+                local cc,rr,hh=tbl12.Char(player);local ac,ar,ah=tbl12.Char()
+                return not flag11 and tbl14.BlobLoopTokens[player]==token and cc==character and rr==root and hh==h and h.Health>0
+                    and root.Parent and avatar.Parent and ac==actor and ar==avatar and ah==driver and driver.Health>0 and driver.Sit
+                    and tbl12.BlobmanRide:Current()==blob and tbl7.SelectedPlayersBlob[player] and tbl8.LoopApplyMethod and tbl9.BlobMethod=="Kick"
+                    and not h.SeatPart and(root.Position-avatar.Position).Magnitude<=41
+            end
+            local function maintain()
+                if token.StandAt and os.clock()>=token.StandAt and h.Sit then h.Sit=false end
+                if position and position.Parent then position.Position=(avatar.CFrame*CFrame.new(options.BlobKickX.Value,options.BlobKickY.Value,options.BlobKickZ.Value)).Position end
+                h.RequiresNeck=false
+                tbl12.ToggleMotor6D(character,false,true);tbl12.RepositionLimbs(character);tbl12.ToggleCollisions(character,false)
+                tbl12.ResetVelocity(root)
+            end
+            local ok,why=pcall(function()
+                if not valid()then return end
+                if not(tbl12.SNO(root,.65,valid)or valid()and tbl14.Release(player))or not valid()then return end
+                parts.RightWeld.Enabled=false;parts.RightOri.Enabled=false;h.Sit=true
+                local standAt=os.clock()+.5;token.StandAt=standAt
+                local goal=avatar.CFrame*CFrame.new(options.BlobKickX.Value,options.BlobKickY.Value,options.BlobKickZ.Value)
+                tbl12.Teleport(root,goal);position,anchor=tbl12.CreateAlign(root,true);position.Position=goal.Position
+                parts.CreatureDrop:FireServer(parts.RightWeld)
+                if parts.LeftWeld then parts.CreatureDrop:FireServer(parts.LeftWeld)end
+                attachment.Parent=character
+                while valid()do
+                    if os.clock()>=standAt and h.Sit then h.Sit=false end
+                    parts.RightOri.Enabled=false;parts.RightWeld.Enabled=false;parts.RightOri.Attachment0=nil;parts.RightWeld.Attachment0=nil
+                    maintain()
+                    if tbl8.BlobRemoveInputFood then tbl12.FoodRemover:Request(player,valid)end
+                    if tbl8.DeleteShurInBlobK and os.clock()>=(token.NextSticky or 0)then token.NextSticky=os.clock()+.2;task.spawn(tbl12.RemoveSticky,character)end
+                    parts.CreatureGrab:FireServer(nil,root,parts.RightWeld)
+                    if not tbl12.BlobmanCadence:Half(valid,maintain)then break end
+                    if tbl9.BKMethod==1 then parts.CreatureDrop:FireServer(parts.RightWeld)
+                    else
+                        parts.CreatureRelease:FireServer(parts.RightWeld);tbl12.Grab(root)
+                        if not token.RagdollBusy then
+                            token.RagdollBusy=true
+                            task.spawn(function()if valid()then pcall(tbl12.PalletRagdoll.Apply,tbl12.PalletRagdoll,character,valid)end;token.RagdollBusy=false end)
+                        end
+                        if fireWeld.Enabled then tbl12.RNO(root)end
+                    end
+                    if tbl8.NetworkOwnerInKick then tbl12.Grab(root);tbl12.RNO(root)end
+                    if not tbl12.BlobmanCadence:Half(valid,maintain)then break end
+                end
+            end)
+            if tbl14.BlobLoopTokens[player]==token then tbl14.BlobLoopTokens[player]=nil end
+            if parts.RightWeld.Parent and parts.RightWeld.Attachment0==attachment then pcall(parts.CreatureDrop.FireServer,parts.CreatureDrop,parts.RightWeld)end
+            if attachment.Parent==character and root.Parent then attachment.Parent=original.AttachmentParent and original.AttachmentParent.Parent and original.AttachmentParent or root end
+            if parts.RightWeld.Parent and(not parts.RightWeld.Attachment0 or parts.RightWeld.Attachment0==attachment)then
+                if not parts.RightWeld.Enabled then parts.RightWeld.Enabled=original.Weld end
+                if parts.RightOri.Parent and not parts.RightOri.Enabled then parts.RightOri.Enabled=original.Ori end
+            end
+            if h.Parent==character and h.Health>0 and not h.SeatPart and h.Sit then h.Sit=original.Sit end
+            if position then position:Destroy()end;if anchor then anchor:Destroy()end
+            if character.Parent then pcall(tbl12.ToggleMotor6D,character,true);pcall(tbl12.ToggleCollisions,character,true)end
+            if not ok then warn("Astral Blobman kick: "..tostring(why))end
+        end
 
 		tbl14.LoopLock = function(arg, arg2)
 			if not parent then
@@ -37406,7 +37711,7 @@ Escape Timer: %*]]
                 until os.clock()>=deadline
                 return false
             end
-            tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,
+            tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,NativePhases=true,
                 Enabled=function()return not flag11 and tbl8.LoopApplyMethodT and tbl7.TargetMethods.Kick and not localPlayer.InPlot.Value end,
                 Selected=function(player)return player and player.Parent and tbl7.SelectedPlayers[player]==true and not tbl12.IsProtectedPlayer(player)end,
                 Targets=function()return tbl12.GetTargets(false,tbl7.SelectedPlayers)end,
@@ -37451,9 +37756,22 @@ Escape Timer: %*]]
         end
 
         do
-            tbl12.SlideTeleport=requireModule("SlideTeleport").Install({RunService=RunService,Character=function()return tbl12.Char()end,
-                Teleport=function(root,frame)tbl12.Teleport(root,frame)end,
-                Before=function()if toggles.AstralLockPosition and toggles.AstralLockPosition.Value then toggles.AstralLockPosition:SetValue(false)end end})
+            tbl12.SlideTeleport=requireModule("SlideTeleport").Install({RunService=RunService,Clock=os.clock,RenderPriority=Enum.RenderPriority.Camera.Value-1,
+                Character=function()return tbl12.Char()end,
+                Teleport=function(root,frame)
+                    if tbl12.BlobmanRide then tbl12.BlobmanRide:FollowTeleport(frame.Position-root.Position)end
+                    return tbl12.Teleport(root,frame,nil,false)
+                end,
+                CollisionParts=function(character,humanoid)
+                    local parts=character:GetDescendants();local blob=tbl12.BlobmanRide and tbl12.BlobmanRide:Current()
+                    if blob then for _,part in ipairs(blob:GetDescendants())do if part:IsA("BasePart")then parts[#parts+1]=part end end end
+                    return parts
+                end,
+                CollisionBlocked=function()return tbl8.Noclip end,
+                Before=function()if toggles.AstralLockPosition and toggles.AstralLockPosition.Value then toggles.AstralLockPosition:SetValue(false)end end,
+                After=function(session)
+                    if tbl12.CharacterTools and tbl12.CharacterTools.Locked then tbl12.CharacterTools.LockPoint=session.Root.Position end
+                end})
             lib:OnUnload(function()tbl12.SlideTeleport:Dispose()end)
         end
         do
@@ -37489,7 +37807,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.65"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.66"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -37613,7 +37931,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.65",true)
+            box:AddLabel("Astral v4.66",true)
         end
 
         do
@@ -37780,7 +38098,7 @@ Escape Timer: %*]]
             Character:AddToggle("AstralSlideTP",{Text="Slide TP",Default=false,Callback=function(value)tbl12.SlideTeleport.Enabled=value end})
             Character:AddSlider("AstralSlideTPDuration",{Text="Slide TP Duration",Default=.3,Min=.05,Max=5,Rounding=2,Compact=true,Suffix=" s",
                 Callback=function(value)tbl12.SlideTeleport.Duration=value end})
-            Character:AddDropdown("AstralSlideTPStyle",{Text="Slide TP Style",Values={"Linear","Ease Out"},Default="Ease Out",AllowNull=false,
+            Character:AddDropdown("AstralSlideTPStyle",{Text="Slide TP Style",Values={"Smooth","Linear","Ease Out"},Default="Smooth",AllowNull=false,
                 Callback=function(value)tbl12.SlideTeleport.Style=value end})
             Character:AddToggle("AstralLockPosition",{
                 Text="Lock Position",Default=false,
@@ -37883,12 +38201,19 @@ Escape Timer: %*]]
                 :AddKeyPicker("AstralTeleportMenuKey",{Text="Teleport Menu",Mode="Toggle",NoUI=false,SyncToggleState=true})
             launcher:AddLabel("Teleport To Cursor"):AddKeyPicker("AstralTeleportCursorKey",{Text="Teleport To Cursor",Default="Z",Mode="Press",NoUI=false,Callback=function()
                 if flag11 or UserInputService:GetFocusedTextBox()then return end
-                local _,root,h=tbl12.Char();local target=tbl12.GetTarget and tbl12.GetTarget();local hit=tbl12.GetHit and tbl12.GetHit()
+                local character,root,h=tbl12.Char();local target=tbl12.GetTarget and tbl12.GetTarget();local hit=tbl12.GetHit and tbl12.GetHit()
                 if root and h and h.Health>0 and target and hit then
-                    if tbl12.SlideTeleport then tbl12.SlideTeleport:Cancel()end
-                    local destination=hit+Vector3.new(0,h.HipHeight+root.Size.Y*.5+2,0)
-                    if tbl12.CharacterTools and tbl12.CharacterTools.Locked then tbl12.CharacterTools.LockPoint=destination.Position end
-                    tbl12.Teleport(root,destination)
+                    local leg=character:FindFirstChild("Left Leg")
+                    local height=leg and root.Size.Y*.5+leg.Size.Y or h.HipHeight+root.Size.Y*.5
+                    local destination=hit.Position+Vector3.new(0,height+.2,0)
+                    if mouse and not lib.IsMobile and target:IsA("BasePart")then
+                        local ok,normal=pcall(function()return target.CFrame:VectorToWorldSpace(Vector3.FromNormalId(mouse.TargetSurface))end)
+                        if ok and math.abs(normal.Y)<.7 then
+                            local side=Vector3.new(normal.X,0,normal.Z)
+                            if side.Magnitude>.01 then destination+=side.Unit*(math.max(root.Size.X,root.Size.Z)*.5+.35)end
+                        end
+                    end
+                    tbl12.SlideTeleport:Go(destination,{Smooth=true,Source="cursor"})
                 end
             end})
             launcher:AddButton({Text="Open Teleports",Icon="map-pin",Func=function()toggles.AstralTeleportMenuVisible:SetValue(true)end})
@@ -38925,8 +39250,36 @@ Escape Timer: %*]]
             Blocked=function()return flag11 or tbl8.Flight or tbl8.Noclip end,
             OtherSwimBlock=function()return toggles.CustomWaterT and toggles.CustomWaterT.Value and tbl8.NonSwimmableWater end,
             Surface=function(character,root)return tbl12.WaterSurface:At(root.Position)end,
+            Covers=function(position)return tbl12.WaterSurface:Covers(position)end,
         })
         lib:OnUnload(function()tbl12.WaterWalk:Dispose()end)
+        tbl12.WaterRescue=requireModule("WaterRescue").Install({RunService=RunService,Clock=os.clock,Character=tbl12.Char,Slide=tbl12.SlideTeleport,
+            Blocked=function()return flag11 or tbl8.Flight or tbl8.Noclip or tbl7.States.Owning end,
+            Surface=function(position)return tbl12.WaterSurface:At(position)end,
+            Supported=function(root,h,surface)
+                local part=tbl12.WaterWalk.Part
+                local leg=root.Parent and root.Parent:FindFirstChild("Left Leg")
+                local offset=leg and root.Size.Y*.5+leg.Size.Y or h.HipHeight+root.Size.Y*.5
+                return part and part.Parent and root.Position.Y-offset>=surface.Y-.6
+            end,
+            Probe=function(position,level)
+                local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={map,terrain};params.IgnoreWater=false
+                local hit=workspace:Raycast(Vector3.new(position.X,level+24,position.Z),Vector3.new(0,-44,0),params)
+                if not hit or hit.Material==Enum.Material.Water then return end
+                if hit.Instance:IsA("BasePart")and not hit.Instance.CanCollide then return end
+                local ocean=alwaysHereTweenedObjects:FindFirstChild("Ocean")
+                if ocean and hit.Instance:IsDescendantOf(ocean)then return end
+                return hit
+            end,
+            Clear=function(position)
+                local params=OverlapParams.new();params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={map}
+                for _,part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(position+Vector3.new(0,3.5,0)),Vector3.new(2.8,6.5,2.8),params))do
+                    if part.CanCollide then return false end
+                end
+                return true
+            end,
+        })
+        lib:OnUnload(function()tbl12.WaterRescue:Dispose()end)
         Miscellaneous:AddToggle("WaterWalk",{Text="Water Walk",Default=false,Tooltip="Broad Void Platform at sea level. Ocean tiles do not need to support raycasts.",
             Callback=function(value)tbl12.WaterWalk:SetEnabled(value)end})
 
@@ -39406,7 +39759,7 @@ Escape Timer: %*]]
         v21:AddButton({Text="Copy Kick Info",Func=function()
             local copy=setclipboard or toclipboard
             if type(copy)~="function"then fn18("Clipboard unavailable");return end
-            local ok,why=pcall(function()copy(HttpService:JSONEncode(tbl12.PalletRagdoll:Evidence()))end)
+            local ok,why=pcall(function()local info=tbl12.PalletRagdoll:Evidence();info.OwnershipCycle=tbl12.KickLoop:Evidence();copy(HttpService:JSONEncode(info))end)
             fn18(ok and "Pallet receiver and observed ragdoll data copied."or "Copy failed: "..tostring(why))
         end})
 
@@ -39593,6 +39946,8 @@ Escape Timer: %*]]
 			end,
 		})
 
+        v21:AddSlider("AstralBlobmanArmSpeed",{Text="Hand Speed",Default=30,Min=1,Max=60,Rounding=0,Compact=true,Suffix=" cycles/s",
+            Callback=function(value)tbl12.BlobmanCadence:SetSpeed(value)end})
         v21:AddToggle("BlobRemoveInputFood",{Text="Remove Anti Input Lag [Food]",Default=true,Callback=function(value)tbl8.BlobRemoveInputFood=value end})
 
 		local v22 = v21:AddDependencyBox()
@@ -40644,6 +40999,15 @@ Escape Timer: %*]]
             local frame=lib.Window and lib.Window.MainFrame
             return frame and lib.Toggled and frame.Visible and lib:MouseIsOverFrame(frame,UserInputService:GetMouseLocation())or false
         end
+        local function spawnBlasterToy(name,frame,valid)
+            local flags=requireModule("GameFlags");local deadline=os.clock()+3
+            repeat
+                if not valid()then return end
+                if flags.Read(localPlayer,"InPlot")==true and flags.Read(localPlayer,"InOwnedPlot")~=true then return end
+                if flags.CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)then return tbl12.SpawnToy(name,frame,1,true,valid)end
+                task.wait(.05)
+            until os.clock()>=deadline
+        end
         tbl12.UFOBlaster=requireModule("UFOBlaster").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,Wait=task.wait,
             Character=tbl12.Char,Owned=tbl12.IsNetworkOwner,
             Focused=focused,
@@ -40660,13 +41024,23 @@ Escape Timer: %*]]
             Aim=function()local hit=tbl12.GetHit and tbl12.GetHit();return hit and hit.Position end,
             UFOModels=function()
                 local models={}
+                if v17 then for _,model in ipairs(v17:GetChildren())do if model.Name=="FlyingToyUfo"then models[#models+1]=model end end end
                 for _,name in ipairs({"InnerUFO","OuterUFO"})do
-                    local wrapper=alwaysHereTweenedObjects:FindFirstChild(name)
-                    local object=wrapper and wrapper:FindFirstChild("Object")
-                    local model=object and object:FindFirstChild("ObjectModel")
-                    if model then models[#models+1]=model end
+                    local wrapper=alwaysHereTweenedObjects:FindFirstChild(name);local object=wrapper and wrapper:FindFirstChild("Object")
+                    local model=object and object:FindFirstChild("ObjectModel");if model then models[#models+1]=model end
                 end
                 return models
+            end,
+            SpawnUFO=function(valid)
+                local _,root=tbl12.Char();if root then return spawnBlasterToy("FlyingToyUfo",root.CFrame*CFrame.new(2,1,-6),valid)end
+            end,
+            ActivateUFO=function(model,valid)
+                if not valid()then return end
+                local controls={}
+                for _,v in ipairs(model:GetDescendants())do
+                    if v:IsA("ClickDetector")then local name=v.Parent.Name:lower();if name:find("button",1,true)or name:find("switch",1,true)or name:find("light",1,true)then controls[#controls+1]=v end end
+                end
+                if #controls==1 and type(fireclickdetector)=="function"then fireclickdetector(controls[1]);task.wait(.1)end
             end,
             RequestOwner=function(part)
                 local _,root=tbl12.Char();if root and(part.Position-root.Position).Magnitude<=30 then tbl12.Grab(part)end
@@ -40696,10 +41070,7 @@ Escape Timer: %*]]
                 if created then tbl12.RNO(part)end
                 if not ok then error(why,0)end
             end,
-            Spawn=function(name,frame,valid)
-                if not valid()or not requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)then return end
-                return tbl12.SpawnToy(name,frame,1,true,valid)
-            end,
+            Spawn=spawnBlasterToy,
             Part=tbl12.FindNicePart,Break=tbl12.BreakHoldable,
             Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value or nil end,
             Destroy=function(model)if model and model.Parent==v17 then tbl12.DestroyToy(model)end end,
@@ -40718,7 +41089,12 @@ Escape Timer: %*]]
             if value then tbl12.UFOBlaster:Equip()elseif tbl12.UFOBlaster.Enabled or tbl12.UFOBlaster.Building then tbl12.UFOBlaster:Stop()end
         end})
         gun:AddButton({Text="Fire [Left Mouse]",Func=function()tbl12.UFOBlaster:Fire(true)end})
-        gun:AddLabel("Approach the UFO's green emitter. Equip builds the gun from real toys; left click fires its native piece.",true)
+        gun:AddButton({Text="Copy UFO Info",Func=function()
+            local copy=setclipboard or toclipboard;if type(copy)~="function"then return end
+            local ok,report=pcall(function()return HttpService:JSONEncode({Current=tbl12.UFOBlaster:Snapshot(),Last=tbl12.UFOBlaster.LastInspection})end)
+            if ok then copy(report)end
+        end})
+        gun:AddLabel("Equip prepares a real game UFO and builds the blaster. Left click fires its existing green emitter.",true)
         local status=gun:AddLabel("Disabled",true);local elapsed=0
         lib:GiveSignal(RunService.Heartbeat:Connect(function(dt)
             elapsed+=dt;if elapsed<.25 then return end;elapsed=0
@@ -42765,6 +43141,39 @@ Escape Timer: %*]]
 		tbl7.ActiveDraggableButtons[arg] = nil
 	end
 
+    do
+        tbl12.PalletMagnet=requireModule("PalletMagnet").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,Character=tbl12.Char,
+            Owned=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
+            Acquire=function(part,valid)if not tbl7.States.Owning then return tbl12.SNO(part,.7,valid,true)end end,
+            Gravity=function()return workspace.Gravity end,
+            Blocked=function()
+                local held=localPlayer:FindFirstChild("IsHeld")
+                return flag11 or tbl8.Flight or tbl8.Noclip or held and held.Value or tbl12.SlideTeleport:IsMoving()
+            end,
+            Reserved=function(model)return tbl7.ToyAuraReserved[model]end,
+            Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value or nil end,
+            UnderFeet=function(character,root,h)
+                local leg=character:FindFirstChild("Left Leg");local height=leg and root.Size.Y*.5+leg.Size.Y or h.HipHeight+root.Size.Y*.5
+                local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Exclude;params.FilterDescendantsInstances={character};params.IgnoreWater=true
+                local hit=workspace:Raycast(root.Position-Vector3.new(0,height-1,0),Vector3.new(0,-3.5,0),params)
+                if hit then return hit.Instance,hit.Position,hit.Normal end
+            end,
+        })
+        lib:OnUnload(function()tbl12.PalletMagnet:Dispose()end)
+        local support=tbl15.Aim:AddLeftGroupbox("PVP Movement","footprints")
+        support:AddToggle("AstralPalletMagnet",{Text="Pallet Magnet",Default=false,Callback=function(value)tbl12.PalletMagnet:SetEnabled(value)end})
+            :AddKeyPicker("AstralPalletMagnetKey",{Text="Pallet Magnet",Mode="Toggle",NoUI=false,SyncToggleState=true})
+        support:AddToggle("AstralWaterRescue",{Text="Auto Exit Water",Default=false,Callback=function(value)tbl12.WaterRescue:SetEnabled(value)end})
+            :AddKeyPicker("AstralWaterRescueKey",{Text="Auto Exit Water",Mode="Toggle",NoUI=false,SyncToggleState=true})
+        local magnetStatus=support:AddLabel("Stand on a pallet, then enable magnet.",true)
+        local waterStatus=support:AddLabel("Auto Exit Water returns to nearby dry shore.",true);local elapsed=0
+        lib:GiveSignal(RunService.Heartbeat:Connect(function(dt)
+            elapsed+=dt;if elapsed<.3 then return end;elapsed=0
+            if toggles.AstralPalletMagnet.Value then magnetStatus:SetText(tbl12.PalletMagnet.Status)end
+            if toggles.AstralWaterRescue.Value then waterStatus:SetText(tbl12.WaterRescue.Status)end
+        end))
+    end
+
 	do
 		local v20 = tbl15.Aim:AddRightGroupbox("Aim Assist", "crosshair")
 
@@ -43977,9 +44386,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.65: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.66: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.65 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.66 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -48356,28 +48765,88 @@ return Photos
 
 ]========]
 sources.SlideTeleport = [========[
+-- One cancellable trajectory shared by cursor TP and water recovery. Render
+-- updates precede the camera; physics follows the same path. No camera mode
+-- or anchoring is changed. Every collision edit has session-owned cleanup.
 local Slide={};Slide.__index=Slide
-function Slide.Install(context)return setmetatable({Context=context,Enabled=false,Duration=.3,Style="Ease Out",Token=0},Slide)end
-function Slide:Cancel()self.Token+=1;if self.Connection then self.Connection:Disconnect();self.Connection=nil end end
-function Slide:Go(position)
-    if self.Closed then return false end
-    self:Cancel()
-    local character,root,humanoid=self.Context.Character()
-    if not root or not humanoid or humanoid.Health<=0 then return false end
-    local start=root.CFrame;local goal=CFrame.new(position)*start.Rotation
-    if self.Context.Before then self.Context.Before()end
-    if not self.Enabled then self.Context.Teleport(root,goal);return true end
-    local elapsed=0;local token=self.Token
-    self.Connection=self.Context.RunService.Heartbeat:Connect(function(delta)
-        if self.Closed or token~=self.Token or self.Context.Character()~=character or not root.Parent or humanoid.Health<=0 then self:Cancel();return end
-        elapsed+=delta;local t=math.clamp(elapsed/math.max(.05,self.Duration),0,1)
-        local alpha=self.Style=="Linear"and t or t*(2-t)
-        self.Context.Teleport(root,start:Lerp(goal,alpha))
-        if t>=1 then self:Cancel()end
-    end)
-    return true
+local V=Vector3.new
+local function vector(p)return typeof(p)=='Vector3'and p.X==p.X and p.Y==p.Y and p.Z==p.Z and p.Magnitude<math.huge end
+function Slide.Install(ctx)
+ return setmetatable({Context=ctx,Enabled=false,Duration=.3,Style='Smooth',Token=0,Name=ctx.Name or'Astral/SlideTeleport'},Slide)
 end
-function Slide:Dispose()self.Closed=true;self:Cancel()end
+function Slide:IsMoving()return self.Session~=nil end
+function Slide:Cancel(reason)
+ self.Token+=1;local s=self.Session;self.Session=nil
+ for _,connection in ipairs(self.Connections or{})do connection:Disconnect()end;self.Connections={}
+ if self.Bound then self.Bound=false;self.Context.RunService:UnbindFromRenderStep(self.Name)end
+ if not s then return end
+ for part,original in pairs(s.Collisions)do
+  if part.Parent and part.CanCollide==false and(not self.Context.CollisionBlocked or not self.Context.CollisionBlocked())then part.CanCollide=original end
+ end
+ if self.Context.After then pcall(self.Context.After,s,reason or'canceled')end
+ if s.Finished then pcall(s.Finished,reason or'canceled')end
+end
+function Slide:Sample(s,t)
+ local a=math.clamp(t/s.Duration,0,1);local p,velocity
+ if s.Style=='Linear'then p=s.Start:Lerp(s.Goal,a);velocity=(s.Goal-s.Start)/s.Duration
+ else
+  local aa,aaa=a*a,a*a*a
+  p=s.Start*(2*aaa-3*aa+1)+s.StartVelocity*s.Duration*(aaa-2*aa+a)+s.Goal*(-2*aaa+3*aa)
+  velocity=s.Start*((6*aa-6*a)/s.Duration)+s.StartVelocity*(3*aa-4*a+1)+s.Goal*((-6*aa+6*a)/s.Duration)
+ end
+ if s.Arc>0 then
+  p+=V(0,16*a*a*(1-a)*(1-a)*s.Arc,0)
+  velocity+=V(0,32*a*(1-a)*(1-2*a)*s.Arc/s.Duration,0)
+ end
+ return p,velocity,a
+end
+function Slide:Advance(delta,render)
+ local s=self.Session;if not s then return end
+ local ctx=self.Context;local c,r,h=ctx.Character()
+ if self.Closed or c~=s.Character or r~=s.Root or h~=s.Humanoid or not r.Parent or h.Health<=0 or h.SeatPart~=s.Seat or r.Anchored then self:Cancel('character changed');return end
+ if ctx.Clock then s.Elapsed=math.max(s.Elapsed,ctx.Clock()-s.Started)
+ elseif render or not self.HasRender then s.Elapsed+=math.max(0,delta or 0)end
+ local position,velocity,a=self:Sample(s,s.Elapsed)
+ if not vector(position)or not vector(velocity)then self:Cancel('invalid path');return end
+ s.Velocity=velocity;self.LastVelocity=velocity
+ local frame=CFrame.new(position)*r.CFrame.Rotation
+ local ok,moved=pcall(ctx.Teleport,r,frame)
+ if not ok or moved==false then self:Cancel('movement rejected');return end
+ r.AssemblyLinearVelocity=V(0,0,0);r.AssemblyAngularVelocity=V(0,0,0)
+ if a>=1 then self:Cancel('completed')end
+end
+function Slide:Go(position,options)
+ if self.Closed then return false end
+ options=options or{};position=typeof(position)=='CFrame'and position.Position or position
+ if not vector(position)then return false end
+ local ctx=self.Context;local c,r,h=ctx.Character()
+ if not c or not r or not r.Parent or not h or h.Health<=0 or r.Anchored then return false end
+ local previous=self.Session;local velocity=previous and previous.Velocity or V(0,0,0)
+ self:Cancel('retargeted')
+ if ctx.Before then ctx.Before(options.Source)end
+ if not self.Enabled and options.Smooth~=true then ctx.Teleport(r,CFrame.new(position)*r.CFrame.Rotation);return true end
+ local distance=(position-r.Position).Magnitude
+ local duration=math.max(.18,tonumber(options.Duration)or self.Duration,1.5*distance/280)
+ local speed=velocity.Magnitude;local limit=math.min(280,2*distance/duration)
+ if speed>limit and speed>0 then velocity=velocity.Unit*limit end
+ local s={Character=c,Root=r,Humanoid=h,Seat=h.SeatPart,Source=options.Source,Start=r.Position,Goal=position,StartVelocity=velocity,
+  Duration=duration,Style=options.Style or self.Style,Arc=math.clamp(tonumber(options.Arc)or 0,0,10),Elapsed=0,Started=ctx.Clock and ctx.Clock()or 0,
+  Collisions={},Finished=options.Finished,Velocity=velocity}
+ self.Session=s;self.Connections={}
+ local parts=ctx.CollisionParts and ctx.CollisionParts(c,h)or c:GetDescendants()
+ for _,part in ipairs(parts)do if part:IsA('BasePart')then s.Collisions[part]=part.CanCollide;part.CanCollide=false end end
+ local run=ctx.RunService;self.HasRender=false
+ if type(run.BindToRenderStep)=='function'then
+  run:BindToRenderStep(self.Name,ctx.RenderPriority or Enum.RenderPriority.Camera.Value-1,function(dt)self:Advance(dt,true)end)
+  self.Bound=true;self.HasRender=true
+ elseif run.RenderStepped then
+  self.Connections[#self.Connections+1]=run.RenderStepped:Connect(function(dt)self:Advance(dt,true)end);self.HasRender=true
+ end
+ local physics=run.PreSimulation or run.Heartbeat
+ self.Connections[#self.Connections+1]=physics:Connect(function(dt)self:Advance(dt,false)end)
+ return true
+end
+function Slide:Dispose()if self.Closed then return end;self.Closed=true;self:Cancel('unloaded')end
 return Slide
 
 ]========]
@@ -92680,7 +93149,7 @@ function Loop:FlushReleases()
             if self:Valid(session)then
                 local owned=(self.Context.MarkerOwned or self.Context.Owned)(session.Root)
                 if Handoff.CanRelease(session,self.Frame,now,owned)and self:Release(session)then
-                    Handoff.Released(session,self.Frame,now,self.Context.PingSeconds())
+                    Handoff.Released(session,self.Frame,now,self.Context.PingSeconds(),self.Context.NativePhases==true and'Native'or self.Context.LowLatency==true)
                     table.remove(queue,1)
                     -- After a deliberate Gucci pause, discard overdue release
                     -- callbacks instead of replaying them as a same-frame burst.
@@ -92712,7 +93181,7 @@ function Loop:Update(session,position,now,ping)
     if repeatReady and ctx.IntervalReady then repeatReady=ctx.IntervalReady(session.Player,session.Character)end
     if repeatReady then
         session.Requested=true;ctx.Grab(root);self.Calls+=1
-        Handoff.Grabbed(session,self.Frame,now,ping)
+        Handoff.Grabbed(session,self.Frame,now,ping,ctx.NativePhases==true and'Native'or ctx.LowLatency==true)
         session.Releases=session.Releases or {}
         if self:Compatibility()then
             session.Releases[#session.Releases+1]={Time=now+.2}
@@ -92725,7 +93194,8 @@ function Loop:Update(session,position,now,ping)
     elseif ctx.CancelRagdoll then
         ctx.CancelRagdoll(session.Character)
     end
-    if ctx.StickyEnabled()and not session.StickyBusy then
+    if ctx.StickyEnabled()and not session.StickyBusy and now>=session.NextSticky then
+        session.NextSticky=now+.2
         session.StickyBusy=true
         ctx.SpawnThread(function()
             if self:Valid(session)then pcall(ctx.RemoveSticky,session.Character)end
@@ -92783,6 +93253,13 @@ function Loop:Step(dt)
     if next(self.Cleanup)then self.Status="Kick cleanup retry: "..(self.CleanupError or "waiting")
     elseif #targets==0 then self.Status="Select a target"
     else self.Status=string.format("Kick %s | held: %d | awaiting: %d\nNative Grab calls: %d | RNO calls: %d",self.MaximumSpeed and "2x"or "source timing",held,waiting,self.Calls,self.Released)end
+end
+function Loop:Evidence()
+ local result={NativeFrames=self.Context.NativePhases==true,LowLatency=self.Context.LowLatency==true,GrabRequests=self.Calls,ReleaseRequests=self.Released,Targets={}}
+ for _,session in pairs(self.Sessions)do result.Targets[#result.Targets+1]={Name=session.Player.Name,Phase=session.Handoff and session.Handoff.Phase,
+  LastObserved=session.LastHandoff and session.LastHandoff.Observed,PhysicsOwned=self.Context.NetworkOwned and self.Context.NetworkOwned(session.Root)==true,
+  MarkerOwned=(self.Context.MarkerOwned or self.Context.Owned)(session.Root)==true,Acquiring=session.Acquiring==true}end
+ return result
 end
 function Loop:Dispose()
     if self.Closed then return end

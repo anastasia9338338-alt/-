@@ -15,7 +15,7 @@ local function fixture(mode)
   UFOModels=function()return {ufo}end,Mount=function()return d.Mount end,Aim=function()return Vector3.new(2,1,-100)end,
   Focused=function()return d.Focused end,Prepare=function()d.Prepared=(d.Prepared or 0)+1 end,
   Spawn=function(name,frame,valid)
-   d.Spawned+=1;local model=newNode('Model',name);model.Parent=world;local p=newNode('Part','SoundPart');p.CFrame=frame;p.Parent=model
+   d.Spawned+=1;local model=newNode('Model',name);model.Parent=world;local p=newNode('Part','SoundPart');p.Color=Color3.new(.5,.5,.5);p.CFrame=frame;p.Parent=model
    if d.CancelSpawn then d.CancelSpawn()end
    return model
   end,
@@ -65,4 +65,37 @@ do
  local b,d,pre,ctx,c,r,h,ufo,emitter=fixture();b:Equip();h.Health=0;d.Queue[1]()
  check(not b.Enabled and d.Spawned==0,'Dead avatar completed pending equip');b:Dispose()
 end
-print('PASS: '..checks..' UFO native piece, real toy assembly, shot/recall, refusal and cleanup checks (mocked)')
+do
+ local b,d,pre,ctx,c,r,h,ufo,emitter=fixture('noeffect');local source,nativeForce,align
+ ctx.SpawnUFO=function(valid)
+  check(valid(),'Canceled source spawn ran');d.UFOSpawns=(d.UFOSpawns or 0)+1
+  source=newNode('Model','FlyingToyUfo');source.Parent=ufo.Parent
+  local p=newNode('Part','SoundPart');p.Color=Color3.new(.5,.5,.5);p.CFrame=CFrame.new(2,2,-6);p.Parent=source
+  local beam=newNode('Beam','UFOBeam');beam.Color={Keypoints={{Value=Color3.new(1,1,1)}}};beam.Enabled=true;beam.Parent=p
+  nativeForce=newNode('BodyVelocity');nativeForce.MaxForce=Vector3.new(500,500,500);nativeForce.Parent=p
+  align=newNode('AlignPosition');align.Enabled=true;align.Parent=p
+  return source
+ end
+ b:Equip();d.Queue[1]()
+ check(b.Enabled and not b.Building and d.UFOSpawns==1 and d.Spawned==4,'Automatic game UFO source was not assembled')
+ check(b.Source.NativeUFO and nativeForce.MaxForce==Vector3.zero,'Native toy forces fight muzzle movement')
+ check(align.Enabled==false,'Native UFO AlignPosition fights gun mount')
+ align.Enabled=true;check(align.Enabled==false,'Native UFO script re-enabled a competing force')
+ local late=newNode('VectorForce');late.Enabled=true;late.Parent=source
+ check(late.Enabled==false,'Delayed native force was not suppressed')
+ b:Step(1/60);check(b:Fire(),'Game UFO source could not fire')
+ b:Stop();check(#d.Destroyed==5 and not source.Parent and next(d.Reserved)==nil,'Spawned UFO source/props leaked')
+ check(b.LastInspection and #b.LastInspection.Models==2,'Failed/equipped source inspection was not preserved')
+ b:Dispose()
+end
+do
+ local b,d,pre,ctx,c,r,h,ufo,emitter=fixture('noeffect')
+ ctx.SpawnUFO=function()
+  local model=newNode('Model','FlyingToyUfo');model.Parent=ufo.Parent
+  local p=newNode('Part','SoundPart');p.Color=Color3.new(.5,.5,.5);p.Parent=model
+  return model
+ end
+ b:Equip();d.Queue[1]();check(not b.Enabled and d.Spawned==0 and #d.Destroyed==1,'UFO without original effect produced a fake laser')
+ check(b.LastInspection~=nil,'Unavailable source tree lost its diagnostic snapshot');b:Dispose()
+end
+print('PASS: '..checks..' UFO game-source preparation, native piece, props, shot/recall and cleanup checks (mocked)')

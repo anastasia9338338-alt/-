@@ -29,15 +29,27 @@ def run_feature_checks(modules,runner,folder):
         program+='Guard=(function(...)\n'+modules['AntiGrabWalk']+'\nend)(function(name)if name=="WalkingRig"then return WalkingRig elseif name=="GrabImpulse"then return Impulse end;error(name)end)\n'+read('antigrab_body.luau')
         run('antigrab',program)
     for module,alias,body in [('GrabImpulse','Impulse','grab_impulse_body.luau'),('BlobmanRide','Ride','blobman_ride_body.luau'),
-            ('FoodRemover','Remover','food_remover_body.luau'),('BlackholeVolume','Volume','blackhole_volume_body.luau'),('UFOBlaster','Blaster','ufo_blaster_body.luau')]:
+            ('FoodRemover','Remover','food_remover_body.luau'),('BlackholeVolume','Volume','blackhole_volume_body.luau'),('UFOBlaster','Blaster','ufo_blaster_body.luau'),
+            ('SlideTeleport','Slide','slide_teleport_body.luau'),('PalletMagnet','Magnet','pallet_magnet_body.luau'),
+            ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
-            run(module.lower(),read('model_mock.luau')+'\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
+            run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
     if 'AstralTeleportCursorKey'in modules.get('Main',''):
         main=modules['Main'];start=main.index('launcher:AddLabel("Teleport To Cursor")')
         start=main.index('Callback=function()',start)+len('Callback=')
         end=main.index('\n            end})',start)+len('\n            end')
         program=read('model_mock.luau')+'\n'+read('teleport_cursor_prefix.luau')+'\nlocal teleport='+main[start:end]+'\n'+read('teleport_cursor_body.luau')
         run('teleport_cursor',program)
+    if 'BlobmanCadence'in modules:
+        main=modules['Main'];start=main.index('        tbl14.BlobLoopTokens=')
+        end=main.index('\n\t\ttbl14.LoopLock =',start)
+        program=read('model_mock.luau')+'\nlocal Cadence=(function()\n'+modules['BlobmanCadence']+'\nend)()\n'+read('blobman_loop_prefix.luau')+'\n'+main[start:end]+'\n'+read('blobman_loop_body.luau')
+        run('blobman_loop',program)
+    if 'local function spawnBlasterToy'in modules.get('Main',''):
+        main=modules['Main'];start=main.index('        local function spawnBlasterToy')
+        end=main.index('        tbl12.UFOBlaster=',start)
+        program=read('model_mock.luau')+'\nlocal Flags=(function()\n'+modules['GameFlags']+'\nend)()\n'+read('ufo_spawn_prefix.luau')+'\n'+main[start:end]+'\n'+read('ufo_spawn_body.luau')
+        run('ufo_spawn',program)
     if 'PalletRagdoll'in modules and 'Resonance29Ragdoll'in modules:
         program=read('kick_mock.luau')+'\nlocal Source=(function()\n'+modules['Resonance29Ragdoll']+'\nend)()\n'
         program+='local Ownership=(function()\n'+modules['PalletOwnership']+'\nend)()\nlocal Reaction=(function()\n'+modules['PalletReaction']+'\nend)()\n'

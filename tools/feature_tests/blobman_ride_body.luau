@@ -23,6 +23,7 @@ do
  check(ride.Session and ride.Session.Mode=='Freeze'and ride.Session.Position.MaxForce.Y>0,'Freeze has no force')
  check(native.MaxForce.Magnitude==0,'Native forces fight freeze');local position=ride.Session.Position.Position
  ride:Step(1/60);check((ride.Session.Position.Position-position).Magnitude==0,'Freeze point drifted')
+ ride:FollowTeleport(Vector3.new(20,4,-3));check(ride.Session.Position.Position==position+Vector3.new(20,4,-3),'Frozen Blobman anchor fought teleport movement')
  ride:SetFly(true);ride:Step(1/60);check(not ride.Frozen and ride.Session.Mode=='Fly','Flight/freeze conflict')
  check(ride.Session.Position.Velocity.Magnitude>0 and ride.Session.Position.Velocity.Magnitude<=ride.Speed,'Flight direction/speed invalid')
  d.Owned=false;ride:Step(1/60);check(not ride.Session and native.MaxForce==original,'Ownership loss leaked forces')

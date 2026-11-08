@@ -126,7 +126,7 @@ local ALL_INSTANCES={}
 local baseParts={Part=true,MeshPart=true,WedgePart=true,CornerWedgePart=true,UnionOperation=true,Seat=true,VehicleSeat=true,SpawnLocation=true}
 local Proxy={}
 Proxy.__index=function(n,k)
- if k=='Position'and n._props.CFrame then return n._props.CFrame.Position end
+ if k=='Position'and baseParts[n._class]and n._props.CFrame then return n._props.CFrame.Position end
  if k=='ClassName'then return n._class end
  if Proxy[k]then return Proxy[k]end
  if n._props[k]~=nil then return n._props[k]end

@@ -66,7 +66,8 @@ do
  r.CFrame=CFrame.new(96,3,0);walk:Refresh();check(walk.Part.Position.X==96 and walk.Part.Position.Y==supportY,'Horizontal support recenter changed height')
  blocked=true;walk:Refresh();check(not walk.Part and h:GetStateEnabled(Enum.HumanoidStateType.Swimming),'Blocked/flight cleanup did not restore swimming')
  blocked=false;surface=Vector3.new(0,0,0);r.CFrame=CFrame.new(0,-2,0);walk:Refresh();check(not walk.Part,'Submerged player was lifted onto the water')
- r.CFrame=CFrame.new(0,3,0);walk:Refresh();surface=nil;walk:Refresh();check(not walk.Part,'Leaving water retained invisible land support')
+ r.CFrame=CFrame.new(0,3,0);walk:Refresh();surface=nil;walk:Refresh();check(walk.Part~=nil,'One missed surface frame destroyed water support')
+ for _=1,40 do walk:Refresh(1/60)end;check(not walk.Part,'Leaving water retained invisible land support')
  walk:Dispose();check(not pre.Connections[1].Connected,'Water walk leaked physics callback')
 end
 do
@@ -81,3 +82,15 @@ do
  ocean=nil;t=2;check(surface:At(Vector3.new(0,12,0))==nil,'Removed ocean retained stale tile geometry')
 end
 print('PASS: '..checks..' Blobman self-only protection, drop cadence, water support and cleanup checks (mocked)')
+do
+ local world=newNode('Folder');local ocean=newNode('Model','Ocean');ocean.Parent=world
+ local a=newNode('Part','WaterA');a.Size=Vector3.new(100,1,100);a.CFrame=CFrame.new(-60,-.5,0);a.CanQuery=false;a.Parent=ocean
+ local b=newNode('Part','WaterB');b.Size=Vector3.new(100,1,100);b.CFrame=CFrame.new(60,.1,0);b.CanQuery=false;b.Parent=ocean
+ local surface=WaterSurface.new({Clock=function()return 0 end,Ocean=function()return ocean end})
+ check(surface:At(Vector3.new(0,10,0))~=nil,'Ocean seam/gap in full footprint lost coverage')
+ check(surface:At(Vector3.new(60,10,0)).Y==0,'Wave tile changed coherent sea level')
+ check(surface:At(Vector3.new(500,10,0))==nil,'Ocean footprint became an infinite floor')
+ a:Destroy();b:Destroy();local rotated=newNode('Part','RotatedWater');rotated.Size=Vector3.new(100,100,.2);rotated.CFrame=CFrame.new(0,-.1,0)*CFrame.Angles(math.pi/2,0,0);rotated.Parent=ocean
+ surface.NextScan=0;local point=surface:At(Vector3.new(0,5,0));check(point and math.abs(point.Y)<1e-5,'Rotated thin water plane was not recognized')
+end
+print('PASS: ocean footprint seams, stable sea level and rotated water geometry (mocked)')
