@@ -283,3 +283,243 @@ do
  check(f.Pallet.Passes==0 and f.Pallet.LastError~=nil,'Overlap query failure sent blind repeat placements');f.Pallet:Dispose()
 end
 print('PASS: physical-exit gate, persistent overlap, retry, query failure and cancellation (mocked; no server hit proof)')
+-- The accelerated controller path has an explicit collision query and real
+-- physics-frame waits. Its rate cap is a scheduling bound, NOT a game hit or
+-- kick threshold. Long frames must never replay missed attempts in a burst.
+for _,fps in ipairs({20,60,240,1000})do
+ local f=nativeFixture();local samples={};local observed=0
+ f.Pallet:SetContactRate(30)
+ f.Pallet.Context.Overlaps=function()return false end
+ f.Pallet.Context.WaitPhysics=function()return f.Sim.RunService.Heartbeat:Wait()end
+ f.Sim.After=function()
+  local count=f.Pallet.Passes
+  if count~=observed then
+   check(count==observed+1,'Accelerated scheduler replayed attempts in one tick at '..fps)
+   samples[#samples+1]=f.Sim.Now;observed=count
+  end
+ end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ -- The first request may place synchronously before the first tick.
+ if f.Pallet.Passes>0 then samples[#samples+1]=f.Sim.Now;observed=f.Pallet.Passes end
+ f.Sim:Run(1,fps)
+ check(#samples>10 and #samples<=31,'Collision-gated scheduling failed its local throughput/cap bound at '..fps)
+ check(samples[2]-samples[1]<=math.ceil(fps/30)/fps+1e-6,'A completed physics frame still incurred a redundant extra wait at '..fps)
+ for i=2,#samples do
+  check(samples[i]-samples[i-1]>=1/30-1e-6,'Accelerated attempts lacked their minimum wall-time separation at '..fps)
+ end
+ check(not entry.Success and f.Pallet.Confirmed==0 and f.Target.Flag.Value==false and f.Data.GameReactions==0,
+  'Faster local scheduling was mislabeled as an accepted hit or kick')
+ local before=f.Pallet.Passes;f.Sim:Tick(.7)
+ check(f.Pallet.Passes-before<=1,'A stalled physics frame replayed expired attempts')
+ f.Pallet:Dispose()
+end
+-- Only maintained requests use the accelerated path. Even with collision
+-- queries installed, an independent one-shot keeps the source polling wait.
+do
+ local f=nativeFixture();local samples={};local observed=0
+ f.Pallet:SetContactRate(30)
+ f.Pallet.Context.Overlaps=function()return false end
+ f.Pallet.Context.WaitPhysics=function()return f.Sim.RunService.Heartbeat:Wait()end
+ local entry=f.Pallet:Request(f.Target.Character,f.Valid)
+ if f.Pallet.Passes>0 then samples[1]=f.Sim.Now;observed=f.Pallet.Passes end
+ f.Sim.After=function()
+  if f.Pallet.Passes~=observed then samples[#samples+1]=f.Sim.Now;observed=f.Pallet.Passes end
+ end
+ f.Sim:Run(.45,240)
+ check(#samples>=4 and #samples<=5,'One-shot polling was accelerated by the maintained-contact path')
+ for i=2,#samples do check(samples[i]-samples[i-1]>=.1-1e-6,'One-shot lost the source 100 ms wait')end
+ check(not entry.Success and f.Target.Flag.Value==false,'Unaccepted one-shot became successful')
+ f.Pallet:Dispose()
+end
+-- A shared slice budget also governs a collision wait that starts near the
+-- end of that slice; it must not get a fresh half-second timeout per rearm.
+do
+ local f=nativeFixture();local durations={};local native=f.Pallet.Native
+ f.Pallet:SetContactRate(30)
+ f.Pallet.Context.Overlaps=function()return f.Sim.Now>=.42 end
+ f.Pallet.Context.WaitPhysics=function()return f.Sim.RunService.Heartbeat:Wait()end
+ f.Pallet.Native=function(character)
+  local started=f.Sim.Now;local result=native(character)
+  durations[#durations+1]=f.Sim.Now-started;return result
+ end
+ f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.65,240)
+ check(#durations>=1 and durations[1]<=.5+2/240,
+  'Late collision wait extended the native slice by another half second')
+ check(f.Pallet.Passes>0 and f.Target.Flag.Value==false,'Budget fixture did not exercise unacknowledged maintained attempts')
+ f.Pallet:Dispose()
+end
+-- Interrupting the shorter post-placement wait must still suppress all late
+-- placements and disable the source force on the original owned pallet.
+for _,mode in ipairs({'cancel','pause','dispose','dead','respawn','ownership'})do
+ local f=nativeFixture()
+ f.Pallet:SetContactRate(30)
+ f.Pallet.Context.Overlaps=function()return false end
+ f.Pallet.Context.WaitPhysics=function()return f.Sim.RunService.Heartbeat:Wait()end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.01,1000)
+ local before=f.Pallet.Passes
+ if mode=='cancel'then f.Pallet:Cancel(f.Target.Character)
+ elseif mode=='pause'then f.Pallet:Pause('accelerated-test',true)
+ elseif mode=='dispose'then f.Pallet:Dispose()
+ elseif mode=='dead'then f.Target.Humanoid.Health=0
+ elseif mode=='respawn'then f.Target.Character.Parent=nil
+ else f.Data.Owned=false;f.Data.Acquire=false end
+ f.Sim:Run(.3,240)
+ check(f.Pallet.Passes==before,'Interrupted accelerated wait placed again: '..mode)
+ if mode~='ownership'then
+  check(entry.Done and not f.Pallet.Active and not f.Pallet.States.Ragdolling,'Accelerated lifecycle leaked its worker: '..mode)
+  local mover=f.Main:FindFirstChild('RagdollBP')
+  check(not mover or mover.MaxForce.Magnitude==0,'Accelerated lifecycle left a source force running: '..mode)
+ end
+ f.Pallet:Dispose()
+end
+print('PASS: physics-gated maintained scheduling, frame stalls, shared collision budget, unchanged one-shot polling and interruption (mocked; no server hit/kick timing proof)')
+-- Invalid rates cannot remove the wall-time bound or silently create an
+-- unlimited retry loop. This setting changes scheduling, never game state.
+do
+ local f=nativeFixture()
+ f.Pallet:SetContactRate(1000)
+ check(math.abs(f.Pallet.IntervalSeconds-1/30)<1e-8,'Contact-rate upper cap was not enforced')
+ f.Pallet:SetContactRate(0)
+ check(math.abs(f.Pallet.IntervalSeconds-.2)<1e-8,'Contact-rate lower cap was not enforced')
+ for _,invalid in ipairs({math.huge,-math.huge,0/0,'30'})do
+  f.Pallet:SetContactRate(invalid)
+  check(math.abs(f.Pallet.IntervalSeconds-.2)<1e-8,'Invalid contact rate changed the retry bound')
+ end
+ f.Pallet:SetContactRate(nil)
+ check(math.abs(f.Pallet.IntervalSeconds-.2)<1e-8,'Missing contact rate changed the retry bound')
+ f.Pallet:Dispose()
+end
+-- Heartbeat progress is not proof that a PostSimulation frame happened when
+-- the latter signal is available. Exercise their ordering independently.
+do
+ local f=nativeFixture();local previous=f.Pallet
+ previous.Connection:Disconnect();previous.PhysicsConnection:Disconnect()
+ local post=f.Sim:Signal();f.Sim.RunService.PostSimulation=post
+ local originalPhysics=f.Sim.Physics;local enabled=false;local postCount=0
+ f.Sim.Physics=function(dt)
+  originalPhysics(dt)
+  if enabled then postCount+=1;post:Fire(dt)end
+ end
+ f.Pallet=Pallet.Install(previous.Context);f.Pallet:SetContactRate(30)
+ f.Pallet.Context.Overlaps=function()return false end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ check(f.Pallet.Passes==1,'Independent-post fixture did not make its first source placement')
+ f.Sim:Run(.2,60)
+ check(f.Pallet.Passes==1,'Heartbeat without PostSimulation admitted another maintained placement')
+ local lastPost=0;local observed=1
+ f.Sim.After=function()
+  if f.Pallet.Passes~=observed then
+   check(f.Pallet.Passes==observed+1 and postCount>lastPost,'A placement reused its predecessor physics frame')
+   lastPost=postCount;observed=f.Pallet.Passes
+  end
+ end
+ enabled=true;f.Sim:Run(.3,60)
+ check(f.Pallet.Passes>5 and not entry.Success,'Independent PostSimulation failed to resume local attempts')
+ local observer=f.Pallet.PhysicsConnection
+ f.Pallet:Dispose()
+ check(not observer.Connected,'PostSimulation observer survived disposal')
+ local frame=f.Pallet.PhysicsFrame;post:Fire(1/60)
+ check(f.Pallet.PhysicsFrame==frame,'Disposed controller kept observing physical frames')
+end
+-- Promotion during the original one-shot wait must replace the old predicate
+-- and enter collision-gated scheduling without creating a second worker.
+do
+ local f=nativeFixture();local effect=true;local samples={0};local observed=0
+ f.Pallet:SetContactRate(30);f.Pallet.Context.Overlaps=function()return false end
+ f.Pallet.Context.WaitPhysics=function()return f.Sim.RunService.Heartbeat:Wait()end
+ local first=f.Pallet:Request(f.Target.Character,function()return effect end);observed=f.Pallet.Passes
+ f.Sim.After=function()
+  if f.Pallet.Passes~=observed then
+   check(f.Pallet.Passes==observed+1,'Promoted operation created duplicate placement workers')
+   samples[#samples+1]=f.Sim.Now;observed=f.Pallet.Passes
+  end
+ end
+ f.Sim:Run(.02,240)
+ local maintained=f.Pallet:Maintain(f.Target.Character,f.Valid);effect=false
+ f.Sim:Run(.35,240)
+ check(first==maintained and not maintained.Done and #samples>5,'Accelerated promotion retained the obsolete one-shot predicate')
+ check(samples[2]>=.1-1e-6,'Promotion discarded the original in-progress one-shot polling wait')
+ for i=3,#samples do
+  local gap=samples[i]-samples[i-1]
+  check(gap>=1/30-1e-6 and gap<=1/30+2/240,'Promoted operation failed bounded accelerated scheduling')
+ end
+ check(f.Target.Flag.Value==false and not maintained.Success,'Promotion synthesized game acceptance')
+ f.Pallet:Dispose()
+end
+-- Bounded accelerated slices must still share the same pallet fairly across
+-- maintained targets, including a target whose Ragdolled flag stays true.
+do
+ local f=nativeFixture();f.Pallet:SetContactRate(30)
+ f.Pallet.Context.Overlaps=function()return false end
+ f.Pallet.Context.WaitPhysics=function()return f.Sim.RunService.Heartbeat:Wait()end
+ f.Target.Flag.Value=true
+ local second=target('AcceleratedSecond',Vector3.new(30,15,0));f.Data.Targets[#f.Data.Targets+1]=second
+ local a=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ local b=f.Pallet:Maintain(second.Character,f.Valid)
+ f.Sim:Run(1.5,240)
+ check((a.Passes or 0)>5 and(b.Passes or 0)>5 and not a.Done and not b.Done,'Accelerated source slices starved a maintained target')
+ check(f.Target.Flag.Value==true and second.Flag.Value==false,'Accelerated fairness fixture manufactured game-state changes')
+ local count=b.Passes or 0;f.Pallet:Cancel(f.Target.Character);f.Sim:Run(.6,240)
+ check(a.Done and(b.Passes or 0)>count and not b.Done,'Canceling one accelerated target stopped another')
+ f.Pallet:Dispose()
+end
+print('PASS: independent PostSimulation ordering/disposal, accelerated promotion and multi-target fairness (mocked)')
+-- A slow configured rate can outlast the remaining slice budget. Finishing
+-- that slice must neither extend its budget nor reset the placement interval.
+for _,fps in ipairs({20,60,240,1000})do
+ local f=nativeFixture();local samples={};local observed=0;local durations={};local native=f.Pallet.Native
+ f.Pallet:SetContactRate(5);f.Pallet.Context.Overlaps=function()return false end
+ f.Pallet.Context.WaitPhysics=function()return f.Sim.RunService.Heartbeat:Wait()end
+ f.Pallet.Native=function(character)
+  local started=f.Sim.Now;local result=native(character)
+  durations[#durations+1]=f.Sim.Now-started;return result
+ end
+ f.Sim.After=function()
+  if f.Pallet.Passes~=observed then
+   check(f.Pallet.Passes==observed+1,'Slow-rate slice replayed placement attempts')
+   samples[#samples+1]=f.Sim.Now;observed=f.Pallet.Passes
+  end
+ end
+ f.Pallet:Maintain(f.Target.Character,f.Valid)
+ if f.Pallet.Passes>0 then samples[1]=f.Sim.Now;observed=f.Pallet.Passes end
+ f.Sim:Run(1.7,fps)
+ check(#samples>=6 and #durations>=2,'Slow-rate fixture did not cross multiple native slices at '..fps)
+ for i=2,#samples do
+  check(samples[i]-samples[i-1]>=.2-1e-6,'Native slice change reset the slow-rate interval at '..fps)
+ end
+ for _,duration in ipairs(durations)do
+  check(duration<=.5+1/fps+1e-6,'Slow-rate contact wait exceeded its shared slice budget at '..fps)
+ end
+ f.Pallet:Dispose()
+end
+-- The cleanup transform itself also needs a subsequent physics frame. Here
+-- the next rate window is already open, so only the parked-transform gate
+-- prevents an immediate write without a new PostSimulation observation.
+do
+ local f=nativeFixture();local previous=f.Pallet
+ previous.Connection:Disconnect();previous.PhysicsConnection:Disconnect()
+ local post=f.Sim:Signal();f.Sim.RunService.PostSimulation=post
+ local originalPhysics=f.Sim.Physics;local enabled=true;local postCount=0
+ f.Sim.Physics=function(dt)
+  originalPhysics(dt)
+  if enabled then postCount+=1;post:Fire(dt)end
+ end
+ f.Pallet=Pallet.Install(previous.Context);f.Pallet:SetContactRate(10)
+ f.Pallet.Context.Overlaps=function()return false end
+ local park=f.Pallet.Park;local parked=false;local parkedPasses;local parkPost
+ f.Pallet.Park=function(self)
+  park(self)
+  if self.Passes>0 and not parked then
+   parked=true;parkedPasses=self.Passes;parkPost=postCount;enabled=false
+  end
+ end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.7,1000)
+ check(parked and parkedPasses>=4,'Parked-transform fixture did not complete its first native slice')
+ check(f.Pallet.Passes==parkedPasses and postCount==parkPost,
+  'A parked pallet was placed again without a later PostSimulation frame')
+ enabled=true;f.Sim:Run(.11,1000)
+ check(f.Pallet.Passes>parkedPasses and not entry.Success,
+  'A later physical frame did not release the parked-transform gate')
+ f.Pallet:Dispose()
+end
+print('PASS: slow-rate intervals across bounded slices and physics after parking (mocked)')

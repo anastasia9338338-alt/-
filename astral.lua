@@ -1,4 +1,4 @@
--- Astral v4.67 | Require physical exit before maintained pallet contact retries; preserve independent one-shot ragdoll.
+-- Astral v4.68 | Configurable physics-gated pallet retries; preserve physical exit, hold and one-shot ragdoll.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.WaterRescue = [========[
@@ -20633,7 +20633,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.67 | FTAP")
+                                warn("Astral v4.68 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23961,7 +23961,7 @@ end
                     local root=part.AssemblyRootPart or part
                     return not root.Anchored and root.ReceiveAge==0
                 end
-                tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,States=tbl7.States,
+                tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,
                     Find=function()return v17 and v17:FindFirstChild("RagdollRSC")end,
                     CanSpawn=function()return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
                     Spawn=function(valid)return tbl12.SpawnToy("PalletLightBrown",nil,0,true,valid)end,
@@ -23972,7 +23972,6 @@ end
                         local query=OverlapParams.new();query.FilterType=Enum.RaycastFilterType.Include;query.FilterDescendantsInstances={character};query.RespectCanCollide=false
                         return #workspace:GetPartsInPart(part,query)>0
                     end,
-                    WaitPhysics=function()return RunService.PostSimulation:Wait()end,
                     MarkerOwned=tbl12.IsPartOwner,PhysicsOwned=tbl12.IsNetworkOwner,Grab=tbl12.Grab,
                     OwnershipBusy=function()return tbl7.States.Owning==true end,
                     NeedsApproach=function(part)local _,root=tbl12.Char();return root and(root.Position-part.Position).Magnitude>=31 end,
@@ -37813,7 +37812,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.67"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.68"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -37937,7 +37936,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.67",true)
+            box:AddLabel("Astral v4.68",true)
         end
 
         do
@@ -39761,6 +39760,9 @@ Escape Timer: %*]]
         local v21=v20
         v21:AddDivider("Hold")
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
+        v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
+            Tooltip="Experimental local retry limit. Each attempt still waits for physics and physical exit; server hit and kick timing are not measured by this setting. Use 10 for the previous polling interval.",
+            Callback=function(value)tbl12.PalletRagdoll:SetContactRate(value)end})
         v21:AddButton({Text="Prepare Pallet",Func=function()tbl12.PalletRagdoll:Warm()end})
         v21:AddButton({Text="Copy Kick Info",Func=function()
             local copy=setclipboard or toclipboard
@@ -44392,9 +44394,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.67: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.68: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.67 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.68 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -92627,11 +92629,15 @@ local function state(character)
 end
 function Pallet.Install(context)
     local self=setmetatable({Context=context,Queue={},Entries={},Passes=0,StrikeAttempts=0,Contacts=0,Confirmed=0,Misses=0,
-        MaximumSpeed=context.MaximumSpeed==true,IntervalSeconds=.1,Status="Pallet ragdoll idle",
+        MaximumSpeed=context.MaximumSpeed==true,IntervalSeconds=.1,Status="Pallet ragdoll idle",PhysicsFrame=0,
         RateAt=context.Clock(),RatePasses=0,RateContacts=0,PassRate=0,TouchRate=0,Pauses={}},Pallet)
     self.States=context.States or {}
+    self:SetContactRate(context.ContactRate or 10)
     local available,physics=pcall(function()return context.RunService.PreSimulation end)
     self.FrameSignal=available and physics or context.RunService.Heartbeat
+    local postAvailable,postPhysics=pcall(function()return context.RunService.PostSimulation end)
+    self.PhysicsSignal=postAvailable and postPhysics or context.RunService.Heartbeat
+    self.PhysicsConnection=self.PhysicsSignal:Connect(function()self.PhysicsFrame+=1 end)
     self.Ownership=Ownership.new({Clock=context.Clock,Signal=self.FrameSignal,
         MarkerOwned=context.MarkerOwned or context.Owned,PhysicsOwned=context.PhysicsOwned or context.Owned,
         Grab=context.Grab or function()end,Busy=context.OwnershipBusy,Approach=context.Acquire,
@@ -92667,7 +92673,8 @@ function Pallet.Install(context)
         },
         Valid=valid,
         Repeating=function()return self:ContinuousValid(self.Active)end,
-        Rearm=function(part,character,current)return self:Rearm(part,character,current)end,
+        Rearm=function(part,character,current,deadline)return self:Rearm(part,character,current,deadline)end,
+        WaitRepeat=function(current,deadline)return self:WaitRepeat(current,deadline)end,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
         BeginStrike=function(character)
             self.StrikeAttempts+=1
@@ -92691,7 +92698,12 @@ function Pallet.Install(context)
                 self.NextStatus=self.Context.Clock()+.2
                 self.Status="Source pallet placement attempt"
             end
-            local entry=self.Active;if entry and entry.Character==character then entry.Passes=(entry.Passes or 0)+1;entry.PlacedPart=part;entry.ContactPhase="placed; awaiting exit" end
+            local entry=self.Active;if entry and entry.Character==character then
+                entry.Passes=(entry.Passes or 0)+1;entry.PlacedPart=part;entry.PlacedAt=context.Clock()
+                entry.PlacedFrame=self.PhysicsFrame;entry.ContactPhase="placed; awaiting exit"
+                self.LastPlacedPart=part;self.LastPlacedAt=entry.PlacedAt;self.LastPlacedFrame=self.PhysicsFrame
+                self.LastTransformPart=part;self.LastTransformFrame=self.PhysicsFrame
+            end
         end,
     })
     self.Connection=self.FrameSignal:Connect(function()self:Step();self:Watchdog()end)
@@ -92714,26 +92726,68 @@ end
 function Pallet:ContinuousValid(entry)
     return entry and entry.Continuous==true and self:EntryValid(entry)or false
 end
-function Pallet:Rearm(part,character,current)
+function Pallet:SetContactRate(value)
+    if type(value)~='number'or value~=value or math.abs(value)==math.huge then return false end
+    self.ContactRate=math.clamp(value,5,30);self.IntervalSeconds=1/self.ContactRate
+    return true
+end
+function Pallet:WaitPhysics()
+    if self.Context.WaitPhysics then return self.Context.WaitPhysics()end
+    return self.PhysicsSignal:Wait()
+end
+function Pallet:WaitRepeat(current,sliceDeadline)
+    local ctx=self.Context;local entry=self.Active
+    local started=ctx.Clock()
+    local function finish(value)
+        if entry then entry.RetryWaitSeconds=(entry.RetryWaitSeconds or 0)+ctx.Clock()-started end
+        return value
+    end
+    if not ctx.Overlaps then
+        -- Older integrations without a physical-exit query keep source timing.
+        ctx.Wait(.1)
+        return finish(current()and self:EntryValid(entry))
+    end
+    while current()and self:EntryValid(entry)do
+        if sliceDeadline and ctx.Clock()>=sliceDeadline then entry.ContactPhase='slice deadline';return finish(false)end
+        -- Measure from the actual write; never replay missed intervals after lag.
+        local due=(entry.PlacedAt or started)+self.IntervalSeconds
+        if ctx.Clock()+1e-7>=due and self.PhysicsFrame>(entry.PlacedFrame or -1)then
+            return finish(true)
+        end
+        entry.ContactPhase='waiting for next physics contact window'
+        self:WaitPhysics()
+    end
+    return finish(false)
+end
+function Pallet:Rearm(part,character,current,sliceDeadline)
     local ctx=self.Context
     if not ctx.Overlaps then return true end
-    local entry=self.Active;local deadline=ctx.Clock()+.5
-    local function allowed()return current()and self:EntryValid(entry)and alive(part)and not part.Anchored and ctx.Owned(part)end
-    -- Wait for physics after the previous write even at very high FPS.
-    if entry.PlacedPart==part then
-        if ctx.WaitPhysics then ctx.WaitPhysics()else self.FrameSignal:Wait()end
+    local entry=self.Active;local started=ctx.Clock();local deadline=math.min(started+.5,sliceDeadline or math.huge)
+    local function finish(value)
+        entry.RearmWaitSeconds=(entry.RearmWaitSeconds or 0)+ctx.Clock()-started
+        return value
     end
+    local function allowed()return current()and self:EntryValid(entry)and alive(part)and not part.Anchored and ctx.Owned(part)end
     while allowed()do
+        if ctx.Clock()>=deadline then entry.ContactPhase='slice deadline';return finish(false)end
+        -- Preserve the interval across slice/target changes as well. A previous
+        -- WaitRepeat can stop at the slice deadline before this window opens.
+        if(self.LastTransformPart==part and self.PhysicsFrame<=(self.LastTransformFrame or -1))
+            or(self.LastPlacedPart==part and ctx.Clock()+1e-7<(self.LastPlacedAt or 0)+self.IntervalSeconds)then
+            entry.ContactPhase='waiting for next physics contact window'
+            self:WaitPhysics()
+            continue
+        end
         local ok,overlap=pcall(ctx.Overlaps,part,character)
-        if not ok then self.LastError='Pallet overlap query: '..tostring(overlap);entry.ContactPhase='query failed';return false end
-        if overlap==false then entry.ContactPhase='separated';entry.Clearances=(entry.Clearances or 0)+1;return true end
+        if not ok then self.LastError='Pallet overlap query: '..tostring(overlap);entry.ContactPhase='query failed';return finish(false)end
+        if overlap==false then entry.ContactPhase='separated';entry.Clearances=(entry.Clearances or 0)+1;return finish(true)end
         entry.ContactPhase='waiting for physical exit';self.Status='Waiting for pallet to leave target'
         -- Keep the source lift running; do not teleport it into the torso
         -- again. The original bounded slice will park it if it cannot exit.
-        if ctx.Clock()>=deadline then entry.ContactPhase='exit timeout';return false end
-        if ctx.WaitPhysics then ctx.WaitPhysics()else self.FrameSignal:Wait()end
+        if ctx.Clock()>=deadline then entry.ContactPhase='exit timeout';return finish(false)end
+        self:WaitPhysics()
     end
-    return false
+    return finish(false)
 end
 function Pallet:Park()
     local sound=self.Sound
@@ -92745,7 +92799,10 @@ function Pallet:Park()
     assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=Vector3.zero
     sound.AssemblyLinearVelocity=Vector3.zero;sound.AssemblyAngularVelocity=Vector3.zero;sound.Velocity=Vector3.zero
     local position=self.Context.ParkPosition and self.Context.ParkPosition()
-    if position then assembly.CFrame=assembly.CFrame+(position-sound.Position)end
+    if position then
+        assembly.CFrame=assembly.CFrame+(position-sound.Position)
+        self.LastTransformPart=sound;self.LastTransformFrame=self.PhysicsFrame
+    end
 end
 function Pallet:SafePark()
     local ok,message=pcall(self.Park,self)
@@ -92942,12 +92999,14 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=5,Mechanism='Separate contact entries; physical exit required before maintained retries',Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
+    local info={Version=6,Mechanism='Frame-gated local retries; physical exit required; not server hit acknowledgements',
+        LocalRetryRateLimit=self.ContactRate,LocalRetryInterval=self.IntervalSeconds,Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
         local value=state(entry.Character)
         info.Entries[#info.Entries+1]={Character=entry.Character.Name,Receiver=entry.Receiver and entry.Receiver.Name,
             ReceiverKind=entry.ReceiverKind,ContactPhase=entry.ContactPhase,VerifiedClearances=entry.Clearances or 0,PlacementAttempts=entry.StrikeAttempts or 0,SourcePlacements=entry.Passes or 0,
+            LocalRetryWaitSeconds=entry.RetryWaitSeconds or 0,LocalRearmWaitSeconds=entry.RearmWaitSeconds or 0,LastPlacementAt=entry.PlacedAt,
             LocalReceiverContacts=entry.ReceiverContacts or 0,
             ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.LastStateReason,
             StateAlreadyRagdolled=value and value.Value==true or false,ContinuousStrikes=entry.Continuous==true,Reaction=reaction}
@@ -92966,7 +93025,7 @@ function Pallet:Describe()
 end
 function Pallet:Dispose()
     if self.Closed then return end
-    self.Closed=true;self.Connection:Disconnect();self.Ownership:Dispose()
+    self.Closed=true;self.Connection:Disconnect();self.PhysicsConnection:Disconnect();self.Ownership:Dispose()
     for _,entry in pairs(self.Entries)do entry.Done=true;entry.Success=false;if entry.Reaction then entry.Reaction:Dispose()end end
     table.clear(self.Queue)
     self:SafePark()
@@ -93947,14 +94006,15 @@ function Native.new(context)
   local mover=main:FindFirstChild('RagdollBP')
   if not mover then mover=Instance.new('BodyPosition');mover.Name='RagdollBP';mover.MaxForce=Vector3.zero;mover.Parent=main end
   mover.D=1500;mover.Position=Vector3.new(0,100000,0)
-  local started=context.Clock()
+  local started=context.Clock();local sliceDeadline=started+.5
   while current()and sound.Parent==model and main.Parent==model do
    if completedState()then break end
    if sound.Anchored or main.Anchored or(context.CanContact and not context.CanContact(sound))then break end
    if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
    -- Maintained contacts must leave the target before a new placement. A
    -- second CFrame write while still overlapping is not another touch entry.
-   if repeating()and context.Rearm and not context.Rearm(sound,character,current)then break end
+   if repeating()and context.Rearm and not context.Rearm(sound,character,current,sliceDeadline)then break end
+   if repeating()and context.Clock()>=sliceDeadline then break end
    if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
    -- Park clears this force, so re-enable the original lift for each real
    -- attempt. Preserve Position on SoundPart rather than substituting an
@@ -93965,7 +94025,9 @@ function Native.new(context)
    sound.Position=torso.Position
    sound.Velocity=Vector3.new(0,-10,0)
    if context.Record then context.Record(sound,character)end -- placement telemetry only
-   context.Wait(.1)
+   if repeating()and context.WaitRepeat then
+    if not context.WaitRepeat(current,sliceDeadline)then break end
+   else context.Wait(.1)end
    if not current()or completedState()or not head:FindFirstChild('PartOwner')or context.Clock()-started>.5 then break end
   end
   -- Completion of a bounded repeating slice is never a new ragdoll-state
