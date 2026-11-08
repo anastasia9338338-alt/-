@@ -255,3 +255,31 @@ do
  check(not promoted.Done and f.Pallet.Passes>before,'Promoted maintained request stopped when game state became true')
 end
 print('PASS: '..checks..' source-native operation parameters, maintained held contacts, unchanged one-shot state contract, ownership, fairness and lifecycle checks (mocked; no real game hit/blur/kick proof)')
+-- Explicit collision-query inputs: a persistent overlap must not be counted
+-- as many separate placements. These do not emulate accepted server hits.
+do
+ local f=nativeFixture();local overlap=false;local seen=0
+ f.Pallet.Context.Overlaps=function(part,character)check(part==f.Sound and character==f.Target.Character,'Rearm queried wrong pair');return overlap end
+ f.Pallet.Context.WaitPhysics=function()f.Sim:Wait(1/60)end
+ f.Sim.After=function()if f.Pallet.Passes>seen then seen=f.Pallet.Passes;overlap=true end end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.35,240)
+ check(f.Pallet.Passes==1 and entry.ContactPhase=='waiting for physical exit','Persistent contact was rewritten as repeated strikes')
+ overlap=false;f.Sim.After=nil;f.Sim:Run(.15,240)
+ check(f.Pallet.Passes>1 and(entry.Clearances or 0)>1,'Verified exit did not rearm maintained contact')
+ check(not entry.Success and f.Target.Flag.Value==false,'Physical exit was mislabeled as server acceptance')
+ f.Pallet:Dispose()
+end
+do
+ local f=nativeFixture();f.Pallet.Context.Overlaps=function()return true end
+ f.Pallet.Context.WaitPhysics=function()f.Sim:Wait(1/60)end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.2,240)
+ check(f.Pallet.Passes==0,'Unseparated initial overlap admitted placement')
+ f.Data.Valid=false;f.Sim:Run(.2,240)
+ check(entry.Done and f.Pallet.Passes==0,'Canceled rearm sent a late placement');f.Pallet:Dispose()
+end
+do
+ local f=nativeFixture();f.Pallet.Context.Overlaps=function()error('query unavailable')end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.2,240)
+ check(f.Pallet.Passes==0 and f.Pallet.LastError~=nil,'Overlap query failure sent blind repeat placements');f.Pallet:Dispose()
+end
+print('PASS: physical-exit gate, persistent overlap, retry, query failure and cancellation (mocked; no server hit proof)')

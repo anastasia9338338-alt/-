@@ -1,4 +1,4 @@
--- Astral v4.66 | Shared smooth cursor/water movement, pallet magnet, full water coverage, configurable Blobman cadence and game UFO preparation.
+-- Astral v4.67 | Require physical exit before maintained pallet contact retries; preserve independent one-shot ragdoll.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.WaterRescue = [========[
@@ -20633,7 +20633,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.66 | FTAP")
+                                warn("Astral v4.67 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23967,6 +23967,12 @@ end
                     Spawn=function(valid)return tbl12.SpawnToy("PalletLightBrown",nil,0,true,valid)end,
                     Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value and true or nil end,
                     Owned=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
+                    Overlaps=function(part,character)
+                        for _,other in ipairs(part:GetTouchingParts())do if other:IsDescendantOf(character)then return true end end
+                        local query=OverlapParams.new();query.FilterType=Enum.RaycastFilterType.Include;query.FilterDescendantsInstances={character};query.RespectCanCollide=false
+                        return #workspace:GetPartsInPart(part,query)>0
+                    end,
+                    WaitPhysics=function()return RunService.PostSimulation:Wait()end,
                     MarkerOwned=tbl12.IsPartOwner,PhysicsOwned=tbl12.IsNetworkOwner,Grab=tbl12.Grab,
                     OwnershipBusy=function()return tbl7.States.Owning==true end,
                     NeedsApproach=function(part)local _,root=tbl12.Char();return root and(root.Position-part.Position).Magnitude>=31 end,
@@ -37807,7 +37813,7 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.66"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.67"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
@@ -37931,7 +37937,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.66",true)
+            box:AddLabel("Astral v4.67",true)
         end
 
         do
@@ -44386,9 +44392,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.66: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.67: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.66 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.67 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -92661,6 +92667,7 @@ function Pallet.Install(context)
         },
         Valid=valid,
         Repeating=function()return self:ContinuousValid(self.Active)end,
+        Rearm=function(part,character,current)return self:Rearm(part,character,current)end,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
         BeginStrike=function(character)
             self.StrikeAttempts+=1
@@ -92684,7 +92691,7 @@ function Pallet.Install(context)
                 self.NextStatus=self.Context.Clock()+.2
                 self.Status="Source pallet placement attempt"
             end
-            local entry=self.Active;if entry and entry.Character==character then entry.Passes=(entry.Passes or 0)+1 end
+            local entry=self.Active;if entry and entry.Character==character then entry.Passes=(entry.Passes or 0)+1;entry.PlacedPart=part;entry.ContactPhase="placed; awaiting exit" end
         end,
     })
     self.Connection=self.FrameSignal:Connect(function()self:Step();self:Watchdog()end)
@@ -92706,6 +92713,27 @@ function Pallet:EntryValid(entry)
 end
 function Pallet:ContinuousValid(entry)
     return entry and entry.Continuous==true and self:EntryValid(entry)or false
+end
+function Pallet:Rearm(part,character,current)
+    local ctx=self.Context
+    if not ctx.Overlaps then return true end
+    local entry=self.Active;local deadline=ctx.Clock()+.5
+    local function allowed()return current()and self:EntryValid(entry)and alive(part)and not part.Anchored and ctx.Owned(part)end
+    -- Wait for physics after the previous write even at very high FPS.
+    if entry.PlacedPart==part then
+        if ctx.WaitPhysics then ctx.WaitPhysics()else self.FrameSignal:Wait()end
+    end
+    while allowed()do
+        local ok,overlap=pcall(ctx.Overlaps,part,character)
+        if not ok then self.LastError='Pallet overlap query: '..tostring(overlap);entry.ContactPhase='query failed';return false end
+        if overlap==false then entry.ContactPhase='separated';entry.Clearances=(entry.Clearances or 0)+1;return true end
+        entry.ContactPhase='waiting for physical exit';self.Status='Waiting for pallet to leave target'
+        -- Keep the source lift running; do not teleport it into the torso
+        -- again. The original bounded slice will park it if it cannot exit.
+        if ctx.Clock()>=deadline then entry.ContactPhase='exit timeout';return false end
+        if ctx.WaitPhysics then ctx.WaitPhysics()else self.FrameSignal:Wait()end
+    end
+    return false
 end
 function Pallet:Park()
     local sound=self.Sound
@@ -92914,12 +92942,12 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=4,Mechanism='Continuous source-native attempts; ragdoll state completes only one-shot effects',Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
+    local info={Version=5,Mechanism='Separate contact entries; physical exit required before maintained retries',Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
         local value=state(entry.Character)
         info.Entries[#info.Entries+1]={Character=entry.Character.Name,Receiver=entry.Receiver and entry.Receiver.Name,
-            ReceiverKind=entry.ReceiverKind,PlacementAttempts=entry.StrikeAttempts or 0,SourcePlacements=entry.Passes or 0,
+            ReceiverKind=entry.ReceiverKind,ContactPhase=entry.ContactPhase,VerifiedClearances=entry.Clearances or 0,PlacementAttempts=entry.StrikeAttempts or 0,SourcePlacements=entry.Passes or 0,
             LocalReceiverContacts=entry.ReceiverContacts or 0,
             ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.LastStateReason,
             StateAlreadyRagdolled=value and value.Value==true or false,ContinuousStrikes=entry.Continuous==true,Reaction=reaction}
@@ -93917,12 +93945,16 @@ function Native.new(context)
   for _,part in ipairs(model:GetChildren())do if part:IsA('BasePart')then part.CanCollide=false end end
   sound.CanTouch=true
   local mover=main:FindFirstChild('RagdollBP')
-  if not mover then mover=Instance.new('BodyPosition');mover.Name='RagdollBP';mover.Parent=main end
+  if not mover then mover=Instance.new('BodyPosition');mover.Name='RagdollBP';mover.MaxForce=Vector3.zero;mover.Parent=main end
   mover.D=1500;mover.Position=Vector3.new(0,100000,0)
   local started=context.Clock()
   while current()and sound.Parent==model and main.Parent==model do
    if completedState()then break end
    if sound.Anchored or main.Anchored or(context.CanContact and not context.CanContact(sound))then break end
+   if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
+   -- Maintained contacts must leave the target before a new placement. A
+   -- second CFrame write while still overlapping is not another touch entry.
+   if repeating()and context.Rearm and not context.Rearm(sound,character,current)then break end
    if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
    -- Park clears this force, so re-enable the original lift for each real
    -- attempt. Preserve Position on SoundPart rather than substituting an
