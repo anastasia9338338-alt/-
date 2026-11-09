@@ -1,9 +1,9 @@
-"""Execute real TheWorstUIV2 and Astral GUI adapter in a GUI-shaped test engine."""
+"""Execute the exact bundled Astral UI in a GUI-shaped test engine."""
 from pathlib import Path
 import argparse,re,subprocess,tempfile
 
 ROOT=Path(__file__).resolve().parents[1]
-def program(modules):
+def adapter_program(modules):
     support=ROOT/'tools/feature_tests'
     s=(support/'ui_engine_mock.luau').read_text()
     s+='\nlocal FakeIcons={GetAsset=function(name)return{Url="rbxassetid://1",ImageRectOffset=Vector2.zero,ImageRectSize=Vector2.zero}end}\n'
@@ -42,12 +42,57 @@ end
 '''
     return s+(support/'ui_adapter_body.luau').read_text()
 
+def startup_program(main):
+    if not main:return ''
+    defaults=main[main.index('tbl8 = {'):main.index('\n\n',main.index('tbl8 = {'))]
+    a=main.index('gameCorrectionsNotify.OnClientEvent:Connect(function(arg)')+len('gameCorrectionsNotify.OnClientEvent:Connect(')
+    z=main.index('\n\t\t\t\tend)',a)+len('\n\t\t\t\tend')
+    return '''do
+local tbl8
+'''+defaults+'''
+local flag11=false;local tbl9={KickFlags=0};local n36=0;local reset,kicked=0,0
+local humanoid={ChangeState=function(_,state)if state==Enum.HumanoidStateType.Dead then reset+=1 end end}
+local tbl12={Char=function()return nil,nil,humanoid end};local fn18=function()end
+local localPlayer={Kick=function()kicked+=1 end}
+local correction='''+main[a:z]+'''
+check(not tbl8.AutoReset and not tbl8.AutoLeave and not tbl8.AutoAntiLag and not tbl8.Flight,"Active gameplay defaults survived the startup fix")
+for _=1,6 do correction("Flying")end
+check(reset==0 and kicked==0,"Real Main correction handler killed or kicked the idle local character")
+tbl8.AutoReset=true;correction("Flying")
+check(reset==1 and kicked==0,"Manual Auto Reset no longer invokes its original handler")
+end
+'''
+
+def program(modules):
+    if 'TheWorstUIV2'in modules:return adapter_program(modules)
+    support=ROOT/'tools/feature_tests'
+    s=(support/'ui_engine_mock.luau').read_text()+'\n'+(support/'ui_native_mock.luau').read_text()
+    s+='''
+local runtime={}
+local Identity={Runtime=function()return runtime end}
+local Brand={Clean=function(text)return text end}
+local FakeIcons={GetAsset=function(name)return{Url="rbxassetid://1",ImageRectOffset=Vector2.zero,ImageRectSize=Vector2.zero}end}
+local MenuDecor={ItemImage=function()end,ValueIcon=function()return "box"end,BlockedTab=function()return false end,Icon=function()return "box"end}
+local FunctionGlyphs={Get=function()end}
+local Library=(function(...)
+'''+modules['Library']+'''
+end)(function(name)
+if name=="Branding"then return Brand elseif name=="AppIdentity"then return Identity elseif name=="MenuDecor"then return MenuDecor elseif name=="FunctionGlyphs"then return FunctionGlyphs elseif name=="Icons"then return FakeIcons end
+error(name)
+end)
+'''
+    s+=startup_program(modules.get('Main'))
+    return s+(support/'ui_native_body.luau').read_text()
+
 if __name__=='__main__':
     args=argparse.ArgumentParser();args.add_argument('--luau',type=Path,required=True);args.add_argument('--bundle',type=Path);a=args.parse_args()
     if a.bundle:
         pattern=re.compile(r'^sources\.(\w+) = \[========\[\n(.*?)\n\]========\]',re.M|re.S)
         modules=dict(pattern.findall(a.bundle.read_text()))
-    else:modules={n:(ROOT/'ui'/p).read_text()for n,p in [('Library','Library.luau'),('TheWorstUIV2','TheWorstUIV2.luau'),('Presentation','Presentation.luau'),('Watermark','Watermark.luau')]}
+    else:
+        modules={'Library':(ROOT/'ui/Library.luau').read_text()}
+        if 'requireModule("TheWorstUIV2")'in modules['Library']:
+            modules.update({n:(ROOT/'ui'/p).read_text()for n,p in [('TheWorstUIV2','TheWorstUIV2.luau'),('Presentation','Presentation.luau'),('Watermark','Watermark.luau')]})
     with tempfile.TemporaryDirectory(prefix='astral-ui-')as d:
         p=Path(d)/'ui.luau';p.write_text(program(modules));r=subprocess.run([str(a.luau),str(p)],capture_output=True,text=True)
         print(r.stdout,end='');print(r.stderr,end='');raise SystemExit(r.returncode)

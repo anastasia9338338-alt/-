@@ -14,6 +14,12 @@ def run_feature_checks(modules,runner,folder):
         result=subprocess.run([str(runner),str(path)],capture_output=True,text=True)
         assert result.returncode==0,(name,result.stdout,result.stderr)
         print(result.stdout.strip())
+    if '-- Faster escape owns one held session;' in modules.get('Main',''):
+        main=modules['Main']
+        escape=main[main.index('\t\t-- Faster escape owns one held session;'):main.index('\t\t-- End bounded faster escape.')]
+        start=main.index('\t\tdo\n\t\tlocal stickyThread, stickyGeneration')
+        sticky=main[start:main.index('\t\t-- End bounded sticky defense.',start)]
+        run('defense_workers',read('defense_workers_prefix.luau')+'\n'+escape+'\n'+sticky+'\n'+read('defense_workers_body.luau'))
     if 'BlobmanAura'in modules and 'WaterWalk'in modules:
         program=read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{}end}\n'
         program+='local WaterSurface=(function()\n'+modules['WaterSurface']+'\nend)()\n'
@@ -34,6 +40,11 @@ def run_feature_checks(modules,runner,folder):
             ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
+    if 'local spinState = {Enabled = false}'in modules.get('Main',''):
+        main=modules['Main'];start=main.index('local spinState = {Enabled = false}')
+        end=main.index('            Character:AddToggle("AstralWallClimb"',start)
+        program=read('spin_prefix.luau')+'\n'+main[start:end]+'\n'+read('spin_body.luau')
+        run('spin',program)
     if 'AstralTeleportCursorKey'in modules.get('Main',''):
         main=modules['Main'];start=main.index('launcher:AddLabel("Teleport To Cursor")')
         start=main.index('Callback=function()',start)+len('Callback=')
@@ -73,6 +84,8 @@ def run_feature_checks(modules,runner,folder):
         from ui_checks import program
         run('theworstui',program(modules))
     elif 'Library'in modules:
+        from ui_checks import program
+        run('nativeui',program(modules))
         library=modules['Library']
         slider=library[library.index('    function Funcs:AddSlider('):library.index('    function Funcs:AddDropdown(')]
         run('slider',read('slider_mock.luau')+'\n'+slider+'\n'+read('slider_body.luau'))
@@ -83,6 +96,8 @@ def run_feature_checks(modules,runner,folder):
         cleanup=re.search(r'Library:OnUnload\(function\(\)\s+if InputChanged then InputChanged:Disconnect\(\);InputChanged=nil end\s+end\)',library)
         assert cleanup,'Hold-key observer lacks direct unload cleanup'
         run('keybind',read('keybind_mock.luau')+declaration[0]+'\n'+cleanup[0]+'\n'+library[start:end]+read('keybind_body.luau'))
+    if 'Watermark'in modules:
+        run('watermark',read('ui_engine_mock.luau')+'\nlocal HUD=(function()\n'+modules['Watermark']+'\nend)()\n'+read('watermark_body.luau'))
     if {'AquaAssets','AquaPose','AquaMesh','AquaModel'}<=modules.keys():
         program=read('model_mock.luau')+'\n'+read('aqua_mock.luau')
         for name,alias in [('AquaAssets','Assets'),('AquaPose','Pose'),('AquaMesh','Mesh'),('AquaEffects','Effects')]:
