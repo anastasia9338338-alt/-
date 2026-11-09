@@ -1,6 +1,178 @@
--- Astral v4.69 | TheWorstUIV2 interface; existing feature callbacks, tabs and config IDs preserved.
+-- Astral v4.70 | Manual startup, unified white-glass GUI and centered minimal watermark.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
+sources.Presentation = [========[
+-- Shared white-glass surfaces. Styling never calls gameplay callbacks.
+local P={Radius=24,Transparency=.42,RowTransparency=.62}
+function P.Theme()
+    return{BackgroundColor=Color3.fromRGB(255,255,255),MainColor=Color3.fromRGB(244,247,251),
+        AccentColor=Color3.fromRGB(77,91,113),OutlineColor=Color3.fromRGB(183,194,210),
+        FontColor=Color3.fromRGB(23,28,36),FontFace="Gotham",BackgroundImage=""}
+end
+local function corner(frame,radius)
+    local value=frame:FindFirstChildOfClass("UICorner")or Instance.new("UICorner")
+    value.CornerRadius=UDim.new(0,radius);value.Parent=frame
+end
+local paths={
+    house={{{2,8},{9,2},{16,8}},{{4,7},{4,16},{14,16},{14,7}},{{7,16},{7,11},{11,11},{11,16}}},
+    ["user-round"]={{{3,16},{4,12},{7,10},{11,10},{14,12},{15,16}}},
+    hand={{{3,16},{2,10},{3,8},{5,11},{5,4},{7,3},{8,9},{8,2},{10,2},{11,9},{12,4},{14,4},{14,11},{16,8},{17,10},{14,16},{3,16}}},
+    shield={{{9,2},{15,4},{14,11},{9,16},{4,11},{3,4},{9,2}}},
+    ["locate-fixed"]={{{9,0},{9,4}},{{9,14},{9,18}},{{0,9},{4,9}},{{14,9},{18,9}}},
+    ["refresh-cw"]={{{4,4},{7,2},{12,3},{15,6},{16,10},{14,14},{10,16},{5,15},{2,11}},{{1,5},{4,4},{5,7}}},
+    eye={{{1,9},{5,4},{9,3},{13,4},{17,9},{13,14},{9,15},{5,14},{1,9}}},
+    crosshair={{{9,0},{9,5}},{{9,13},{9,18}},{{0,9},{5,9}},{{13,9},{18,9}}},
+    sparkles={{{9,1},{11,7},{17,9},{11,11},{9,17},{7,11},{1,9},{7,7},{9,1}}},
+    settings={{{6,2},{12,2},{13,5},{16,6},{16,12},{13,13},{12,16},{6,16},{5,13},{2,12},{2,6},{5,5},{6,2}}},
+}
+function P.Icon(image,name,color)
+    name=name=="astral-fun"and"sparkles"or name
+    local drawing=image:FindFirstChild("AstralSectionIcon")
+    if not drawing then
+        drawing=Instance.new("Frame");drawing.Name="AstralSectionIcon";drawing.BackgroundTransparency=1
+        drawing.Size=UDim2.fromScale(1,1);drawing.Parent=image
+        local function line(a,b)
+            local dx,dy=b[1]-a[1],b[2]-a[2]
+            local f=Instance.new("Frame");f.BorderSizePixel=0;f.AnchorPoint=Vector2.new(.5,.5)
+            f.Position=UDim2.fromScale((a[1]+b[1])/36,(a[2]+b[2])/36)
+            f.Size=UDim2.new(math.sqrt(dx*dx+dy*dy)/18,0,0,1.5);f.Rotation=math.deg(math.atan2(dy,dx));f.Parent=drawing
+        end
+        for _,path in ipairs(paths[name]or paths.sparkles)do for i=2,#path do line(path[i-1],path[i])end end
+        local function ring(x,y,r)
+            local f=Instance.new("Frame");f.BackgroundTransparency=1;f.Size=UDim2.fromScale(r/9,r/9);f.Position=UDim2.fromScale((x-r)/18,(y-r)/18);f.Parent=drawing;corner(f,99)
+            local stroke=Instance.new("UIStroke");stroke.Thickness=1.5;stroke.Parent=f
+        end
+        if name=="user-round"then ring(9,5,3)
+        elseif name=="eye"then ring(9,9,3)
+        elseif name=="settings"then ring(9,9,3)
+        elseif name=="locate-fixed"or name=="crosshair"then ring(9,9,5)end
+    end
+    image.ImageTransparency=1
+    for _,node in ipairs(drawing:GetDescendants())do
+        if node:IsA("Frame")then node.BackgroundColor3=color elseif node:IsA("UIStroke")then node.Color=color end
+    end
+end
+function P.NativeElement(object,scheme)
+    if object.Name=="Noise"then object.ImageTransparency=.96 end
+    if object.Name=="Vingette"then object.ImageTransparency=1 end
+    if object.Name=="ColorpickerItemHolder"or object.Name=="DropdownItemHolder"or object.Name=="ItemHolder"then
+        object.BackgroundColor3=(scheme or P.Theme()).BackgroundColor;object.BackgroundTransparency=P.Transparency;corner(object,P.Radius)
+    end
+end
+function P.Control(control)
+    local holder,label=control.Holder,control.TextLabel
+    if not holder then return end
+    local reserved=control.Type=="Button"and 34 or 112
+    local field=holder:FindFirstChild(control.Type=="Dropdown"and"SelectedItemBox"or"Value")
+    if field and(control.Type=="Dropdown"or control.Type=="Input"or control.Type=="Slider")then
+        local limit=math.max(40,math.min(160,holder.AbsoluteSize.X*.45))
+        local width=math.min(limit,math.max(40,field.Size.X.Offset))
+        local size=UDim2.new(0,width,field.Size.Y.Scale,field.Size.Y.Offset)
+        if field.Size~=size then field.Size=size end
+        field.AnchorPoint=Vector2.new(1,field.AnchorPoint.Y)
+        field.Position=UDim2.new(1,-10,field.Position.Y.Scale,field.Position.Y.Offset)
+        reserved=width+30
+        local valueText=field:FindFirstChild("NameText")
+        if valueText then valueText.Size=UDim2.new(1,-8,1,0);valueText.TextTruncate=Enum.TextTruncate.AtEnd;valueText.TextWrapped=false end
+    end
+    if label then
+        if control.Library then label.FontFace=control.Library.Scheme.Font end;label.TextSize=14
+        label.TextWrapped=control.Type=="Label"
+        if control.Type~="Label"then
+            label.TextTruncate=Enum.TextTruncate.AtEnd
+            local left=10
+            local size=UDim2.new(1,-reserved,0,26)
+            if label.Size~=size then label.Size=size end
+            label.Position=UDim2.fromOffset(left,0)
+        end
+    end
+    if control.Type=="Slider"then
+        holder.Size=UDim2.new(1,0,0,40)
+        local bar=holder:FindFirstChild("SliderBar")
+        if bar then bar.Position=UDim2.new(0,10,0,31);bar.Size=UDim2.new(1,-20,0,8)end
+    end
+end
+function P.Section(group)
+    local frame=group.Frame
+    if frame then
+        local size=UDim2.new(1,0,frame.Size.Y.Scale,frame.Size.Y.Offset)
+        if frame.Size~=size then frame.Size=size end
+        frame.BackgroundTransparency=1
+    end
+    local list=group.Container and group.Container:FindFirstChildOfClass("UIListLayout")
+    if list then list.Padding=UDim.new(0,0)end
+end
+function P.Tab(tab)
+    local raw=tab.Raw
+    if raw.Button then
+        local icon=raw.Button:FindFirstChild("Icon")
+        local title=raw.Button:FindFirstChild("NameText")
+        if icon then icon.Position=UDim2.new(0,18,.5,0);icon.Size=UDim2.fromOffset(18,18);P.Icon(icon,tab.Icon,tab.Library.Scheme.FontColor)end
+        if title then
+            title.Position=UDim2.fromOffset(34,0);title.Size=UDim2.new(1,-40,1,0);title.TextXAlignment=Enum.TextXAlignment.Left
+            title.FontFace=tab.Library.Scheme.Font;title.TextSize=14;title.TextWrapped=false;title.TextTruncate=Enum.TextTruncate.AtEnd
+        end
+    end
+    local frame=raw.Frame
+    if not frame then return end
+    frame.Size=UDim2.fromScale(1,1)
+    for _,side in ipairs({"Left","Right"})do
+        local clip=frame:FindFirstChild("FakeDescendantClipperFrame"..side)
+        if clip then
+            clip.Size=UDim2.new(.5,0,1,0);clip.Position=UDim2.new(side=="Left"and 0 or .5,0,0,0)
+            local holder=clip:FindFirstChild(side.."HolderFrame")
+            if holder then
+                holder.Position=UDim2.new();holder.Size=UDim2.fromScale(1,1)
+                local list=holder:FindFirstChildOfClass("UIListLayout");if list then list.Padding=UDim.new(0,0)end
+            end
+        end
+    end
+end
+function P.Window(window,scheme)
+    local frame=window.MainFrame
+    if not frame then return end
+    frame.BackgroundColor3=scheme.BackgroundColor;frame.BackgroundTransparency=P.Transparency;frame.BorderSizePixel=0;corner(frame,P.Radius)
+    local top=frame:FindFirstChild("TopBar")
+    if top then top.Visible=false;top.Size=UDim2.new()end
+    local holder=frame:FindFirstChild("Holder")
+    if holder then
+        holder.AnchorPoint=Vector2.zero;holder.Position=UDim2.fromOffset(0,38);holder.Size=UDim2.new(1,0,1,-38)
+        holder.BackgroundTransparency=1
+        for _,child in ipairs(holder:GetChildren())do
+            if child.Name=="Noise"or child.Name=="Vingette"or child.Name=="BackgroundImage"or child:IsA("UIStroke")then
+                if child:IsA("UIStroke")then child.Transparency=1 else child.Visible=false end
+            end
+        end
+    end
+    local tabs=frame:FindFirstChild("TabButtonsHolder")
+    if tabs then
+        tabs.Position=UDim2.new();tabs.Size=UDim2.new(1,0,0,38);tabs.BackgroundTransparency=1
+        local list=tabs:FindFirstChild("ButtonsListFrame")
+        if list then
+            list.Position=UDim2.fromOffset(6,3);list.Size=UDim2.new(1,-12,1,-6)
+            local layout=list:FindFirstChildOfClass("UIListLayout");if layout then layout.Padding=UDim.new(0,0)end
+        end
+    end
+    for _,tab in pairs(window.Tabs)do P.Tab(tab)end
+end
+function P.Floating(panel,scheme)
+    panel.BackgroundColor3=scheme.BackgroundColor;panel.BackgroundTransparency=P.Transparency;panel.BorderSizePixel=0;corner(panel,P.Radius)
+    local border=panel:FindFirstChildOfClass("UIStroke")or Instance.new("UIStroke")
+    border.Color=scheme.OutlineColor;border.Transparency=.55;border.Thickness=1;border.Parent=panel
+end
+function P.FloatingChild(child,scheme,panel)
+    if child:IsA("TextLabel")or child:IsA("TextButton")or child:IsA("TextBox")then
+        child.TextColor3=scheme.FontColor;child.FontFace=scheme.Font
+        if child:IsA("TextBox")then child.PlaceholderColor3=scheme.AccentColor end
+    end
+    if(child:IsA("Frame")or child:IsA("TextButton")or child:IsA("TextBox"))and child.BackgroundTransparency<1 then
+        child.BackgroundColor3=scheme.MainColor;child.BackgroundTransparency=P.RowTransparency;child.BorderSizePixel=0;corner(child,14)
+    end
+    if child:IsA("UICorner")then child.CornerRadius=UDim.new(0,child.Parent==panel and P.Radius or 14)end
+end
+return P
+
+]========]
 sources.TheWorstUIV2 = [========[
 --[[
 MIT License
@@ -276,6 +448,7 @@ end
             end
         end
 
+        if UI.StyleElement then UI.StyleElement(Element)end
         return Element
     end
 
@@ -1424,7 +1597,7 @@ end
 
                                 SectionsHolderParent.CanvasSize = UDim2.new(0, AbsoluteContentSize.X, 0, 0)
 
-                                local CurrentTabIndex = math.floor((CanvasPositionSave.X + SectionsHolderParent.AbsoluteSize.X / 2) / SectionsHolderParent.AbsoluteSize.X) + 1
+                                local CurrentTabIndex = math.floor((CanvasPositionSave.X + SectionsHolderParent.AbsoluteSize.X / 2) / math.max(1, SectionsHolderParent.AbsoluteSize.X)) + 1
                                 CurrentTabIndex = math.clamp(CurrentTabIndex, 1, #Window.Tabs)
 
                                 for _, HolderFrame in SectionsHolderParent:GetChildren() do
@@ -1685,7 +1858,7 @@ end
                                                 local Width = TabButtonsHolder.ButtonsListFrame.AbsoluteSize.X - (ButtonsCount - 1) * 5
                                                 for _, TabButton in Window.TabButtons do
                                                     TabButton.Visible = true
-                                                    TabButton.Size = UDim2.new(0, math.max(90, Width / ButtonsCount), 1, 0)
+                                                    TabButton.Size = UDim2.new(0, math.max(110, Width / ButtonsCount), 1, 0)
                                                 end
                                             end
 
@@ -1815,15 +1988,15 @@ end
                                     local MouseOnTab = false
                                     AddConnection(TabButton.MouseButton1Up, function()
                                         task.spawn(function()
-                                            PlayTween(TabButton.NameText, 0.1, { TextSize = 15 })
+                                            PlayTween(TabButton.NameText, 0.1, { TextSize = 14 })
                                             task.wait(0.2)
-                                            PlayTween(TabButton.NameText, 0.1, { TextSize = MouseOnTab and 18 or 16 })
+                                            PlayTween(TabButton.NameText, 0.1, { TextSize = 14 })
                                         end)
                                         ChangeTab(TabConfig.Name, TabButton)
                                     end)
 
-                                    AddConnection(TabButton.MouseEnter, function() MouseOnTab = true; TabButton.NameText.TextSize = 18 end)
-                                    AddConnection(TabButton.MouseLeave, function() MouseOnTab = false; TabButton.NameText.TextSize = 16 end)
+                                    AddConnection(TabButton.MouseEnter, function() MouseOnTab = true; TabButton.NameText.TextSize = 14 end)
+                                    AddConnection(TabButton.MouseLeave, function() MouseOnTab = false; TabButton.NameText.TextSize = 14 end)
 
                                     AddConnection(SectionsHolder.FakeDescendantClipperFrameLeft.LeftHolderFrame.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateSizes)
                                     AddConnection(SectionsHolder.FakeDescendantClipperFrameRight.RightHolderFrame.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateSizes)
@@ -2069,7 +2242,7 @@ end
                                                     if TabButton.Name == "UIListLayout" then continue end
 
                                                     TabButton.Visible = true
-                                                    TabButton.Size = UDim2.new(0, math.max(90, Width / ButtonsCount), 1, 0)
+                                                    TabButton.Size = UDim2.new(0, math.max(110, Width / ButtonsCount), 1, 0)
                                                 end
                                             end
 
@@ -10142,6 +10315,15 @@ sources.Library = [========[
 local requireModule=...
 local Native=requireModule("TheWorstUIV2")
 local Icons=requireModule("Icons")
+local Presentation=requireModule("Presentation")
+Native.StyleElement=Presentation.NativeElement
+do
+    local colors=Presentation.Theme();local theme=Native.Themes[Native.CurrentTheme]
+    theme.TaskbarColor=colors.BackgroundColor;theme.WindowsColor=colors.BackgroundColor;theme.ElementsColor=colors.MainColor
+    theme.TaskbarTransparency=Presentation.Transparency;theme.WindowsTransparency=Presentation.Transparency
+    theme.TextColor=colors.FontColor;theme.LittleTextColor=colors.AccentColor;theme.LittleTextTransparency=.12
+    theme.Font=Enum.Font.Gotham;theme.LittleFont=Enum.Font.Gotham;theme.CornerRadius=Presentation.Radius
+end
 local UIS=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
@@ -10149,13 +10331,15 @@ local Players=game:GetService("Players")
 local originalMouseBehavior,originalMouseIcon=UIS.MouseBehavior,UIS.MouseIconEnabled
 local modifierNames={LAlt="LeftAlt",RAlt="RightAlt",LCtrl="LeftControl",RCtrl="RightControl",LShift="LeftShift",RShift="RightShift",LMeta="LeftMeta",RMeta="RightMeta"}
 local Library={Options={},Toggles={},Labels={},Tabs={},Registry={},DraggableElements={},DependencyBoxes={},
-    Connections={},UnloadSignals={},Controls={},KeyPickers={},CornerRadius=30,DPIScale=1,Toggled=true,Unloaded=false,
+    Connections={},UnloadSignals={},Controls={},KeyPickers={},CornerRadius=Presentation.Radius,DPIScale=1,Toggled=true,Unloaded=false,
+    ManualConfigLoad=true,FloatingPanels=setmetatable({},{__mode="k"}),
     IsMobile=UIS.TouchEnabled and not UIS.KeyboardEnabled,ScreenGui=Native.ScreenGui,
-    Scheme={BackgroundColor=Color3.fromRGB(20,20,20),MainColor=Color3.fromRGB(28,28,28),
-        AccentColor=Color3.fromRGB(240,240,240),OutlineColor=Color3.fromRGB(52,52,52),FontColor=Color3.fromRGB(240,240,240),
+    Scheme={BackgroundColor=Color3.fromRGB(255,255,255),MainColor=Color3.fromRGB(244,247,251),
+        AccentColor=Color3.fromRGB(77,91,113),OutlineColor=Color3.fromRGB(183,194,210),FontColor=Color3.fromRGB(23,28,36),
         RedColor=Color3.fromRGB(240,75,75),DestructiveColor=Color3.fromRGB(240,75,75),DarkColor=Color3.fromRGB(16,16,16),
-        WhiteColor=Color3.new(1,1,1),Font=Font.fromEnum(Enum.Font.Code),BackgroundImage=""}}
+        WhiteColor=Color3.new(1,1,1),Font=Font.fromEnum(Enum.Font.Gotham),BackgroundImage=""}}
 local Control,Container,Tab,Window={},{},{},{}
+Native.StyleElement=function(object)Presentation.NativeElement(object,Library.Scheme)end
 Control.__index=Control;Container.__index=Container;Tab.__index=Tab;Window.__index=Window
 local function plain(value)return(tostring(value or ""):gsub("<[^>]*>",""))end
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
@@ -10180,6 +10364,8 @@ function Library:GiveSignal(connection)
     return connection
 end
 function Library:OnUnload(fn)self.UnloadSignals[#self.UnloadSignals+1]=fn end
+function Library:BeginStartup()self.Starting=true end
+function Library:FinishStartup()self.Starting=false end
 function Library:SafeCallback(fn,...)
     if type(fn)~="function"then return end
     local ok,result=pcall(fn,...)
@@ -10206,17 +10392,27 @@ end
 function Library:SetIconModule()end -- Icons are already bundled.
 function Library:UpdateColorsUsingRegistry()
     if self.Taskbar then
-        self.Taskbar:SetWindowsColor(self.Scheme.BackgroundColor,.16,"Main")
-        self.Taskbar:SetWindowsColor(self.Scheme.AccentColor,.25,"Second")
-        self.Taskbar:SetWindowsColor(self.Scheme.MainColor,.2,"Third")
-        self.Taskbar:SetWindowsColor(self.Scheme.MainColor,.6,"Sections")
+        self.Taskbar:SetWindowsColor(self.Scheme.BackgroundColor,Presentation.Transparency,"Main")
+        self.Taskbar:SetWindowsColor(self.Scheme.AccentColor,.12,"Second")
+        self.Taskbar:SetWindowsColor(self.Scheme.MainColor,.4,"Third")
+        self.Taskbar:SetWindowsColor(self.Scheme.MainColor,1,"Sections")
         self.Taskbar:SetFont({Color=self.Scheme.FontColor,Transparency=0,Type="Main"})
-        self.Taskbar:SetFont({Color=self.Scheme.FontColor,Transparency=.35,Type="Little"})
+        self.Taskbar:SetFont({Color=self.Scheme.AccentColor,Transparency=.1,Type="Little"})
     end
     for object,props in pairs(self.Registry)do
         if object.Parent then for key,value in pairs(props)do
             pcall(function()object[key]=type(value)=="function"and value()or self.Scheme[value]or value end)
         end else self.Registry[object]=nil end
+    end
+    if self.Window then Presentation.Window(self.Window,self.Scheme)end
+    for panel in pairs(self.FloatingPanels)do if panel.Parent then self:StyleFloatingPanel(panel)end end
+end
+function Library:StyleFloatingPanel(panel)
+    Presentation.Floating(panel,self.Scheme)
+    for _,child in ipairs(panel:GetDescendants())do Presentation.FloatingChild(child,self.Scheme,panel)end
+    if not self.FloatingPanels[panel]then
+        self.FloatingPanels[panel]=true
+        self:GiveSignal(panel.DescendantAdded:Connect(function(child)Presentation.FloatingChild(child,self.Scheme,panel)end))
     end
 end
 function Library:SetFont(font)
@@ -10267,9 +10463,9 @@ function Library:MakeDraggable(frame,handle)
 end
 function Library:AddDraggableLabel(value)
     local label=new("TextLabel",self.ScreenGui,{Name="AstralHUD",Text=plain(value),BackgroundColor3=self.Scheme.BackgroundColor,
-        BackgroundTransparency=.16,Font=Enum.Font.Code,TextSize=13,TextColor3=self.Scheme.FontColor,TextWrapped=true,
+        BackgroundTransparency=Presentation.Transparency,Font=Enum.Font.Gotham,TextSize=13,TextColor3=self.Scheme.FontColor,TextWrapped=true,
         Size=UDim2.fromOffset(360,32),Position=UDim2.fromOffset(20,20),ZIndex=300,BorderSizePixel=0})
-    corner(label,12);self:MakeDraggable(label);table.insert(self.DraggableElements,label)
+    corner(label,Presentation.Radius);self:MakeDraggable(label);table.insert(self.DraggableElements,label)
     local widget={Label=label}
     function widget:SetText(v)label.Text=plain(v)end
     function widget:SetVisible(v)label.Visible=v end
@@ -10281,9 +10477,10 @@ end
 function Library:AddDraggableButton(info,fn)
     if type(info)=="string"then info={Text=info,Func=fn}end
     local button=new("TextButton",self.ScreenGui,{Name="AstralMobileButton",Text=plain(info.Text),Font=Enum.Font.Code,TextSize=14,
-        TextColor3=self.Scheme.FontColor,BackgroundColor3=self.Scheme.MainColor,BackgroundTransparency=.2,
+        TextColor3=self.Scheme.FontColor,BackgroundColor3=self.Scheme.MainColor,BackgroundTransparency=Presentation.Transparency,
         Size=UDim2.fromOffset(130,38),Position=UDim2.fromOffset(20,160),ZIndex=300,BorderSizePixel=0})
-    corner(button,16);self:MakeDraggable(button);table.insert(self.DraggableElements,button)
+    corner(button,Presentation.Radius);self:MakeDraggable(button);table.insert(self.DraggableElements,button)
+    self:StyleFloatingPanel(button)
     local result={Button=button}
     self:GiveSignal(button.MouseButton1Click:Connect(function()self:SafeCallback(info.Func or info.Callback,result)end))
     function result:Destroy()button:Destroy()end
@@ -10300,7 +10497,7 @@ function Control:_RawSet(value,transparency)
     if not ok then error("Astral UI "..tostring(self.Id)..": "..tostring(err),0)end
 end
 function Control:RunChanged()
-    if self.Initializing or self.Destroyed or not enabled(self)then return end
+    if Library.Starting or self.Initializing or self.Destroyed or not enabled(self)then return end
     Library:SafeCallback(self.Callback,self.Value,self.Transparency)
     Library:SafeCallback(self.Changed,self.Value,self.Transparency)
 end
@@ -10333,7 +10530,9 @@ end
 function Control:SetValue(value,alpha)
     if self.Destroyed then return self end
     if self.Type=="Toggle"then
-        self.Value=value==true;self:_RawSet(self.Value)
+        value=value==true
+        if value==self.Value then return self end
+        self.Value=value;self:_RawSet(self.Value)
         for _,picker in ipairs(self.Addons)do if picker.SyncToggleState then picker.Toggled=self.Value;picker:Update()end end
         Library:UpdateDependencyBoxes();self:RunChanged()
     elseif self.Type=="Slider"then
@@ -10442,7 +10641,7 @@ function Control:Update()
     if self.MenuLabel then self.MenuLabel.Text=string.format("[%s] %s (%s)",prefix..self.Value,self.Text,self.Mode);self.MenuLabel.Visible=self.MenuVisible~=false end
 end
 function Control:DoClick()
-    if not enabled(self)then return end
+    if Library.Starting or not enabled(self)then return end
     if self.SyncToggleState and self.ParentControl and self.ParentControl.Type=="Toggle"then self.ParentControl:SetValue(self.Toggled)end
     Library:SafeCallback(self.Callback,self.Toggled);Library:SafeCallback(self.Clicked,self.Toggled)
     if self.ParentControl and self.ParentControl.Type=="Button"then self.ParentControl:Press()end
@@ -10450,7 +10649,7 @@ function Control:DoClick()
     if self.Mode=="Press"then self.Toggled=false end
     self:Update()
 end
-function Control:Press()if enabled(self)then Library:SafeCallback(self.Func or self.Callback)end end
+function Control:Press()if not Library.Starting and enabled(self)then Library:SafeCallback(self.Func or self.Callback)end end
 function Control:SetHeight(value)self.Height=value;if self.Holder then self.Holder.Size=UDim2.new(1,0,0,value)end end
 function Control:SetInstance(value)if self.Instance then self.Instance.Parent=nil end;self.Instance=value;value.Parent=self.Holder end
 Control.SetObject=Control.SetInstance
@@ -10466,7 +10665,7 @@ function Container:_Control(kind,id,info,parentControl)
     info=info or{}
     local c=setmetatable({Type=kind,Id=id,Info=info,Text=plain(info.Text or info.Title or id),Default=info.Default,
         Value=info.Default,Visible=info.Visible~=false,Disabled=info.Disabled==true,Callback=info.Callback,
-        ParentContainer=self,ParentControl=parentControl,Addons={},DisabledValues={},Initializing=true},Control)
+        ParentContainer=self,ParentControl=parentControl,Addons={},DisabledValues={},Initializing=true,Library=Library},Control)
     self.Elements[#self.Elements+1]=c;Library.Controls[#Library.Controls+1]=c
     if id then(kind=="Toggle"and Library.Toggles or Library.Options)[id]=c end
     if parentControl then parentControl.Addons[#parentControl.Addons+1]=c end
@@ -10476,6 +10675,7 @@ function Container:_Control(kind,id,info,parentControl)
     local cfg={Name=c.Text,Flag=id,Default=info.Default}
     cfg.Callback=function(value,alpha)
         if initializing or c._Syncing or c.Destroyed or Library.Unloaded then return end
+        if Library.Starting then return c:_SyncCurrent()end
         if not enabled(c)then return c:_SyncCurrent()end
         if kind=="Dropdown"then
             if c.Multi then local selected={};for _,label in ipairs(type(value)=="table"and value or{})do local actual=c.LabelToValue[label];if actual then selected[actual]=true end end;value=selected
@@ -10532,6 +10732,10 @@ function Container:_Control(kind,id,info,parentControl)
     end
     if info.Tooltip and c.Holder then Library:AddTooltip(info.Tooltip,info.DisabledTooltip,c.Holder)end
     initializing=false;c.Initializing=false;c:SetDisabled(c.Disabled);c:_Visibility()
+    Presentation.Control(c)
+    if c.TextLabel then Library:GiveSignal(c.TextLabel:GetPropertyChangedSignal("Size"):Connect(function()Presentation.Control(c)end))end
+    local field=c.Holder and c.Holder:FindFirstChild(kind=="Dropdown"and"SelectedItemBox"or"Value")
+    if field then Library:GiveSignal(field:GetPropertyChangedSignal("Size"):Connect(function()Presentation.Control(c)end))end
     return c
 end
 function Control:_SyncCurrent()
@@ -10560,6 +10764,7 @@ function Container:AddButton(info,callback)
     c.Raw=self.Raw:CreateButton({Name=c.Text,DoubleTap=info.DoubleClick==true,Callback=function()c:Press()end})
     c.Holder=c.Raw.Frame;c.TextLabel=frameLabel(c.Raw)
     self.Elements[#self.Elements+1]=c;Library.Controls[#Library.Controls+1]=c;c:SetDisabled(c.Disabled);c:_Visibility()
+    Presentation.Control(c)
     if info.Tooltip then Library:AddTooltip(info.Tooltip,info.DisabledTooltip,c.Holder)end
     return c
 end
@@ -10616,6 +10821,8 @@ end
 function Tab:_Group(name,side,groupName)
     name=plain(name);local raw=self.Raw:CreateSection({Name=name,Side=side or"Left",Group=groupName or(name.."_"..tostring(#self.Groups+1))})
     local group=setmetatable({Raw=raw,Frame=raw.Frame,Container=raw.Container,Name=name,Tab=self,Side=side or"Left",Elements={},Visible=true,Collapsed=false,PopOutEnabled=false},Container)
+    Presentation.Section(group)
+    Library:GiveSignal(group.Frame:GetPropertyChangedSignal("Size"):Connect(function()Presentation.Section(group)end))
     if not groupName and raw.Frame then
         local title=raw.Frame:FindFirstChild("ButtonsHolder")
         title=title and title:FindFirstChild("SectionText")
@@ -10647,9 +10854,12 @@ function Window:AddTab(name,icon,description)
     if asset and raw.Button and raw.Button:FindFirstChild("Icon")then
         raw.Button.Icon.ImageRectOffset=asset.ImageRectOffset or Vector2.zero;raw.Button.Icon.ImageRectSize=asset.ImageRectSize or Vector2.zero
     end
-    local tab=setmetatable({Name=label,Raw=raw,Groupboxes={},Tabboxes={},Groups={},Visible=true,Description=description},Tab)
+    local tab=setmetatable({Name=label,Icon=icon,Library=Library,Raw=raw,Groupboxes={},Tabboxes={},Groups={},Visible=true,Description=description},Tab)
     self.Tabs[label]=tab;Library.Tabs[name]=tab
     if not self.SelectedTab then self.SelectedTab=tab end
+    Presentation.Window(self,Library.Scheme)
+    local strip=self.MainFrame:FindFirstChild("TabButtonsHolder")
+    if strip and not self.DragInstalled then Library:MakeDraggable(self.MainFrame,strip);self.DragInstalled=true end
     if label=="Home"and next(self.FooterActions)then
         local tools=tab:AddLeftGroupbox("Tools")
         for _,item in ipairs(self.FooterActions)do tools:AddButton(item)end
@@ -10661,6 +10871,7 @@ function Window:AddFooterAction(name,callback)
 end
 function Window:SetCornerRadius(value)
     Library.CornerRadius=math.clamp(tonumber(value)or 30,0,40)
+    Presentation.Radius=Library.CornerRadius
     Native.Themes[Native.CurrentTheme].CornerRadius=Library.CornerRadius
     for _,node in ipairs(Library.ScreenGui:GetDescendants())do if node:IsA("UICorner")then node.CornerRadius=UDim.new(0,Library.CornerRadius)end end
 end
@@ -10681,6 +10892,7 @@ function Window:AddDialog(id,info)
         local b=new("TextButton",panel,{Text=button.Title,Size=UDim2.new(1/#buttons,-20,0,36),Position=UDim2.new((i-1)/#buttons,10,1,-50),BackgroundColor3=Library.Scheme.MainColor,TextColor3=Library.Scheme.FontColor,Font=Enum.Font.Code,TextSize=15,ZIndex=1502,BorderSizePixel=0});corner(b,16)
         Library:GiveSignal(b.MouseButton1Click:Connect(function()result:Destroy();Library:SafeCallback(button.Callback)end))
     end
+    Library:StyleFloatingPanel(panel)
     self.Dialogs[id]=result;return result
 end
 function Library:CreateWindow(info)
@@ -10690,14 +10902,18 @@ function Library:CreateWindow(info)
     local viewport=workspace.CurrentCamera.ViewportSize
     raw.OldSize=UDim2.fromOffset(math.min(1040,viewport.X-24),math.min(720,viewport.Y-110))
     raw.OldPosition=UDim2.new(.5,-raw.OldSize.X.Offset/2,.5,-raw.OldSize.Y.Offset/2-24)
+    raw.Frame.Size=raw.OldSize;raw.Frame.Position=raw.OldPosition
     self.Window=setmetatable({Raw=raw,MainFrame=raw.Frame,Tabs={},FooterActions={},Dialogs={},Title=plain(info.Title)},Window)
     local toggle=raw.Toggle
     raw.Toggle=function(window,open)self.Toggled=open==true;return toggle(window,open)end
     self.Scale=new("UIScale",raw.Frame,{Scale=1})
+    Presentation.Window(self.Window,self.Scheme)
+    self:GiveSignal(raw.Frame:GetPropertyChangedSignal("Size"):Connect(function()Presentation.Window(self.Window,self.Scheme)end))
     self.KeybindFrame=new("Frame",self.ScreenGui,{Name="AstralKeybinds",Size=UDim2.fromOffset(260,360),Position=UDim2.fromOffset(12,180),Visible=false,BackgroundColor3=self.Scheme.BackgroundColor,BackgroundTransparency=.16,BorderSizePixel=0,ZIndex=250});corner(self.KeybindFrame)
     local title=text(self.KeybindFrame,"Keybinds");title.Size=UDim2.new(1,-20,0,35);self:MakeDraggable(self.KeybindFrame,title)
     self.KeybindContainer=new("ScrollingFrame",self.KeybindFrame,{Size=UDim2.new(1,-16,1,-45),Position=UDim2.fromOffset(8,38),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=2,BorderSizePixel=0})
     new("UIListLayout",self.KeybindContainer,{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3)})
+    self:StyleFloatingPanel(self.KeybindFrame)
     self.Taskbar:Init();self:UpdateColorsUsingRegistry()
     task.defer(function()if not self.Unloaded and info.AutoShow~=false then raw:Toggle(true)end end)
     return self.Window
@@ -10732,7 +10948,7 @@ function Library:AddTooltip(normal,disabled,holder)
         if self.Tooltip then self.Tooltip:Destroy()end
         local point=UIS:GetMouseLocation()
         self.Tooltip=new("TextLabel",self.ScreenGui,{Name="AstralTooltip",Text=plain(normal or disabled),Font=Enum.Font.Code,TextSize=13,TextWrapped=true,
-            TextColor3=self.Scheme.FontColor,BackgroundColor3=self.Scheme.MainColor,BackgroundTransparency=.1,Size=UDim2.fromOffset(340,80),Position=UDim2.fromOffset(point.X+12,point.Y+16),ZIndex=2000,BorderSizePixel=0});corner(self.Tooltip,14)
+            TextColor3=self.Scheme.FontColor,BackgroundColor3=self.Scheme.MainColor,BackgroundTransparency=Presentation.Transparency,Size=UDim2.fromOffset(340,80),Position=UDim2.fromOffset(point.X+12,point.Y+16),ZIndex=2000,BorderSizePixel=0});corner(self.Tooltip,Presentation.Radius)
     end))
     self:GiveSignal(holder.MouseLeave:Connect(function()if self.Tooltip then self.Tooltip:Destroy();self.Tooltip=nil end end))
 end
@@ -10750,8 +10966,13 @@ local function modifiersHeld(picker)
     end
     return true
 end
+Library:GiveSignal(Library.ScreenGui.ChildAdded:Connect(function(child)
+    if child:IsA("Frame")and child.Name~="MainFakeFrame"then
+        task.defer(function()if not Library.Unloaded and child.Parent==Library.ScreenGui then Library:StyleFloatingPanel(child)end end)
+    end
+end))
 Library:GiveSignal(UIS.InputBegan:Connect(function(input,processed)
-    if Library.Unloaded or processed or UIS:GetFocusedTextBox()then return end
+    if Library.Starting or Library.Unloaded or processed or UIS:GetFocusedTextBox()then return end
     for _,picker in ipairs(Library.KeyPickers)do if picker.Raw.IsBinding and picker.Raw.IsBinding()then return end end
     for _,picker in ipairs(Library.KeyPickers)do
         if(picker.Value==input.KeyCode.Name or picker.Value==input.UserInputType.Name)and modifiersHeld(picker)and enabled(picker)then
@@ -12636,6 +12857,12 @@ function SaveManager:SaveAutoloadConfig(ConfigName: string): (boolean, string?)
 end
 
 function SaveManager:LoadAutoloadConfig()
+    -- Startup only identifies the old profile. Applying actions requires Load.
+    if SaveManager.Library and SaveManager.Library.ManualConfigLoad then
+        local name,success=SaveManager:GetAutoloadConfig()
+        if success then SaveManager.AutoloadConfig=name end
+        return
+    end
     local ConfigName, Success, FetchErrorMessage = SaveManager:GetAutoloadConfig()
     if not Success or FetchErrorMessage then
         if FetchErrorMessage ~= "Autoload config is not set" then
@@ -12734,7 +12961,7 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
     local function RefreshAutoloadConfigLabel()
         local AutoloadConfigName, _Success, _ErrorMessage = SaveManager:GetAutoloadConfig()
 
-        AutoloadConfigLabel:SetText(string.format("Current autoload config: %s", AutoloadConfigName))
+        AutoloadConfigLabel:SetText(SaveManager.Library.ManualConfigLoad and "Startup actions disabled. Load configs manually."or string.format("Current autoload config: %s", AutoloadConfigName))
         if ConfigList then RefreshList() end
     end
 
@@ -12909,6 +13136,7 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
 
     ConfigurationBox:AddButton({
         Text = "Set as autoload",
+        Visible = not SaveManager.Library.ManualConfigLoad,
         DoubleClick = false,
 
         Func = function()
@@ -12930,7 +13158,7 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
     })
 
     ConfigurationBox:AddButton({
-        Text = "Reset autoload",
+        Text = SaveManager.Library.ManualConfigLoad and "Clear old startup config"or "Reset autoload",
         DoubleClick = false,
 
         Func = function()
@@ -13179,11 +13407,11 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.69 | FTAP")
+                                warn("Astral v4.70 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
-                            pcall(function() workspace.FallenPartsDestroyHeight = fallenPartsDestroyHeight end)
+                            -- Keep world/character physics unchanged until a function is enabled.
 
                         registerCleanup(function()
                             flag11 = true
@@ -13192,6 +13420,7 @@ do
                             pcall(function() workspace.FallenPartsDestroyHeight = app.OriginalFallenHeight end)
                         end)
                         lib = requireModule("Library")
+                        lib:BeginStartup()
                         UIStyle.ApplyBase(lib)
                             requireModule("FunIcon").Install(lib)
                         lib2 = requireModule("ThemeManager")
@@ -13394,15 +13623,15 @@ do
 							AntiPaint = false,
 							AntiBlobman = false,
 							AntiBlobmanAura = false,
-							AutoAntiLag = true,
+							AutoAntiLag = false,
 							AntiInputLag = false,
 							AntiSticky = false,
 							AntiShurikenLag = false,
 							AntiBanana = false,
 							AntiSnowball = false,
 							AntiVoid = false,
-							AutoReset = true,
-							AutoLeave = true,
+							AutoReset = false,
+							AutoLeave = false,
 							LoopTP = false,
 							CounterAttack = false,
 							DestroyVoid = false,
@@ -30358,14 +30587,14 @@ Escape Timer: %*]]
 
 		v19 = lib:CreateWindow({
 			Title = "<b>astral</b>",
-			Footer = ("<b>astral %* | FTAP</b>"):format("v4.69"),
+			Footer = ("<b>astral %* | FTAP</b>"):format("v4.70"),
 			ToggleKeybind = Enum.KeyCode.RightShift,
 			Center = true,
 			AutoShow = true,
 			EnableSidebarResize = true,
 			Icon = UIStyle.BrandIcon,
 			IconSize = UDim2.fromOffset(32, 32),
-			CornerRadius = 30,
+			CornerRadius = 24,
             BackgroundImage = "",
             SidebarCompactWidth = 52,
 			Compact = true,
@@ -30437,7 +30666,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.69",true)
+            box:AddLabel("Astral v4.70",true)
         end
 
         do
@@ -30612,7 +30841,7 @@ Escape Timer: %*]]
                 Callback=function(value) tbl12.CharacterTools:SetLocked(value) end,
             }):AddKeyPicker("AstralLockPositionKey",{Text="Lock Position",Mode="Toggle",NoUI=false,SyncToggleState=true})
             Character:AddToggle("AstralAntiAFK",{
-                Text="Anti AFK",Default=true,
+                Text="Anti AFK",Default=false,
                 Callback=function(value) tbl12.CharacterTools:SetAntiAFK(value) end,
             })
             Character:AddButton({
@@ -31633,7 +31862,7 @@ Escape Timer: %*]]
 
 		Antis:AddToggle("AutoAntiLag", {
 			Text = "Auto Anti Lag",
-			Default = true,
+			Default = false,
 			Tooltip = "Enables anti-lag for you if too low fps",
 			Callback = function(autoAntiLag)
 				tbl8.AutoAntiLag = autoAntiLag
@@ -31674,7 +31903,7 @@ Escape Timer: %*]]
 
 		Antis:AddToggle("AutoReset", {
 			Text = "Auto Reset",
-			Default = true,
+			Default = false,
 			Tooltip = "Checks for kick frame and resets when needed",
 			Callback = function(autoReset)
 				tbl8.AutoReset = autoReset
@@ -31724,7 +31953,7 @@ Escape Timer: %*]]
 
 		Miscellaneous:AddToggle("DisblVoid", {
 			Text = "Disable Void",
-			Default = true,
+			Default = false,
 			Tooltip = "Makes you not get killed in void",
 			DisabledTooltip = "This function is currently being managed by another function.",
 			Callback = function(destroyVoid)
@@ -31733,7 +31962,7 @@ Escape Timer: %*]]
 				if destroyVoid then
 					workspace.FallenPartsDestroyHeight = (0/0)
 				else
-					workspace.FallenPartsDestroyHeight = -100
+					workspace.FallenPartsDestroyHeight = app.OriginalFallenHeight
 				end
 			end,
 		})
@@ -31913,7 +32142,7 @@ Escape Timer: %*]]
 
 		Config:AddToggle("AutoLeave", {
 			Text = "Auto Leave",
-			Default = true,
+			Default = false,
 			Tooltip = "Leaves after four detected kick flags instead of continuing to reset",
 			Callback = function(autoLeave)
 				tbl8.AutoLeave = autoLeave
@@ -35975,6 +36204,7 @@ Escape Timer: %*]]
 
 	do
 		local Menu = tbl15.Settings:AddLeftGroupbox("Menu", "wrench")
+        Menu:AddButton({Text="Hide Menu",Func=function()lib:Toggle(false)end})
         Menu:AddButton({Text = "Unload astral", Func = function() lib:Unload() end})
 		Menu:AddLabel("Menu Keybind"):AddKeyPicker("menukey", { Text = "Menu Keybind", Mode = "Toggle", Default = "RightShift", NoUI = false })
 		lib.ToggleKeybind = options.menukey
@@ -36437,7 +36667,7 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 			local v22 = fn22(arg.WatermarkPosition)
 			fn25(mainFrame, v20)
 			fn24(mainFrame, arg.ScreenPosition, v21)
-			fn24(Watermark and Watermark.Label, arg.WatermarkScreenPosition, v22)
+			if Watermark and not Watermark.Centered then fn24(Watermark.Label, arg.WatermarkScreenPosition, v22)end
 			local n36
 
 			if typeof(arg.SidebarScale) == "number" then
@@ -36856,6 +37086,7 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 		end)
 	end
 
+    lib:FinishStartup()
 	fn18("Script loaded in " .. math.round((tick() - app.LoadTime) * 100) / 100 .. " seconds", "astral", 71450094482101)
 	app.LoadTime = nil
 
@@ -36894,9 +37125,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.69: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.70: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.69 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.70 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -37070,12 +37301,12 @@ Style.Icons = {
 
 function Style.Theme()
     return {
-        BackgroundColor = Color3.fromRGB(20, 20, 20),
-        MainColor = Color3.fromRGB(28, 28, 28),
-        AccentColor = Color3.fromRGB(240, 240, 240),
-        OutlineColor = Color3.fromRGB(52, 52, 52),
-        FontColor = Color3.fromRGB(240, 240, 240),
-        FontFace = "Code", BackgroundImage = "",
+        BackgroundColor = Color3.fromRGB(255, 255, 255),
+        MainColor = Color3.fromRGB(244, 247, 251),
+        AccentColor = Color3.fromRGB(77, 91, 113),
+        OutlineColor = Color3.fromRGB(183, 194, 210),
+        FontColor = Color3.fromRGB(23, 28, 36),
+        FontFace = "Gotham", BackgroundImage = "",
     }
 end
 
@@ -41183,7 +41414,7 @@ function Menu:BuildRows()
     for index,entry in ipairs(self.Entries)do
         local row=new("TextButton",self.List,{Name=entry.Name,LayoutOrder=index,Size=UDim2.new(1,-6,0,62),Text="",
             AutoButtonColor=true,BackgroundColor3=scheme.MainColor,BorderSizePixel=0})
-        new("UICorner",row,{CornerRadius=UDim.new(0,5)})
+        new("UICorner",row,{CornerRadius=UDim.new(0,14)})
         if entry.Image then
             new("ImageLabel",row,{Position=UDim2.fromOffset(4,4),Size=UDim2.fromOffset(68,54),BackgroundTransparency=1,Image=entry.Image,ScaleType=Enum.ScaleType.Fit})
         elseif not self:Preview(row,entry)then
@@ -41197,6 +41428,7 @@ function Menu:BuildRows()
         end)
         self.Rows[#self.Rows+1]=row
     end
+    if self.Frame and self.Context.Library.StyleFloatingPanel then self.Context.Library:StyleFloatingPanel(self.Frame)end
     self:Filter(self.Search.Text)
 end
 function Menu:Filter(text)
@@ -41209,7 +41441,7 @@ function Menu:BuildView()
     local width=math.max(180,math.min(320,viewport.X-24));local height=math.max(180,math.min(440,viewport.Y-24))
     self.Frame=new("Frame",library.ScreenGui,{Name="AstralTeleportMenu",Size=UDim2.fromOffset(width,height),Position=UDim2.fromOffset(20,110),
         BackgroundColor3=scheme.BackgroundColor,BorderSizePixel=0,Visible=false,ZIndex=20})
-    new("UICorner",self.Frame,{CornerRadius=UDim.new(0,8)});new("UIStroke",self.Frame,{Color=scheme.OutlineColor})
+    new("UICorner",self.Frame,{CornerRadius=UDim.new(0,24)});new("UIStroke",self.Frame,{Color=scheme.OutlineColor})
     local header=new("TextLabel",self.Frame,{Size=UDim2.new(1,-36,0,34),Position=UDim2.fromOffset(10,0),Text="Teleports",TextColor3=scheme.FontColor,
         TextSize=14,Font=Enum.Font.Code,BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left})
     local close=new("TextButton",self.Frame,{Size=UDim2.fromOffset(30,30),Position=UDim2.new(1,-32,0,2),Text="×",TextColor3=scheme.FontColor,
@@ -41219,6 +41451,7 @@ function Menu:BuildView()
     self.List=new("ScrollingFrame",self.Frame,{Position=UDim2.fromOffset(8,72),Size=UDim2.new(1,-16,1,-80),BackgroundTransparency=1,BorderSizePixel=0,
         CanvasSize=UDim2.fromOffset(0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=3,ScrollBarImageColor3=scheme.OutlineColor})
     new("UIListLayout",self.List,{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,5)})
+    if library.StyleFloatingPanel then library:StyleFloatingPanel(self.Frame)end
     library:MakeDraggable(self.Frame,header,true)
     table.insert(library.DraggableElements,self.Frame)
     self.Connections[#self.Connections+1]=close.MouseButton1Click:Connect(function()self:SetVisible(false)end)
@@ -84465,115 +84698,22 @@ return FeatureHost
 
 ]========]
 sources.Watermark = [========[
--- Read-only HUD telemetry. Currency comes from real value objects or the
--- existing FTAP coin display, never a guessed balance or a remote request.
+-- Centered white-glass HUD: player count, measured FPS and observed ping.
 local HUD={};HUD.__index=HUD
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
-local function child(parent,name)return parent and parent:FindFirstChild(name)end
-local function clean(text)
-    if type(text)~="string"then return nil end
-    text=text:gsub("<[^>]*>",""):gsub("^%s+",""):gsub("%s+$","")
-    if #text>32 or not text:find("%d")then return nil end
-    return text
-end
-function HUD.Currency(player)
-    for _,containerName in ipairs({"leaderstats","Stats","Data"})do
-        local folder=child(player,containerName)
-        for _,name in ipairs({"Coins","Money","Cash"})do
-            local value=child(folder,name)
-            if value and (value:IsA("IntValue")or value:IsA("NumberValue"))and finite(value.Value)then return HUD.Number(value.Value)end
-        end
-    end
-    local gui=child(player,"PlayerGui");local menu=child(gui,"MenuGui");local top=child(menu,"TopRight")
-    local frame=child(top,"CoinsFrame");local display=child(frame,"CoinsDisplay");local label=child(display,"Coins")
-    return label and clean(label.Text)or "—"
-end
-function HUD.Number(value)
-    if not finite(value)then return "—"end
-    local s=tostring(math.floor(value));local a=s:reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,","")
-    return a
-end
-function HUD.Time(seconds)
-    seconds=finite(seconds)and math.max(0,math.floor(seconds))or 0
-    if seconds>=3600 then return string.format("%d:%02d:%02d",math.floor(seconds/3600),math.floor(seconds/60)%60,seconds%60)end
-    return string.format("%02d:%02d",math.floor(seconds/60),seconds%60)
-end
-function HUD.Format(values,narrow)
-    local count=tostring(values.Players).."/"..(values.MaxPlayers or "?")
-    if narrow then return "astral  ·  Coins: "..values.Coins.."  ·  "..count.." players\n"..values.FPS.." fps  ·  "..values.Ping.." ms  ·  "..values.Session end
-    return "astral  |  Coins: "..values.Coins.."  |  "..count.." players  |  "..values.FPS.." fps  |  "..values.Ping.." ms  |  "..values.Session
-end
-function HUD.CoinImage(player)
-    local top=child(child(child(player,"PlayerGui"),"MenuGui"),"TopRight")
-    local frame=child(top,"CoinsFrame");if not frame then return end
-    local display=child(frame,"CoinsDisplay");local best,score=nil,-math.huge
-    local candidates=frame:GetDescendants();table.insert(candidates,1,frame)
-    for _,value in ipairs(candidates)do
-        if (value:IsA("ImageLabel")or value:IsA("ImageButton"))and value.Image~=""then
-            local name=value.Name:lower();local rank=0
-            if name:find("coin",1,true)then rank+=8 end
-            if name:find("icon",1,true)then rank+=4 end
-            if display and(value==display or value:IsDescendantOf(display))then rank+=3 end
-            if name=="coinsdisplay"then rank-=8 end -- the amount's backing panel is not the coin artwork
-            local hasGUI=false;for _,item in ipairs(value:GetChildren())do if item:IsA("GuiObject")then hasGUI=true;break end end
-            if not hasGUI then rank+=2 end
-            if name:find("background",1,true)or name:find("shadow",1,true)then rank-=20 end
-            if value==frame then rank-=10 end
-            if rank>score then best,score=value,rank end
-        end
-    end
-    return best
-end
-local function make(parent,class,properties)
-    local item=Instance.new(class);for key,value in pairs(properties)do item[key]=value end;item.Parent=parent;return item
-end
-function HUD:Build()
-    local label=self.Context.Widget.Label
-    self.OriginalText=label.Text;self.Context.Widget:SetText("")
-    local content=make(label,"Frame",{Name="AstralTelemetry",BackgroundTransparency=1,Size=UDim2.fromOffset(0,0),AutomaticSize=Enum.AutomaticSize.XY})
-    make(content,"UIListLayout",{FillDirection=Enum.FillDirection.Vertical,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,2)})
-    local row=make(content,"Frame",{BackgroundTransparency=1,Size=UDim2.fromOffset(0,0),AutomaticSize=Enum.AutomaticSize.XY,LayoutOrder=1})
-    make(row,"UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,VerticalAlignment=Enum.VerticalAlignment.Center,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,5)})
-    local function text(parent,order)return make(parent,"TextLabel",{BackgroundTransparency=1,Size=UDim2.fromOffset(0,0),AutomaticSize=Enum.AutomaticSize.XY,
-        FontFace=label.FontFace,TextSize=12,TextColor3=label.TextColor3,TextXAlignment=Enum.TextXAlignment.Left,RichText=false,Text="",LayoutOrder=order,ZIndex=label.ZIndex+1})end
-    self.Content=content;self.Prefix=text(row,1)
-    self.Coin=make(row,"ImageLabel",{Name="GameCoin",BackgroundTransparency=1,Size=UDim2.fromOffset(16,16),ScaleType=Enum.ScaleType.Fit,
-        ImageColor3=Color3.new(1,1,1),Image="",Visible=false,LayoutOrder=2,ZIndex=label.ZIndex+1})
-    self.Summary=text(row,3);self.Details=text(content,2)
-end
-function HUD:Render(values,narrow)
-    -- Snapshot the actual game's icon (including its atlas crop), before optional
-    -- cosmetic menu themes can replace it. No invented asset ID or glyph.
-    if not self.CoinCaptured then
-        local source=HUD.CoinImage(self.Context.Player)
-        if source then
-            for _,property in ipairs({"Image","ImageRectOffset","ImageRectSize","ImageColor3","ResampleMode"})do
-                local ok,value=pcall(function()return source[property]end);if ok and value~=nil then self.Coin[property]=value end
-            end
-            self.Coin.Visible=true;self.CoinCaptured=true
-        end
-    end
-    local color=self.Context.Widget.Label.TextColor3
-    self.Prefix.TextColor3=color;self.Summary.TextColor3=color;self.Details.TextColor3=color
-    self.Prefix.Text=self.CoinCaptured and "astral  |"or "astral  |  Coins:"
-    local currency=values.Coins.."  |  "..values.Players.."/"..(values.MaxPlayers or "?").." players"
-    local details=values.FPS.." fps  |  "..values.Ping.." ms  |  "..values.Session
-    self.Summary.Text=currency..(narrow and ""or "  |  "..details)
-    self.Details.Visible=narrow;self.Details.Text=narrow and details or ""
-    self.Values=values
+function HUD.Format(value)
+    return string.format("astral  ·  %s/%s players  ·  %s fps  ·  %s ms",value.Players,value.MaxPlayers or"?",value.FPS,value.Ping)
 end
 function HUD.Install(context)
-    local self=setmetatable({Context=context,Frames=0,FrameTime=0,Elapsed=1,Started=context.Clock(),FPS="—",Connections={}},HUD)
-    self.InitialElapsed=finite(context.SessionSeconds)and math.max(0,context.SessionSeconds)or 0
-    if context.Elapsed then
-        local ok,value=pcall(context.Elapsed)
-        if ok and finite(value)then self.InitialElapsed=math.max(0,value)end
-    end
+    local self=setmetatable({Context=context,Connections={},Frames=0,FrameTime=0,Elapsed=1,FPS="—"},HUD)
     local label=context.Widget.Label
-    label.TextSize=12;label.BackgroundTransparency=.12;label.BorderSizePixel=0
-    self:Build()
+    self.OriginalText=label.Text;context.Widget.Centered=true
+    label.AnchorPoint=Vector2.new(.5,0);label.Position=UDim2.new(.5,0,0,12);label.TextWrapped=false
+    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.42
+    local round=label:FindFirstChildOfClass("UICorner")or Instance.new("UICorner")
+    round.CornerRadius=UDim.new(1,0);round.Parent=label
     self.Connections[#self.Connections+1]=context.RunService.RenderStepped:Connect(function(dt)
-        if dt<=0 or dt>.5 then return end
+        if not finite(dt)or dt<=0 or dt>.5 then return end
         self.Frames+=1;self.FrameTime+=dt
         if self.FrameTime>=.5 then self.FPS=tostring(math.floor(self.Frames/self.FrameTime+.5));self.Frames=0;self.FrameTime=0 end
     end)
@@ -84584,19 +84724,21 @@ function HUD.Install(context)
 end
 function HUD:Update()
     if self.Closed then return end
-    local context=self.Context
-    if not context.Widget.Label.Parent then self:Dispose();return end
-    local max=context.Players.MaxPlayers;local ping="—"
-    local ok,value=pcall(function()return context.Stats.Network.ServerStatsItem["Data Ping"]:GetValue()end)
+    local ctx=self.Context;local label=ctx.Widget.Label
+    if not label.Parent then self:Dispose();return end
+    local ping="—";local ok,value=pcall(function()return ctx.Stats.Network.ServerStatsItem["Data Ping"]:GetValue()end)
     if ok and finite(value)and value>=0 then ping=tostring(math.floor(value+.5))end
-    local camera=context.Workspace.CurrentCamera;local width=camera and camera.ViewportSize.X or 1024
-    local elapsed=self.InitialElapsed+math.max(0,context.Clock()-self.Started)
-    self:Render({Coins=HUD.Currency(context.Player),Players=#context.Players:GetPlayers(),MaxPlayers=finite(max)and math.floor(max)or nil,
-        FPS=self.FPS,Ping=ping,Session=HUD.Time(elapsed)},width<760)
+    local max=ctx.Players.MaxPlayers
+    self.Values={Players=#ctx.Players:GetPlayers(),MaxPlayers=finite(max)and math.floor(max)or nil,FPS=self.FPS,Ping=ping}
+    local content=HUD.Format(self.Values);ctx.Widget:SetText(content)
+    local camera=ctx.Workspace.CurrentCamera;local viewport=camera and camera.ViewportSize.X or 1024
+    local bounds=game:GetService("TextService"):GetTextSize(content,13,Enum.Font.Gotham,Vector2.new(10000,40))
+    label.Size=UDim2.fromOffset(math.min(math.max(bounds.X+32,260),math.max(160,viewport-24)),34)
+    label.AnchorPoint=Vector2.new(.5,0);label.Position=UDim2.new(.5,0,0,12)
 end
 function HUD:Dispose()
-    if self.Closed then return end;self.Closed=true;for _,c in ipairs(self.Connections)do c:Disconnect()end
-    if self.Content then self.Content:Destroy()end
+    if self.Closed then return end;self.Closed=true
+    for _,connection in ipairs(self.Connections)do connection:Disconnect()end
     if self.Context.Widget.Label.Parent then self.Context.Widget:SetText(self.OriginalText)end
 end
 return HUD

@@ -1,5 +1,6 @@
 -- Actual TheWorstUIV2 widgets, not a replacement renderer, are instantiated.
-local window=Library:CreateWindow({Title="astral",Footer="v4.69",AutoShow=true})
+Library:BeginStartup()
+local window=Library:CreateWindow({Title="astral",Footer="v4.70",AutoShow=true})
 local tabs={}
 for _,name in ipairs({"Home","Player","Combat","Defense","Target","Blobman","Visual","Aim","Fun","Settings"})do tabs[name]=window:AddTab(name,"home")end
 local group=tabs.Home:AddLeftGroupbox("Main")
@@ -16,12 +17,25 @@ local keyPicker=toggle:AddKeyPicker("TestKey",{Text="Toggle",Default="Q",Mode="T
 local press=group:AddLabel("Press"):AddKeyPicker("TestPress",{Text="Press",Default="E",Mode="Press",Callback=function()calls.press+=1 end})
 local hold=group:AddLabel("Hold"):AddKeyPicker("TestHold",{Text="Hold",Default="R",Mode="Hold",Callback=function()calls.hold+=1 end})
 check(calls.toggle==0 and calls.slider==0 and calls.dropdown==0 and calls.input==0 and calls.color==0,"UI construction activated gameplay callbacks")
+local accidentalRespawns=0
+local reset=group:AddButton({Text="Respawn",Func=function()accidentalRespawns+=1 end})
+reset:Press();key("Q");key("Q",true)
+check(accidentalRespawns==0 and calls.toggle==0,"Input during GUI startup activated gameplay")
+Library:FinishStartup()
 check(Native.ScreenGui==Library.ScreenGui and Library.ScreenGui.Name=="AstralTheWorstUIV2","Adapter rendered a second legacy GUI")
 check(window.Raw.Frame==window.MainFrame and toggle.Raw.Frame==toggle.Holder,"Controls do not reference actual native frames")
+check(not window.MainFrame.TopBar.Visible and window.MainFrame.TopBar.Size.Y.Offset==0,"The old title/version bar remained visible")
+check(window.MainFrame.Holder.Position.Y.Offset==38 and window.MainFrame.Holder.BackgroundTransparency==1,"Title-bar gap or dark body layer remained")
+check(Library.Scheme.BackgroundColor.R>.95 and Library.Scheme.FontColor.R<.2,"Default white-glass contrast was not applied")
 check(color.Holder==color.Raw.Frame and color.Holder~=nil,"Inline native color picker did not expose its frame")
-for _,name in ipairs({"Home","Player","Combat","Defense","Target","Blobman","Visual","Aim","Fun","Settings"})do check(tabs[name].Raw.Name==name,"Tab name changed: "..name)end
+for _,name in ipairs({"Home","Player","Combat","Defense","Target","Blobman","Visual","Aim","Fun","Settings"})do
+ check(tabs[name].Raw.Name==name,"Tab name changed: "..name)
+ local button=tabs[name].Raw.Button
+ check(button.Icon:FindFirstChild("AstralSectionIcon")~=nil and button.NameText.Position.X.Offset>=34,"Section icons overlap text or depend only on external images")
+end
 check(multi.Value.A and multi.Value.C and not multi.Value.B,"Multi default array was not converted to Astral's flag map")
 toggle.Raw:Set(true);check(toggle.Value and calls.toggle==1,"Native toggle lost/doubled its callback")
+toggle:SetValue(true);toggle:SetValue(true);check(calls.toggle==1,"Unchanged toggle values replayed gameplay callbacks")
 slider.Raw:Set(.77);check(math.abs(slider.Value-.77)<1e-6 and calls.slider==1,"Native slider lost/doubled its value")
 slider:SetValue(100);check(slider.Value==1 and slider.Raw.Value==1,"Slider did not clamp programmatic values")
 local before=slider.Value;slider:SetValue(0/0);check(slider.Value==before,"Slider accepted NaN")
@@ -92,7 +106,7 @@ local cleanup=0;Library:OnUnload(function()cleanup+=1 end)
 SaveManager:SetLibrary(Library);SaveManager:SetFolder("Astral/Configs")
 ThemeManager:SetLibrary(Library);ThemeManager:SetFolder("Astral/Themes")
 SaveManager:BuildConfigSection(tabs.Settings)
-ThemeManager:SetDefaultTheme({BackgroundColor=Color3.fromRGB(20,20,20),MainColor=Color3.fromRGB(28,28,28),AccentColor=Color3.fromRGB(240,240,240),OutlineColor=Color3.fromRGB(52,52,52),FontColor=Color3.fromRGB(240,240,240),FontFace="Code"})
+ThemeManager:SetDefaultTheme(Presentation.Theme())
 ThemeManager:ApplyToTab(tabs.Settings)
 local themeOk,themeError=ThemeManager:ApplyTheme("Default");check(themeOk,tostring(themeError))
 keyPicker:SetValue({"Q","Toggle",{"LCtrl"}})
@@ -106,6 +120,40 @@ check(keyPicker.Value=="Q"and keyPicker.Mode=="Toggle"and keyPicker.Modifiers[1]
 toggle:SetValue(false);key("LeftControl");key("Q");key("Q",true);key("LeftControl",true)
 check(toggle.Value,"Legacy LCtrl modifier alias no longer works")
 local savedTheme,themeSuccess=ThemeManager:SaveJSON();check(themeSuccess and savedTheme~=nil,"Theme export failed on the new GUI")
+-- A real on-disk startup profile must not replay active gameplay switches.
+local spin=group:AddToggle("SpinT",{Text="Character Spin",Default=false,Callback=function(value)if value then accidentalRespawns+=1 end end})
+local unsafe=services.HttpService:JSONEncode({objects={{type="Toggle",idx="SpinT",value=true},{type="Toggle",idx="TestToggle",value=true}}})
+files["Astral/Configs/settings/Unsafe.json"]=unsafe
+local setAuto,autoError=SaveManager:SaveAutoloadConfig("Unsafe");check(setAuto,tostring(autoError))
+toggle:SetValue(false);local countBefore=calls.toggle
+Library:BeginStartup();SaveManager:LoadAutoloadConfig();advance(.1);Library:FinishStartup()
+check(not spin.Value and not toggle.Value and accidentalRespawns==0 and calls.toggle==countBefore,"Saved active functions were replayed automatically on startup")
+local manualOk=SaveManager:Load("Unsafe");advance(.1)
+check(manualOk and spin.Value and accidentalRespawns==1,"Explicit manual config loading was removed instead of disabling startup replay")
+-- New HUD is centered and contains neither currency nor elapsed time.
+local widget=Library:AddDraggableLabel("astral");Players.MaxPlayers=25
+local hud=HUD.Install({Widget=widget,RunService=RunService,Players=Players,Player=localPlayer,Workspace=workspace,Stats=services.Stats})
+check(widget.Centered and widget.Label.AnchorPoint.X==.5 and widget.Label.Position.X.Scale==.5,"Watermark is not centered")
+check(not widget.Label.Text:find("Coins",1,true)and not widget.Label.Text:find(":",1,true),"Removed watermark currency/timer returned")
+check(widget.Label:FindFirstChildOfClass("UICorner").CornerRadius.Scale==1 and widget.Label.BackgroundTransparency>.3,"Watermark does not use the rounded translucent style")
+hud:Dispose()
+local floating=Instance.new("Frame",Library.ScreenGui);floating.Name="ExamplePopup";Library:StyleFloatingPanel(floating)
+check(floating:FindFirstChildOfClass("UICorner").CornerRadius.Offset==Presentation.Radius and floating.BackgroundColor3.R>.95,"Floating menu did not inherit the light rounded surface")
+-- Long values cannot occupy the same pixels as their control labels.
+local long=group:AddDropdown("LongValue",{Text="A readable label",Values={"A very long selected value that needs truncation"},Default=1})
+local left=long.TextLabel.AbsolutePosition.X+long.TextLabel.AbsoluteSize.X
+local right=long.Holder.SelectedItemBox.AbsolutePosition.X
+check(left<=right,"Long dropdown value overlaps its label")
+if TeleportMenu then
+ local world=Instance.new("Folder");local beach=Instance.new("Part",world);beach.Name="Beach"
+ local teleports=0
+ local menu=TeleportMenu.Install({Library=Library,Locations=function()return{beach}end,Player={CharacterAdded=signal()},Workspace=workspace,
+  RunService=RunService,Character=function()end,Teleport=function()teleports+=1 end})
+ menu:SetVisible(true)
+ check(menu.Frame.BackgroundColor3.R>.95 and menu.Frame.BackgroundTransparency>.3 and menu.Frame:FindFirstChildOfClass("UICorner").CornerRadius.Offset==Presentation.Radius,"Actual teleport menu did not inherit the new surface")
+ check(teleports==0 and #menu.Rows==1,"Opening the teleport menu automatically moved the character")
+ menu:Dispose()
+end
 advance(.3)
 Library:Unload();Library:Unload();check(cleanup==1 and Library.Unloaded and Native.Unloaded,"Unload was not idempotent")
 for _,connection in ipairs(Library.Connections)do check(not connection.Connected,"Adapter input survived unload")end

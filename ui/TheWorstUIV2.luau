@@ -272,6 +272,7 @@ end
             end
         end
 
+        if UI.StyleElement then UI.StyleElement(Element)end
         return Element
     end
 
@@ -1420,7 +1421,7 @@ end
 
                                 SectionsHolderParent.CanvasSize = UDim2.new(0, AbsoluteContentSize.X, 0, 0)
 
-                                local CurrentTabIndex = math.floor((CanvasPositionSave.X + SectionsHolderParent.AbsoluteSize.X / 2) / SectionsHolderParent.AbsoluteSize.X) + 1
+                                local CurrentTabIndex = math.floor((CanvasPositionSave.X + SectionsHolderParent.AbsoluteSize.X / 2) / math.max(1, SectionsHolderParent.AbsoluteSize.X)) + 1
                                 CurrentTabIndex = math.clamp(CurrentTabIndex, 1, #Window.Tabs)
 
                                 for _, HolderFrame in SectionsHolderParent:GetChildren() do
@@ -1681,7 +1682,7 @@ end
                                                 local Width = TabButtonsHolder.ButtonsListFrame.AbsoluteSize.X - (ButtonsCount - 1) * 5
                                                 for _, TabButton in Window.TabButtons do
                                                     TabButton.Visible = true
-                                                    TabButton.Size = UDim2.new(0, math.max(90, Width / ButtonsCount), 1, 0)
+                                                    TabButton.Size = UDim2.new(0, math.max(110, Width / ButtonsCount), 1, 0)
                                                 end
                                             end
 
@@ -1811,15 +1812,15 @@ end
                                     local MouseOnTab = false
                                     AddConnection(TabButton.MouseButton1Up, function()
                                         task.spawn(function()
-                                            PlayTween(TabButton.NameText, 0.1, { TextSize = 15 })
+                                            PlayTween(TabButton.NameText, 0.1, { TextSize = 14 })
                                             task.wait(0.2)
-                                            PlayTween(TabButton.NameText, 0.1, { TextSize = MouseOnTab and 18 or 16 })
+                                            PlayTween(TabButton.NameText, 0.1, { TextSize = 14 })
                                         end)
                                         ChangeTab(TabConfig.Name, TabButton)
                                     end)
 
-                                    AddConnection(TabButton.MouseEnter, function() MouseOnTab = true; TabButton.NameText.TextSize = 18 end)
-                                    AddConnection(TabButton.MouseLeave, function() MouseOnTab = false; TabButton.NameText.TextSize = 16 end)
+                                    AddConnection(TabButton.MouseEnter, function() MouseOnTab = true; TabButton.NameText.TextSize = 14 end)
+                                    AddConnection(TabButton.MouseLeave, function() MouseOnTab = false; TabButton.NameText.TextSize = 14 end)
 
                                     AddConnection(SectionsHolder.FakeDescendantClipperFrameLeft.LeftHolderFrame.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateSizes)
                                     AddConnection(SectionsHolder.FakeDescendantClipperFrameRight.RightHolderFrame.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateSizes)
@@ -2065,7 +2066,7 @@ end
                                                     if TabButton.Name == "UIListLayout" then continue end
 
                                                     TabButton.Visible = true
-                                                    TabButton.Size = UDim2.new(0, math.max(90, Width / ButtonsCount), 1, 0)
+                                                    TabButton.Size = UDim2.new(0, math.max(110, Width / ButtonsCount), 1, 0)
                                                 end
                                             end
 

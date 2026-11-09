@@ -47,7 +47,15 @@ def source():
     # all ten Astral names into the width of one desktop window.
     s=s.replace('CreateElement("FakeFrame", {\n                                                    Name = "ButtonsListFrame",',
         'CreateElement("ScrollingFrame", {\n                                                    Name = "ButtonsListFrame",\n                                                    BackgroundTransparency=1, ScrollBarThickness=2, ScrollingDirection=Enum.ScrollingDirection.X, AutomaticCanvasSize=Enum.AutomaticSize.X, CanvasSize=UDim2.new(), BorderSizePixel=0,')
-    s=s.replace('Width / ButtonsCount, 1, 0','math.max(90, Width / ButtonsCount), 1, 0')
+    s=s.replace('Width / ButtonsCount, 1, 0','math.max(110, Width / ButtonsCount), 1, 0')
+    # UI labels should not grow into neighboring icons/fields on hover.
+    s=s.replace('MouseOnTab and 18 or 16','14')
+    s=s.replace('TabButton.NameText.TextSize = 18','TabButton.NameText.TextSize = 14')
+    s=s.replace('TabButton.NameText.TextSize = 16','TabButton.NameText.TextSize = 14')
+    s=s.replace('TabButton.NameText, 0.1, { TextSize = 15 }','TabButton.NameText, 0.1, { TextSize = 14 }')
+    s=s.replace('/ SectionsHolderParent.AbsoluteSize.X','/ math.max(1, SectionsHolderParent.AbsoluteSize.X)')
+    # Native factories expose a presentation hook before the renderer starts.
+    s=s.replace('        return Element\n','        if UI.StyleElement then UI.StyleElement(Element)end\n        return Element\n',1)
     # Keep native binding assignment UI. One Astral dispatcher handles press,
     # hold, toggle and modifiers so a key never activates both implementations.
     s=s.replace('else\n                                                    if Input.KeyCode.Name ~= Bind.Value',

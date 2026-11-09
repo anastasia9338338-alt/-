@@ -3,6 +3,15 @@
 local requireModule=...
 local Native=requireModule("TheWorstUIV2")
 local Icons=requireModule("Icons")
+local Presentation=requireModule("Presentation")
+Native.StyleElement=Presentation.NativeElement
+do
+    local colors=Presentation.Theme();local theme=Native.Themes[Native.CurrentTheme]
+    theme.TaskbarColor=colors.BackgroundColor;theme.WindowsColor=colors.BackgroundColor;theme.ElementsColor=colors.MainColor
+    theme.TaskbarTransparency=Presentation.Transparency;theme.WindowsTransparency=Presentation.Transparency
+    theme.TextColor=colors.FontColor;theme.LittleTextColor=colors.AccentColor;theme.LittleTextTransparency=.12
+    theme.Font=Enum.Font.Gotham;theme.LittleFont=Enum.Font.Gotham;theme.CornerRadius=Presentation.Radius
+end
 local UIS=game:GetService("UserInputService")
 local RunService=game:GetService("RunService")
 local TextService=game:GetService("TextService")
@@ -10,13 +19,15 @@ local Players=game:GetService("Players")
 local originalMouseBehavior,originalMouseIcon=UIS.MouseBehavior,UIS.MouseIconEnabled
 local modifierNames={LAlt="LeftAlt",RAlt="RightAlt",LCtrl="LeftControl",RCtrl="RightControl",LShift="LeftShift",RShift="RightShift",LMeta="LeftMeta",RMeta="RightMeta"}
 local Library={Options={},Toggles={},Labels={},Tabs={},Registry={},DraggableElements={},DependencyBoxes={},
-    Connections={},UnloadSignals={},Controls={},KeyPickers={},CornerRadius=30,DPIScale=1,Toggled=true,Unloaded=false,
+    Connections={},UnloadSignals={},Controls={},KeyPickers={},CornerRadius=Presentation.Radius,DPIScale=1,Toggled=true,Unloaded=false,
+    ManualConfigLoad=true,FloatingPanels=setmetatable({},{__mode="k"}),
     IsMobile=UIS.TouchEnabled and not UIS.KeyboardEnabled,ScreenGui=Native.ScreenGui,
-    Scheme={BackgroundColor=Color3.fromRGB(20,20,20),MainColor=Color3.fromRGB(28,28,28),
-        AccentColor=Color3.fromRGB(240,240,240),OutlineColor=Color3.fromRGB(52,52,52),FontColor=Color3.fromRGB(240,240,240),
+    Scheme={BackgroundColor=Color3.fromRGB(255,255,255),MainColor=Color3.fromRGB(244,247,251),
+        AccentColor=Color3.fromRGB(77,91,113),OutlineColor=Color3.fromRGB(183,194,210),FontColor=Color3.fromRGB(23,28,36),
         RedColor=Color3.fromRGB(240,75,75),DestructiveColor=Color3.fromRGB(240,75,75),DarkColor=Color3.fromRGB(16,16,16),
-        WhiteColor=Color3.new(1,1,1),Font=Font.fromEnum(Enum.Font.Code),BackgroundImage=""}}
+        WhiteColor=Color3.new(1,1,1),Font=Font.fromEnum(Enum.Font.Gotham),BackgroundImage=""}}
 local Control,Container,Tab,Window={},{},{},{}
+Native.StyleElement=function(object)Presentation.NativeElement(object,Library.Scheme)end
 Control.__index=Control;Container.__index=Container;Tab.__index=Tab;Window.__index=Window
 local function plain(value)return(tostring(value or ""):gsub("<[^>]*>",""))end
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
@@ -41,6 +52,8 @@ function Library:GiveSignal(connection)
     return connection
 end
 function Library:OnUnload(fn)self.UnloadSignals[#self.UnloadSignals+1]=fn end
+function Library:BeginStartup()self.Starting=true end
+function Library:FinishStartup()self.Starting=false end
 function Library:SafeCallback(fn,...)
     if type(fn)~="function"then return end
     local ok,result=pcall(fn,...)
@@ -67,17 +80,27 @@ end
 function Library:SetIconModule()end -- Icons are already bundled.
 function Library:UpdateColorsUsingRegistry()
     if self.Taskbar then
-        self.Taskbar:SetWindowsColor(self.Scheme.BackgroundColor,.16,"Main")
-        self.Taskbar:SetWindowsColor(self.Scheme.AccentColor,.25,"Second")
-        self.Taskbar:SetWindowsColor(self.Scheme.MainColor,.2,"Third")
-        self.Taskbar:SetWindowsColor(self.Scheme.MainColor,.6,"Sections")
+        self.Taskbar:SetWindowsColor(self.Scheme.BackgroundColor,Presentation.Transparency,"Main")
+        self.Taskbar:SetWindowsColor(self.Scheme.AccentColor,.12,"Second")
+        self.Taskbar:SetWindowsColor(self.Scheme.MainColor,.4,"Third")
+        self.Taskbar:SetWindowsColor(self.Scheme.MainColor,1,"Sections")
         self.Taskbar:SetFont({Color=self.Scheme.FontColor,Transparency=0,Type="Main"})
-        self.Taskbar:SetFont({Color=self.Scheme.FontColor,Transparency=.35,Type="Little"})
+        self.Taskbar:SetFont({Color=self.Scheme.AccentColor,Transparency=.1,Type="Little"})
     end
     for object,props in pairs(self.Registry)do
         if object.Parent then for key,value in pairs(props)do
             pcall(function()object[key]=type(value)=="function"and value()or self.Scheme[value]or value end)
         end else self.Registry[object]=nil end
+    end
+    if self.Window then Presentation.Window(self.Window,self.Scheme)end
+    for panel in pairs(self.FloatingPanels)do if panel.Parent then self:StyleFloatingPanel(panel)end end
+end
+function Library:StyleFloatingPanel(panel)
+    Presentation.Floating(panel,self.Scheme)
+    for _,child in ipairs(panel:GetDescendants())do Presentation.FloatingChild(child,self.Scheme,panel)end
+    if not self.FloatingPanels[panel]then
+        self.FloatingPanels[panel]=true
+        self:GiveSignal(panel.DescendantAdded:Connect(function(child)Presentation.FloatingChild(child,self.Scheme,panel)end))
     end
 end
 function Library:SetFont(font)
@@ -128,9 +151,9 @@ function Library:MakeDraggable(frame,handle)
 end
 function Library:AddDraggableLabel(value)
     local label=new("TextLabel",self.ScreenGui,{Name="AstralHUD",Text=plain(value),BackgroundColor3=self.Scheme.BackgroundColor,
-        BackgroundTransparency=.16,Font=Enum.Font.Code,TextSize=13,TextColor3=self.Scheme.FontColor,TextWrapped=true,
+        BackgroundTransparency=Presentation.Transparency,Font=Enum.Font.Gotham,TextSize=13,TextColor3=self.Scheme.FontColor,TextWrapped=true,
         Size=UDim2.fromOffset(360,32),Position=UDim2.fromOffset(20,20),ZIndex=300,BorderSizePixel=0})
-    corner(label,12);self:MakeDraggable(label);table.insert(self.DraggableElements,label)
+    corner(label,Presentation.Radius);self:MakeDraggable(label);table.insert(self.DraggableElements,label)
     local widget={Label=label}
     function widget:SetText(v)label.Text=plain(v)end
     function widget:SetVisible(v)label.Visible=v end
@@ -142,9 +165,10 @@ end
 function Library:AddDraggableButton(info,fn)
     if type(info)=="string"then info={Text=info,Func=fn}end
     local button=new("TextButton",self.ScreenGui,{Name="AstralMobileButton",Text=plain(info.Text),Font=Enum.Font.Code,TextSize=14,
-        TextColor3=self.Scheme.FontColor,BackgroundColor3=self.Scheme.MainColor,BackgroundTransparency=.2,
+        TextColor3=self.Scheme.FontColor,BackgroundColor3=self.Scheme.MainColor,BackgroundTransparency=Presentation.Transparency,
         Size=UDim2.fromOffset(130,38),Position=UDim2.fromOffset(20,160),ZIndex=300,BorderSizePixel=0})
-    corner(button,16);self:MakeDraggable(button);table.insert(self.DraggableElements,button)
+    corner(button,Presentation.Radius);self:MakeDraggable(button);table.insert(self.DraggableElements,button)
+    self:StyleFloatingPanel(button)
     local result={Button=button}
     self:GiveSignal(button.MouseButton1Click:Connect(function()self:SafeCallback(info.Func or info.Callback,result)end))
     function result:Destroy()button:Destroy()end
@@ -161,7 +185,7 @@ function Control:_RawSet(value,transparency)
     if not ok then error("Astral UI "..tostring(self.Id)..": "..tostring(err),0)end
 end
 function Control:RunChanged()
-    if self.Initializing or self.Destroyed or not enabled(self)then return end
+    if Library.Starting or self.Initializing or self.Destroyed or not enabled(self)then return end
     Library:SafeCallback(self.Callback,self.Value,self.Transparency)
     Library:SafeCallback(self.Changed,self.Value,self.Transparency)
 end
@@ -194,7 +218,9 @@ end
 function Control:SetValue(value,alpha)
     if self.Destroyed then return self end
     if self.Type=="Toggle"then
-        self.Value=value==true;self:_RawSet(self.Value)
+        value=value==true
+        if value==self.Value then return self end
+        self.Value=value;self:_RawSet(self.Value)
         for _,picker in ipairs(self.Addons)do if picker.SyncToggleState then picker.Toggled=self.Value;picker:Update()end end
         Library:UpdateDependencyBoxes();self:RunChanged()
     elseif self.Type=="Slider"then
@@ -303,7 +329,7 @@ function Control:Update()
     if self.MenuLabel then self.MenuLabel.Text=string.format("[%s] %s (%s)",prefix..self.Value,self.Text,self.Mode);self.MenuLabel.Visible=self.MenuVisible~=false end
 end
 function Control:DoClick()
-    if not enabled(self)then return end
+    if Library.Starting or not enabled(self)then return end
     if self.SyncToggleState and self.ParentControl and self.ParentControl.Type=="Toggle"then self.ParentControl:SetValue(self.Toggled)end
     Library:SafeCallback(self.Callback,self.Toggled);Library:SafeCallback(self.Clicked,self.Toggled)
     if self.ParentControl and self.ParentControl.Type=="Button"then self.ParentControl:Press()end
@@ -311,7 +337,7 @@ function Control:DoClick()
     if self.Mode=="Press"then self.Toggled=false end
     self:Update()
 end
-function Control:Press()if enabled(self)then Library:SafeCallback(self.Func or self.Callback)end end
+function Control:Press()if not Library.Starting and enabled(self)then Library:SafeCallback(self.Func or self.Callback)end end
 function Control:SetHeight(value)self.Height=value;if self.Holder then self.Holder.Size=UDim2.new(1,0,0,value)end end
 function Control:SetInstance(value)if self.Instance then self.Instance.Parent=nil end;self.Instance=value;value.Parent=self.Holder end
 Control.SetObject=Control.SetInstance
@@ -327,7 +353,7 @@ function Container:_Control(kind,id,info,parentControl)
     info=info or{}
     local c=setmetatable({Type=kind,Id=id,Info=info,Text=plain(info.Text or info.Title or id),Default=info.Default,
         Value=info.Default,Visible=info.Visible~=false,Disabled=info.Disabled==true,Callback=info.Callback,
-        ParentContainer=self,ParentControl=parentControl,Addons={},DisabledValues={},Initializing=true},Control)
+        ParentContainer=self,ParentControl=parentControl,Addons={},DisabledValues={},Initializing=true,Library=Library},Control)
     self.Elements[#self.Elements+1]=c;Library.Controls[#Library.Controls+1]=c
     if id then(kind=="Toggle"and Library.Toggles or Library.Options)[id]=c end
     if parentControl then parentControl.Addons[#parentControl.Addons+1]=c end
@@ -337,6 +363,7 @@ function Container:_Control(kind,id,info,parentControl)
     local cfg={Name=c.Text,Flag=id,Default=info.Default}
     cfg.Callback=function(value,alpha)
         if initializing or c._Syncing or c.Destroyed or Library.Unloaded then return end
+        if Library.Starting then return c:_SyncCurrent()end
         if not enabled(c)then return c:_SyncCurrent()end
         if kind=="Dropdown"then
             if c.Multi then local selected={};for _,label in ipairs(type(value)=="table"and value or{})do local actual=c.LabelToValue[label];if actual then selected[actual]=true end end;value=selected
@@ -393,6 +420,10 @@ function Container:_Control(kind,id,info,parentControl)
     end
     if info.Tooltip and c.Holder then Library:AddTooltip(info.Tooltip,info.DisabledTooltip,c.Holder)end
     initializing=false;c.Initializing=false;c:SetDisabled(c.Disabled);c:_Visibility()
+    Presentation.Control(c)
+    if c.TextLabel then Library:GiveSignal(c.TextLabel:GetPropertyChangedSignal("Size"):Connect(function()Presentation.Control(c)end))end
+    local field=c.Holder and c.Holder:FindFirstChild(kind=="Dropdown"and"SelectedItemBox"or"Value")
+    if field then Library:GiveSignal(field:GetPropertyChangedSignal("Size"):Connect(function()Presentation.Control(c)end))end
     return c
 end
 function Control:_SyncCurrent()
@@ -421,6 +452,7 @@ function Container:AddButton(info,callback)
     c.Raw=self.Raw:CreateButton({Name=c.Text,DoubleTap=info.DoubleClick==true,Callback=function()c:Press()end})
     c.Holder=c.Raw.Frame;c.TextLabel=frameLabel(c.Raw)
     self.Elements[#self.Elements+1]=c;Library.Controls[#Library.Controls+1]=c;c:SetDisabled(c.Disabled);c:_Visibility()
+    Presentation.Control(c)
     if info.Tooltip then Library:AddTooltip(info.Tooltip,info.DisabledTooltip,c.Holder)end
     return c
 end
@@ -477,6 +509,8 @@ end
 function Tab:_Group(name,side,groupName)
     name=plain(name);local raw=self.Raw:CreateSection({Name=name,Side=side or"Left",Group=groupName or(name.."_"..tostring(#self.Groups+1))})
     local group=setmetatable({Raw=raw,Frame=raw.Frame,Container=raw.Container,Name=name,Tab=self,Side=side or"Left",Elements={},Visible=true,Collapsed=false,PopOutEnabled=false},Container)
+    Presentation.Section(group)
+    Library:GiveSignal(group.Frame:GetPropertyChangedSignal("Size"):Connect(function()Presentation.Section(group)end))
     if not groupName and raw.Frame then
         local title=raw.Frame:FindFirstChild("ButtonsHolder")
         title=title and title:FindFirstChild("SectionText")
@@ -508,9 +542,12 @@ function Window:AddTab(name,icon,description)
     if asset and raw.Button and raw.Button:FindFirstChild("Icon")then
         raw.Button.Icon.ImageRectOffset=asset.ImageRectOffset or Vector2.zero;raw.Button.Icon.ImageRectSize=asset.ImageRectSize or Vector2.zero
     end
-    local tab=setmetatable({Name=label,Raw=raw,Groupboxes={},Tabboxes={},Groups={},Visible=true,Description=description},Tab)
+    local tab=setmetatable({Name=label,Icon=icon,Library=Library,Raw=raw,Groupboxes={},Tabboxes={},Groups={},Visible=true,Description=description},Tab)
     self.Tabs[label]=tab;Library.Tabs[name]=tab
     if not self.SelectedTab then self.SelectedTab=tab end
+    Presentation.Window(self,Library.Scheme)
+    local strip=self.MainFrame:FindFirstChild("TabButtonsHolder")
+    if strip and not self.DragInstalled then Library:MakeDraggable(self.MainFrame,strip);self.DragInstalled=true end
     if label=="Home"and next(self.FooterActions)then
         local tools=tab:AddLeftGroupbox("Tools")
         for _,item in ipairs(self.FooterActions)do tools:AddButton(item)end
@@ -522,6 +559,7 @@ function Window:AddFooterAction(name,callback)
 end
 function Window:SetCornerRadius(value)
     Library.CornerRadius=math.clamp(tonumber(value)or 30,0,40)
+    Presentation.Radius=Library.CornerRadius
     Native.Themes[Native.CurrentTheme].CornerRadius=Library.CornerRadius
     for _,node in ipairs(Library.ScreenGui:GetDescendants())do if node:IsA("UICorner")then node.CornerRadius=UDim.new(0,Library.CornerRadius)end end
 end
@@ -542,6 +580,7 @@ function Window:AddDialog(id,info)
         local b=new("TextButton",panel,{Text=button.Title,Size=UDim2.new(1/#buttons,-20,0,36),Position=UDim2.new((i-1)/#buttons,10,1,-50),BackgroundColor3=Library.Scheme.MainColor,TextColor3=Library.Scheme.FontColor,Font=Enum.Font.Code,TextSize=15,ZIndex=1502,BorderSizePixel=0});corner(b,16)
         Library:GiveSignal(b.MouseButton1Click:Connect(function()result:Destroy();Library:SafeCallback(button.Callback)end))
     end
+    Library:StyleFloatingPanel(panel)
     self.Dialogs[id]=result;return result
 end
 function Library:CreateWindow(info)
@@ -551,14 +590,18 @@ function Library:CreateWindow(info)
     local viewport=workspace.CurrentCamera.ViewportSize
     raw.OldSize=UDim2.fromOffset(math.min(1040,viewport.X-24),math.min(720,viewport.Y-110))
     raw.OldPosition=UDim2.new(.5,-raw.OldSize.X.Offset/2,.5,-raw.OldSize.Y.Offset/2-24)
+    raw.Frame.Size=raw.OldSize;raw.Frame.Position=raw.OldPosition
     self.Window=setmetatable({Raw=raw,MainFrame=raw.Frame,Tabs={},FooterActions={},Dialogs={},Title=plain(info.Title)},Window)
     local toggle=raw.Toggle
     raw.Toggle=function(window,open)self.Toggled=open==true;return toggle(window,open)end
     self.Scale=new("UIScale",raw.Frame,{Scale=1})
+    Presentation.Window(self.Window,self.Scheme)
+    self:GiveSignal(raw.Frame:GetPropertyChangedSignal("Size"):Connect(function()Presentation.Window(self.Window,self.Scheme)end))
     self.KeybindFrame=new("Frame",self.ScreenGui,{Name="AstralKeybinds",Size=UDim2.fromOffset(260,360),Position=UDim2.fromOffset(12,180),Visible=false,BackgroundColor3=self.Scheme.BackgroundColor,BackgroundTransparency=.16,BorderSizePixel=0,ZIndex=250});corner(self.KeybindFrame)
     local title=text(self.KeybindFrame,"Keybinds");title.Size=UDim2.new(1,-20,0,35);self:MakeDraggable(self.KeybindFrame,title)
     self.KeybindContainer=new("ScrollingFrame",self.KeybindFrame,{Size=UDim2.new(1,-16,1,-45),Position=UDim2.fromOffset(8,38),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=2,BorderSizePixel=0})
     new("UIListLayout",self.KeybindContainer,{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,3)})
+    self:StyleFloatingPanel(self.KeybindFrame)
     self.Taskbar:Init();self:UpdateColorsUsingRegistry()
     task.defer(function()if not self.Unloaded and info.AutoShow~=false then raw:Toggle(true)end end)
     return self.Window
@@ -593,7 +636,7 @@ function Library:AddTooltip(normal,disabled,holder)
         if self.Tooltip then self.Tooltip:Destroy()end
         local point=UIS:GetMouseLocation()
         self.Tooltip=new("TextLabel",self.ScreenGui,{Name="AstralTooltip",Text=plain(normal or disabled),Font=Enum.Font.Code,TextSize=13,TextWrapped=true,
-            TextColor3=self.Scheme.FontColor,BackgroundColor3=self.Scheme.MainColor,BackgroundTransparency=.1,Size=UDim2.fromOffset(340,80),Position=UDim2.fromOffset(point.X+12,point.Y+16),ZIndex=2000,BorderSizePixel=0});corner(self.Tooltip,14)
+            TextColor3=self.Scheme.FontColor,BackgroundColor3=self.Scheme.MainColor,BackgroundTransparency=Presentation.Transparency,Size=UDim2.fromOffset(340,80),Position=UDim2.fromOffset(point.X+12,point.Y+16),ZIndex=2000,BorderSizePixel=0});corner(self.Tooltip,Presentation.Radius)
     end))
     self:GiveSignal(holder.MouseLeave:Connect(function()if self.Tooltip then self.Tooltip:Destroy();self.Tooltip=nil end end))
 end
@@ -611,8 +654,13 @@ local function modifiersHeld(picker)
     end
     return true
 end
+Library:GiveSignal(Library.ScreenGui.ChildAdded:Connect(function(child)
+    if child:IsA("Frame")and child.Name~="MainFakeFrame"then
+        task.defer(function()if not Library.Unloaded and child.Parent==Library.ScreenGui then Library:StyleFloatingPanel(child)end end)
+    end
+end))
 Library:GiveSignal(UIS.InputBegan:Connect(function(input,processed)
-    if Library.Unloaded or processed or UIS:GetFocusedTextBox()then return end
+    if Library.Starting or Library.Unloaded or processed or UIS:GetFocusedTextBox()then return end
     for _,picker in ipairs(Library.KeyPickers)do if picker.Raw.IsBinding and picker.Raw.IsBinding()then return end end
     for _,picker in ipairs(Library.KeyPickers)do
         if(picker.Value==input.KeyCode.Name or picker.Value==input.UserInputType.Name)and modifiersHeld(picker)and enabled(picker)then
