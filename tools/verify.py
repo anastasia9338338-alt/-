@@ -60,6 +60,11 @@ def main():
                 for name in re.findall(r"Unknown global '([^']+)'",log):
                     assert not re.fullmatch(r'(?:v|tbl|fn|flag|n)\d+',name),(path.name,'unresolved local',name)
                     assert name not in {'train','inPlot','inOwnedPlot','Character','_at_refreshRainbow','_abanaRunning'},(path.name,'obsolete global',name)
+            if 'TheWorstUIV2'in modules and path.stem in {'Library','TheWorstUIV2'}:
+                allowed={'game','workspace','Enum','Color3','ColorSequence','ColorSequenceKeypoint','NumberSequence','NumberSequenceKeypoint',
+                    'UDim','UDim2','Vector2','Vector3','Font','TweenInfo','Instance','task','tick','warn','gethui'}
+                unknown=set(re.findall(r"Unknown global '([^']+)'",log))-allowed
+                assert not unknown,(path.name,'unresolved UI globals',sorted(unknown))
             return len(log.splitlines())
         with concurrent.futures.ThreadPoolExecutor(max_workers=4)as pool:
             diagnostic_lines=sum(pool.map(analyze_file,[p for p in files if p!=repo/'astral.lua']))

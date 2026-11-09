@@ -1,0 +1,2 @@
+# Preserve the downloaded upstream source byte for byte, including its spacing.
+ui/vendor/TheWorstUIV2.upstream.lua -whitespace

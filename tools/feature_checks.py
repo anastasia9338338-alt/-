@@ -69,7 +69,10 @@ def run_feature_checks(modules,runner,folder):
         start=modules['Main'].index('tbl12.SNO = function');end=modules['Main'].index('tbl12.RNO = function',start)
         sno=modules['Main'][start:end]
         run('pallet_sno',read('kick_mock.luau')+'\n'+read('pallet_sno_prefix.luau')+'\n'+sno+'\n'+read('pallet_sno_body.luau'))
-    if 'Library'in modules:
+    if 'TheWorstUIV2'in modules:
+        from ui_checks import program
+        run('theworstui',program(modules))
+    elif 'Library'in modules:
         library=modules['Library']
         slider=library[library.index('    function Funcs:AddSlider('):library.index('    function Funcs:AddDropdown(')]
         run('slider',read('slider_mock.luau')+'\n'+slider+'\n'+read('slider_body.luau'))
