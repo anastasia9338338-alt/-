@@ -11,7 +11,7 @@ function HUD.Install(context)
     self.OriginalText=label.Text;context.Widget.Centered=nil
     label.AnchorPoint=Vector2.new(.5,0);label.Position=UDim2.new(.5,0,0,12);label.TextWrapped=false
     label.AutomaticSize=Enum.AutomaticSize.None
-    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.30
+    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.45
     label.RichText=true
     if context.Library then
         label.BackgroundColor3=context.Library.Scheme.HeaderColor

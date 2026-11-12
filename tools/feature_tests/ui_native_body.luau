@@ -68,7 +68,7 @@ check(search and search.PlaceholderText=="Search"and search.TextXAlignment==Enum
 check(window.MainFrame.ClassName=="Frame"and not surface:FindFirstChildOfClass("UICorner"),"The header/body are still separate rounded windows")
 local header=window.MainFrame:FindFirstChild("HeaderSurface")
 check(header and header.Size.Y.Offset==44 and surface.Position.Y.Offset==44,"Header and body do not use the reference geometry")
-check(header.BackgroundColor3:ToHex()=="ffffff" and window.MainFrame:FindFirstChildOfClass("UIGradient"),"Reference palette or vertical body shading changed")
+check(header.BackgroundColor3:ToHex()=="17191c" and window.MainFrame:FindFirstChildOfClass("UIGradient"),"Reference palette or vertical body shading changed")
 check(window.MainFrame:FindFirstChild("MinimizeMenu",true)and window.MainFrame:FindFirstChild("CloseMenu",true),"Reference header controls are missing")
 local previousCalls,previousWatched=calls,watched
 local originalParent=dropdown.Holder.Parent
@@ -106,7 +106,8 @@ local insetOwner=group:AddToggle("OutlineInsetOwner",{Text="Settings outline",De
 local insetPanel=Library:AttachSettings(insetOwner,{})
 popupPadding=insetPanel.Body:FindFirstChildOfClass("UIPadding")
 check(popupPadding.PaddingLeft.Offset>=2 and popupPadding.PaddingRight.Offset>=2,"Gear settings clip their row outline")
-check(Library.Scheme.MainColor:ToHex()=="ffffff"and Library.Scheme.FontColor.R<.25 and Library.Scheme.GlassTransparency>.2,"GUI is not translucent white with readable dark captions")
+check(Library.Scheme.MainColor:ToHex()=="25272a" and Library.Scheme.FontColor.R>.85 and Library.Scheme.GlassTransparency>=.5 and group.Container.BackgroundTransparency==1,"GUI does not preserve the reference charcoal tint and visible game background")
+check(paletteToggle.Holder.BackgroundTransparency==Library.Scheme.RowTransparency and Library.Scheme.RowTransparency>=.9,"Opaque rows obscure the game through the glass menu")
 local settingsTab=window:AddTab("Settings","settings")
 ThemeManager:ApplyToTab(settingsTab)
 local themed,themeError=UIStyle.ApplyStartupTheme(ThemeManager,Library)

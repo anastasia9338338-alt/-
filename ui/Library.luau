@@ -313,13 +313,13 @@ end
 local GuiMotion=UIMotion.new(RunService.RenderStepped)
 table.insert(Library.UnloadSignals,function()GuiMotion:Dispose()end)
 
-Library.Scheme.HeaderColor=Color3.fromRGB(255,255,255)
-Library.Scheme.BodyTopColor=Color3.fromRGB(255,255,255)
-Library.Scheme.BodyBottomColor=Color3.fromRGB(239,244,249)
-Library.Scheme.CheckColor=Color3.fromRGB(223,230,238)
-Library.Scheme.GlassTransparency=.28
-Library.Scheme.RowTransparency=.46
-Library.Scheme.HeaderTransparency=.30
+Library.Scheme.HeaderColor=Color3.fromRGB(23,25,28)
+Library.Scheme.BodyTopColor=Color3.fromRGB(24,26,29)
+Library.Scheme.BodyBottomColor=Color3.fromRGB(21,23,26)
+Library.Scheme.CheckColor=Color3.fromRGB(59,65,71)
+Library.Scheme.GlassTransparency=.55
+Library.Scheme.RowTransparency=.92
+Library.Scheme.HeaderTransparency=.45
 
 local Templates = {
 

@@ -1,7 +1,11 @@
 # Astral reference GUI
 
-v4.75 uses translucent white surfaces and dark captions throughout the menu,
-settings popups and watermark, with one continuous rounded outer surface.
+v4.76 follows the new reference with neutral charcoal glass and light captions
+throughout the menu, settings popups and watermark. The game provides the
+background color seen through the surface; there is no baked-in green tint.
+The body is 55% transparent, rows 92%, and the watermark 45%. Transparent
+section and content holders prevent extra layers from obscuring the game.
+The menu retains one continuous rounded outer surface.
 The 44 px header, icon-only 52 px sidebar and body share the same outer frame;
 there are no detached panels or gaps. Astral's original icon atlas and Fun icon
 are retained. Search appears beside the brand. Flat section headings, 40 px

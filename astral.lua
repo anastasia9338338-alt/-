@@ -3775,13 +3775,13 @@ end
 local GuiMotion=UIMotion.new(RunService.RenderStepped)
 table.insert(Library.UnloadSignals,function()GuiMotion:Dispose()end)
 
-Library.Scheme.HeaderColor=Color3.fromRGB(255,255,255)
-Library.Scheme.BodyTopColor=Color3.fromRGB(255,255,255)
-Library.Scheme.BodyBottomColor=Color3.fromRGB(239,244,249)
-Library.Scheme.CheckColor=Color3.fromRGB(223,230,238)
-Library.Scheme.GlassTransparency=.28
-Library.Scheme.RowTransparency=.46
-Library.Scheme.HeaderTransparency=.30
+Library.Scheme.HeaderColor=Color3.fromRGB(23,25,28)
+Library.Scheme.BodyTopColor=Color3.fromRGB(24,26,29)
+Library.Scheme.BodyBottomColor=Color3.fromRGB(21,23,26)
+Library.Scheme.CheckColor=Color3.fromRGB(59,65,71)
+Library.Scheme.GlassTransparency=.55
+Library.Scheme.RowTransparency=.92
+Library.Scheme.HeaderTransparency=.45
 
 local Templates = {
 
@@ -20845,7 +20845,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.75 | FTAP")
+                                warn("Astral v4.76 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -38098,7 +38098,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.75",true)
+            box:AddLabel("Astral v4.76",true)
         end
 
         do
@@ -44422,9 +44422,9 @@ if app.Running and not app.Starting and type(app.Library)=="table"and type(app.L
     if not stopped then warn("Astral could not unload its previous session: "..tostring(message))end
 end
 if app.Running or app.Starting then
-    warn("Astral v4.75: previous session is still starting or could not finish unloading")
+    warn("Astral v4.76: previous session is still starting or could not finish unloading")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.75",Text="Previous session is still starting or could not stop. Rejoin before running this file again.",Duration=8})end)
+        Title="Astral v4.76",Text="Previous session is still starting or could not stop. Rejoin before running this file again.",Duration=8})end)
     return
 end
 -- ASTRAL_REPLACE_RUNNING_END
@@ -44471,7 +44471,7 @@ if not ok then
     warn("astral initialization failed: " .. app.LastStartupError)
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification",{
-            Title="Astral v4.75: startup error",Text=app.LastStartupError:sub(1,220),Duration=12,
+            Title="Astral v4.76: startup error",Text=app.LastStartupError:sub(1,220),Duration=12,
         })
     end)
     return nil, result
@@ -44605,16 +44605,16 @@ Style.Icons = {
 
 function Style.Theme()
     return {
-        BackgroundColor=Color3.fromRGB(249,250,252),
-        MainColor=Color3.fromRGB(255,255,255),
-        AccentColor=Color3.fromRGB(103,120,145),
-        OutlineColor=Color3.fromRGB(154,165,180),
-        FontColor=Color3.fromRGB(38,45,56),
-        HeaderColor=Color3.fromRGB(255,255,255),
-        BodyTopColor=Color3.fromRGB(255,255,255),
-        BodyBottomColor=Color3.fromRGB(239,244,249),
-        CheckColor=Color3.fromRGB(223,230,238),
-        GlassTransparency=.28,RowTransparency=.46,HeaderTransparency=.30,
+        BackgroundColor=Color3.fromRGB(23,25,28),
+        MainColor=Color3.fromRGB(37,39,42),
+        AccentColor=Color3.fromRGB(180,189,199),
+        OutlineColor=Color3.fromRGB(75,80,84),
+        FontColor=Color3.fromRGB(231,234,238),
+        HeaderColor=Color3.fromRGB(23,25,28),
+        BodyTopColor=Color3.fromRGB(24,26,29),
+        BodyBottomColor=Color3.fromRGB(21,23,26),
+        CheckColor=Color3.fromRGB(59,65,71),
+        GlassTransparency=.55,RowTransparency=.92,HeaderTransparency=.45,
         FontFace="BuilderSans",BackgroundImage="",
     }
 end
@@ -44627,7 +44627,7 @@ function Style.ApplyBase(library)
 end
 
 function Style.ApplyStartupTheme(manager, library)
-    -- Apply the translucent white palette once without replaying gameplay state.
+    -- Apply the reference charcoal glass palette once without replaying gameplay state.
     -- Theme choices remain available for deliberate changes after loading.
     local choice = library.Options.ThemeManager_ThemeList
     if choice then choice:SetValue("Default") end
@@ -91313,7 +91313,7 @@ function HUD.Install(context)
     self.OriginalText=label.Text;context.Widget.Centered=nil
     label.AnchorPoint=Vector2.new(.5,0);label.Position=UDim2.new(.5,0,0,12);label.TextWrapped=false
     label.AutomaticSize=Enum.AutomaticSize.None
-    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.30
+    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.45
     label.RichText=true
     if context.Library then
         label.BackgroundColor3=context.Library.Scheme.HeaderColor
