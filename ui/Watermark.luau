@@ -3,7 +3,7 @@
 local HUD={};HUD.__index=HUD
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
 function HUD.Format(value)
-    return string.format("astral  ·  %s/%s players  ·  %s fps  ·  %s ms",value.Players,value.MaxPlayers or"?",value.FPS,value.Ping)
+    return string.format("astral  |  %s/%s players  |  %s fps  |  %s ms",value.Players,value.MaxPlayers or"?",value.FPS,value.Ping)
 end
 function HUD.Install(context)
     local self=setmetatable({Context=context,Connections={},Frames=0,FrameTime=0,Elapsed=1,FPS="—"},HUD)
@@ -11,7 +11,13 @@ function HUD.Install(context)
     self.OriginalText=label.Text;context.Widget.Centered=nil
     label.AnchorPoint=Vector2.new(.5,0);label.Position=UDim2.new(.5,0,0,12);label.TextWrapped=false
     label.AutomaticSize=Enum.AutomaticSize.None
-    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.14
+    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.08
+    label.RichText=true
+    if context.Library then
+        label.BackgroundColor3=context.Library.Scheme.HeaderColor
+        local registry=context.Library.Registry[label]
+        if registry then registry.BackgroundColor3="HeaderColor"end
+    end
     label.TextTruncate=Enum.TextTruncate.AtEnd;label.BorderSizePixel=0
     local round=label:FindFirstChildOfClass("UICorner")or Instance.new("UICorner")
     round.CornerRadius=UDim.new(1,0);round.Parent=label
@@ -34,10 +40,12 @@ function HUD:Update()
     if ok and finite(value)and value>=0 then ping=tostring(math.floor(value+.5))end
     local max=ctx.Players.MaxPlayers
     self.Values={Players=#ctx.Players:GetPlayers(),MaxPlayers=finite(max)and math.floor(max)or nil,FPS=self.FPS,Ping=ping}
-    local content=HUD.Format(self.Values);ctx.Widget:SetText(content)
+    local content=HUD.Format(self.Values)
+    local separator=label.BackgroundColor3:Lerp(label.TextColor3,.3):ToHex()
+    ctx.Widget:SetText((content:gsub("|",'<font color="#'..separator..'">|</font>')))
     local camera=ctx.Workspace.CurrentCamera;local viewport=camera and camera.ViewportSize.X or 1024
     local font=label.Font
-    if typeof(font)~="EnumItem"or font==Enum.Font.Unknown then font=Enum.Font.Gotham end
+    if typeof(font)~="EnumItem"or font==Enum.Font.Unknown then font=Enum.Font.BuilderSans end
     local bounds=game:GetService("TextService"):GetTextSize(content,13,font,Vector2.new(10000,40))
     local padding=label:FindFirstChildOfClass("UIPadding")
     local inset=padding and(padding.PaddingLeft.Offset+padding.PaddingRight.Offset)or 28

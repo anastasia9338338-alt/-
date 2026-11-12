@@ -67,6 +67,7 @@ def program(modules):
     if 'TheWorstUIV2'in modules:return adapter_program(modules)
     support=ROOT/'tools/feature_tests'
     s=(support/'ui_engine_mock.luau').read_text()+'\n'+(support/'ui_native_mock.luau').read_text()
+    s+='local UIMotion=(function()\n'+modules['UIMotion']+'\nend)()\n'
     s+='''
 local runtime={}
 local Identity={Runtime=function()return runtime end}
@@ -77,10 +78,12 @@ local FunctionGlyphs={Get=function()end}
 local Library=(function(...)
 '''+modules['Library']+'''
 end)(function(name)
-if name=="Branding"then return Brand elseif name=="AppIdentity"then return Identity elseif name=="MenuDecor"then return MenuDecor elseif name=="FunctionGlyphs"then return FunctionGlyphs elseif name=="Icons"then return FakeIcons end
+if name=="Branding"then return Brand elseif name=="AppIdentity"then return Identity elseif name=="MenuDecor"then return MenuDecor elseif name=="FunctionGlyphs"then return FunctionGlyphs elseif name=="Icons"then return FakeIcons elseif name=="UIMotion"then return UIMotion end
 error(name)
 end)
 '''
+    if 'UIStyle'in modules:
+        s+='local UIStyle=(function()\n'+modules['UIStyle']+'\nend)()\nUIStyle.ApplyBase(Library)\n'
     s+=startup_program(modules.get('Main'))
     return s+(support/'ui_native_body.luau').read_text()
 
@@ -90,7 +93,7 @@ if __name__=='__main__':
         pattern=re.compile(r'^sources\.(\w+) = \[========\[\n(.*?)\n\]========\]',re.M|re.S)
         modules=dict(pattern.findall(a.bundle.read_text()))
     else:
-        modules={'Library':(ROOT/'ui/Library.luau').read_text()}
+        modules={n:(ROOT/'ui'/f'{n}.luau').read_text()for n in ('Library','UIMotion')}
         if 'requireModule("TheWorstUIV2")'in modules['Library']:
             modules.update({n:(ROOT/'ui'/p).read_text()for n,p in [('TheWorstUIV2','TheWorstUIV2.luau'),('Presentation','Presentation.luau'),('Watermark','Watermark.luau')]})
     with tempfile.TemporaryDirectory(prefix='astral-ui-')as d:

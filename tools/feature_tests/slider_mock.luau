@@ -1,3 +1,4 @@
+local Font={fromEnum=function(v)return v end}
 local checks=0
 local function check(x,m)assert(x,m);checks+=1 end
 local function signal()
@@ -6,7 +7,7 @@ local function signal()
  return s
 end
 local function enum()return setmetatable({},{__index=function(t,k)rawset(t,k,k);return k end})end
-local Enum={TextXAlignment=enum(),TextTruncate=enum(),UserInputType=enum(),ApplyStrokeMode=enum(),LineJoinMode=enum()}
+local Enum={Font=enum(),TextXAlignment=enum(),TextTruncate=enum(),UserInputType=enum(),ApplyStrokeMode=enum(),LineJoinMode=enum()}
 local UDim={new=function(s,o)return {Scale=s,Offset=o}end}
 local UDim2={}
 function UDim2.new(a,b,c,d)return {X=UDim.new(a,b),Y=UDim.new(c,d)}end

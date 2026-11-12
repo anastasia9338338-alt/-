@@ -3,7 +3,8 @@ check(Library.ScreenGui and Library.ScreenGui.Parent==CoreGui,"Native library di
 local calls=0
 check(type(Library.BeginStartup)=="function"and type(Library.FinishStartup)=="function","Native UI has no initialization guard")
 Library:BeginStartup()
-local window=Library:CreateWindow({Title="astral",Footer="",Size=UDim2.fromOffset(680,540),ShowCustomCursor=false,ShowMobileButtons=false,AutoShow=false,CornerRadius=18,Icon="sparkles",Compact=true,DetachedSidebar=true,SidebarCompactWidth=52,MinContainerWidth=440})
+Library.ForceCheckbox=true
+local window=Library:CreateWindow({Title="astral",Footer="",Size=UDim2.fromOffset(680,540),ShowCustomCursor=false,ShowMobileButtons=false,AutoShow=false,CornerRadius=18,Icon="sparkles",Compact=true,IconSidebar=true,SidebarCompactWidth=52,MinContainerWidth=440})
 local tab=window:AddTab("Defense","shield")
 local group=tab:AddLeftGroupbox("Protection")
 local toggle=group:AddToggle("SpinT",{Text="Character Spin",Default=false,Callback=function(value)if value then calls+=1 end end})
@@ -34,10 +35,10 @@ check(Library.Tabs.Defense==tab and #Library.TabButtons==1,"Native sidebar tabs 
 local rail=Library.TabButtons[1].Label.Parent.Parent.Parent
 local surface=window.MainFrame:FindFirstChild("BodySurface")
 check(not Library.TabButtons[1].Label.Visible and Library.TabButtons[1].Icon.Visible,"Compact sidebar shows text or hides the original icon")
-check(rail.Size.X.Offset==52 and surface and surface.Position.X.Offset==60,"Icon rail is not separated by the requested eight-pixel gap")
+check(rail.Size.X.Offset==52 and surface and surface.Position.X.Offset==0,"Icon rail is not separated by the requested unified body")
 window.MainFrame.Size=UDim2.fromOffset(500,420);window:SetSidebarWidth(180)
 check(window:GetSidebarWidth()==52 and not Library.TabButtons[1].Label.Visible,"An old layout restored a full-width text sidebar")
-check(surface.Size.X.Offset==-60 and Library.WindowContainer.Size.X.Offset==-60,"Sidebar and body resize independently and overlap")
+check(surface.Size.X.Offset==0 and Library.WindowContainer.Size.X.Offset==-53,"Sidebar and body resize independently and overlap")
 resetButton.Base.MouseButton1Click:Fire();check(resets==1,"Explicit Respawn button click no longer works")
 check(slider.Value==16 and dropdown.Value=="Pallet","Native controls lost declared defaults")
 local itemImages={}
@@ -48,8 +49,49 @@ check(itemImages["rbxassetid://123"]and itemImages["rbxassetid://456"],"Native d
 local widget=Library:AddDraggableLabel({Text="astral",Icon="sparkles"})
 check(widget.Label and table.find(Library.DraggableElements,widget.Label),"Native watermark was not registered for dragging")
 check(widget.Label:FindFirstChildOfClass("UIPadding").PaddingLeft.Offset>=28,"Watermark icon has no reserved space")
+
+-- Reference skin checks run on the actual native instances, not a separate HTML UI.
+check(toggle.Holder.Size.Y.Offset==40 and toggle.TextLabel.FontFace.Family=="BuilderSansBold","Reference row height or bold caption changed")
+check(toggle.TextLabel.TextTransparency==0,"Inactive captions are dimmed compared with the reference")
+check(toggle.Parent.Holder.BackgroundTransparency==1 and not toggle.Parent.Holder:FindFirstChildOfClass("UIStroke"),"The old outer section cards returned")
+local search=window.MainFrame:FindFirstChild("SearchField",true)
+check(search and search.PlaceholderText=="Search"and search.TextXAlignment==Enum.TextXAlignment.Left,"Header search is blank or misaligned")
+check(window.MainFrame.ClassName=="CanvasGroup"and not surface:FindFirstChildOfClass("UICorner"),"The header/body are still separate rounded windows")
+local header=window.MainFrame:FindFirstChild("HeaderSurface")
+check(header and header.Size.Y.Offset==44 and surface.Position.Y.Offset==44,"Header and body do not use the reference geometry")
+check(header.BackgroundColor3:ToHex()=="26374f" and window.MainFrame:FindFirstChildOfClass("UIGradient"),"Reference palette or vertical body shading changed")
+check(window.MainFrame:FindFirstChild("MinimizeMenu",true)and window.MainFrame:FindFirstChild("CloseMenu",true),"Reference header controls are missing")
+local previousCalls,previousWatched=calls,watched
+local originalParent=dropdown.Holder.Parent
+local panel=Library:AttachSettings(toggle,{dropdown})
+check(dropdown.Holder.Parent==panel.Body and Library.Options.AntiKickType==dropdown,"Gear panel replaced a settings object or lost its ID")
+check(toggle.Holder:FindFirstChild("Checkbox").Position.X.Offset==-42,"The checkbox did not leave room for its gear on the right")
+panel.Gear.Activated:Fire()
+check(panel.Frame.Visible and calls==previousCalls and watched==previousWatched,"Opening settings toggled a gameplay feature")
+dropdown:SetValue("Food");check(dropdown.Value=="Food","A relocated native combo no longer changes settings")
+Library:Toggle(false);check(not panel.Frame.Visible,"Settings panel remained over the game after hiding the menu")
+Library:Toggle(true)
+local dependency=group:AddDependencyBox();dependency:SetupDependencies({{toggle,true}})
+dependency:AddSlider("DependentValue",{Text="Existing dependent setting",Default=3,Min=0,Max=10})
+Library:AttachDependencySettings()
+check(dependency.DependencyPanelOwner==toggle and dependency.Holder.Parent==panel.Body,"Native dependent settings were not attached to their owner's gear")
+check(not toggle.Value and dependency.Visible,"Configuration cannot be opened while its action is off")
+local button=group:AddButton("Bound action",function()end)
+local buttonHolder=button.Base.Parent
+button:AddKeyPicker("BoundAction",{Default="None",Mode="Press"})
+check(button.Base.Parent==buttonHolder and buttonHolder.Size.Y.Offset==40,"Adding a bind wrapped the button in a second short row")
+local label=group:AddLabel("Label action");label:AddKeyPicker("LabelAction",{Default="Z",Mode="Press"})
+check(label.Holder.Name=="LabelRow"and label.Holder.Size.Y.Offset==40,"A labeled bind created a stray line or icon")
+local panelSignals=table.clone(panel.Connections)
+panel.Gear.Activated:Fire();toggle:Destroy()
+check(panel.Disposed and not panel.Frame.Parent and dropdown.Holder.Parent==originalParent,"Destroying an owner leaked its panel or destroyed shared settings")
+for _,connection in panelSignals do check(not connection.Connected,"Gear listener survived owner disposal")end
 local signalsBefore=table.clone(Library.Signals)
+local actionListeners=table.clone(UIS.InputBegan.Connections)
+local releaseListeners=table.clone(UIS.InputEnded.Connections)
 Library:Unload()
 for _,connection in ipairs(signalsBefore)do check(not connection.Connected,"Native UI service listener survived unload")end
+for _,connection in actionListeners do check(not connection.Connected,"Control input listener survived unloading named tabs")end
+for _,connection in releaseListeners do check(not connection.Connected,"Control release listener survived unloading named tabs")end
 check(Library.Unloaded and Library.ScreenGui==nil and runtime.Library==nil,"Native UI did not finish unload")
 print('PASS: '..checks..' native sidebar control defaults, explicit toggle input, Alt safety, dropdown imagery, draggable HUD and unload checks (mocked)')

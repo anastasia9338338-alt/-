@@ -96,6 +96,8 @@ def run_feature_checks(modules,runner,folder):
         cleanup=re.search(r'Library:OnUnload\(function\(\)\s+if InputChanged then InputChanged:Disconnect\(\);InputChanged=nil end\s+end\)',library)
         assert cleanup,'Hold-key observer lacks direct unload cleanup'
         run('keybind',read('keybind_mock.luau')+declaration[0]+'\n'+cleanup[0]+'\n'+library[start:end]+read('keybind_body.luau'))
+    if 'UIMotion'in modules:
+        run('ui_motion',read('ui_engine_mock.luau')+'\nlocal Motion=(function()\n'+modules['UIMotion']+'\nend)()\n'+read('ui_motion_body.luau'))
     if 'Watermark'in modules:
         run('watermark',read('ui_engine_mock.luau')+'\nlocal HUD=(function()\n'+modules['Watermark']+'\nend)()\n'+read('watermark_body.luau'))
     if {'AquaAssets','AquaPose','AquaMesh','AquaModel'}<=modules.keys():

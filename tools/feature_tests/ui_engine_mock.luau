@@ -124,7 +124,7 @@ function Node:Play()end
 function Node:Stop()end
 local Instance={new=function(class,parent)
     local n=setmetatable({_props={ClassName=class,Name=class,Size=UDim2.fromOffset(100,30),Position=UDim2.new(),AnchorPoint=Vector2.zero,Visible=true,
-        Text="",TextSize=16,TextTransparency=0,BackgroundTransparency=0,ImageTransparency=0,BackgroundColor3=Color3.new(),TextColor3=Color3.new(1,1,1),FontFace=Font.fromEnum(Enum.Font.Code),
+        Text="",TextSize=16,TextTransparency=0,BackgroundTransparency=0,ImageTransparency=0,GroupTransparency=0,BackgroundColor3=Color3.new(),TextColor3=Color3.new(1,1,1),FontFace=Font.fromEnum(Enum.Font.Code),
         ZIndex=1,CanvasPosition=Vector2.zero,CanvasSize=UDim2.new()},_children={},_signals={},_properties={}},mt)
     n.Parent=parent;return n
 end}

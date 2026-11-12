@@ -6,7 +6,7 @@ root=Path(__file__).resolve().parents[1]
 pattern=re.compile(r'^sources\.(\w+) = \[========\[\n(.*?)\n\]========\]',re.M|re.S)
 bundle=(root/'astral.lua').read_text()
 replacements={name:(root/'ui'/f'{name}.luau').read_text().rstrip()+'\n'
-              for name in ('Library','Watermark')}
+              for name in ('Library','Watermark','UIMotion')}
 retired={'TheWorstUIV2','Presentation'}
 known={m[0]for m in pattern.findall(bundle)}
 def replace(m):

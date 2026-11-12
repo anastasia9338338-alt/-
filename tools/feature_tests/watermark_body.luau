@@ -25,6 +25,7 @@ workspace.CurrentCamera.ViewportSize=Vector2.new(180,400)
 hud:Update()
 check(label.Size.X.Offset<=156,"HUD width exceeds the current viewport")
 check(label.Position==saved,"Updating size overwrote the user's restored layout")
+check(label.Text:find('<font color=',1,true)and label.Text:find("|",1,true),"HUD lost its subtle statistic dividers")
 local before=reads
 RunService.Heartbeat:Fire(0/0);RunService.Heartbeat:Fire(math.huge);RunService.Heartbeat:Fire(-1)
 check(reads==before,"Invalid frame deltas performed a telemetry update")
