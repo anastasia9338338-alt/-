@@ -89,6 +89,18 @@ end)
     s+='local ThemeManager=(function(...)\n'+modules['ThemeManager']+'\nend)(function(name)assert(name=="AppIdentity");return Identity end)\n'
     if 'UIStyle'in modules:
         s+='local UIStyle=(function()\n'+modules['UIStyle']+'\nend)()\nUIStyle.ApplyBase(Library)\n'
+    if 'ObjectESP'in modules:
+        s+='local ObjectESP=(function(...)\n'+modules['ObjectESP']+'\nend)(function(name)assert(name=="AssetCatalog");return {Items={Train="rbxassetid://123"}}end)\n'
+    main=modules.get('Main','')
+    if 'Toggles:AddToggle("PCLDESPT"'in main:
+        a=main.index('Toggles:AddToggle("PCLDESPT"');b=main.index('Toggles:AddToggle("StickyESPT"',a)
+        s+='local function BuildPCLDRow(Toggles,toggles,espConfig,tbl12,fn21)\n'+main[a:b]+'\nend\n'
+    extra=modules.get('ExtraFeatures','')
+    if 'v89:AddCheckbox("NewESP_PCLDESP"'in extra:
+        a=extra.index('v89:AddCheckbox("NewESP_PCLDESP"');b=extra.index('\nv89:AddDivider()',a)
+        s+='local function BuildExtraPCLDRow(v89)\n'+extra[a:b]+'\nend\n'
+        a=extra.index('options.NewESP_PCLD_ChamsColor:OnChanged(function()');b=extra.index('\nend)',a)+len('\nend)')
+        s+='local function BindExtraPCLDColor(options,onColor)\nlocal color2,color3\nlocal fn74=function()onColor(color2,color3)end\n'+extra[a:b]+'\nend\n'
     s+=startup_program(modules.get('Main'))
     return s+(support/'ui_native_body.luau').read_text()
 

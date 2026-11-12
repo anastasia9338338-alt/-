@@ -313,10 +313,13 @@ end
 local GuiMotion=UIMotion.new(RunService.RenderStepped)
 table.insert(Library.UnloadSignals,function()GuiMotion:Dispose()end)
 
-Library.Scheme.HeaderColor=Color3.fromRGB(38,55,79)
-Library.Scheme.BodyTopColor=Color3.fromRGB(42,61,82)
-Library.Scheme.BodyBottomColor=Color3.fromRGB(55,77,88)
-Library.Scheme.CheckColor=Color3.fromRGB(60,77,94)
+Library.Scheme.HeaderColor=Color3.fromRGB(255,255,255)
+Library.Scheme.BodyTopColor=Color3.fromRGB(255,255,255)
+Library.Scheme.BodyBottomColor=Color3.fromRGB(239,244,249)
+Library.Scheme.CheckColor=Color3.fromRGB(223,230,238)
+Library.Scheme.GlassTransparency=.28
+Library.Scheme.RowTransparency=.46
+Library.Scheme.HeaderTransparency=.30
 
 local Templates = {
 
@@ -1577,7 +1580,12 @@ local function FillInstance(Table: { [string]: any }, Instance: GuiObject)
     end
 end
 
+local SurfaceOpacity={BackgroundColor="GlassTransparency",MainColor="RowTransparency",HeaderColor="HeaderTransparency"}
 local function New(ClassName: string, Properties: { [string]: any }): any
+    local role=SurfaceOpacity[Properties.BackgroundColor3]
+    if role and Properties.BackgroundTransparency==nil then
+        Properties=table.clone(Properties);Properties.BackgroundTransparency=role
+    end
     local Instance = Instance.new(ClassName)
 
     if Templates[ClassName] then
@@ -4049,7 +4057,7 @@ function Library:GetAddonHost(control)
     local isButton=control.Type=="Button" or control.Type=="SubButton"
     local row=isButton and control.Base or control.Holder
     if control.Type=="Label" then
-        row=New("Frame",{Name="LabelRow",BackgroundColor3="MainColor",BackgroundTransparency=.08,
+        row=New("Frame",{Name="LabelRow",BackgroundColor3="MainColor",BackgroundTransparency="RowTransparency",
             Size=UDim2.new(1,0,0,40),Visible=control.Visible,Parent=label.Parent})
         New("UICorner",{CornerRadius=UDim.new(0,8),Parent=row})
         New("UIStroke",{Color="OutlineColor",Parent=row})
@@ -4099,6 +4107,8 @@ function Library:AttachSettings(owner, controls)
             Position=UDim2.fromOffset(8,36),Size=UDim2.new(1,-16,1,-44),
             AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.fromOffset(0,0),
             ScrollBarThickness=2,ScrollBarImageColor3="OutlineColor",Parent=frame})
+        New("UIPadding",{PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2),
+            PaddingTop=UDim.new(0,2),PaddingBottom=UDim.new(0,2),Parent=body})
         local layout=New("UIListLayout",{Padding=UDim.new(0,4),Parent=body})
         local gear=New("ImageButton",{Name="SettingsGear",AnchorPoint=Vector2.new(1,.5),
             Position=UDim2.new(1,-8,.5,0),Size=UDim2.fromOffset(26,26),BackgroundTransparency=1,
@@ -4114,7 +4124,7 @@ function Library:AttachSettings(owner, controls)
         local function fit()
             if data.Disposed or owner.Destroyed then return end
             local viewport=workspace.CurrentCamera.ViewportSize
-            frame.Size=UDim2.fromOffset(math.min(300,viewport.X-24),math.min(math.max(80,layout.AbsoluteContentSize.Y/Library.DPIScale+44),math.max(80,viewport.Y-80)))
+            frame.Size=UDim2.fromOffset(math.min(300,viewport.X-24),math.min(math.max(80,layout.AbsoluteContentSize.Y/Library.DPIScale+48),math.max(80,viewport.Y-80)))
         end
         data.Fit=fit
         table.insert(data.Connections,layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fit))
@@ -4174,7 +4184,7 @@ function Library:AttachDependencySettings()
     for _,box in Library.DependencyBoxes do
         local dependency=box.Dependencies and box.Dependencies[1]
         local owner=dependency and dependency[1]
-        if owner and owner.Type=="Toggle" and dependency[2]==true and not box.DependencyPanelOwner then
+        if owner and not owner.Destroyed and owner.Type=="Toggle" and dependency[2]==true and not box.DependencyPanelOwner then
             box.DependencyPanelOwner=owner
             Library:AttachSettings(owner,{box})
             box:Update()
@@ -7145,7 +7155,7 @@ do
             Active = not Toggle.Disabled,
             Name="ToggleRow",
             BackgroundColor3 = "MainColor",
-            BackgroundTransparency = .08,
+            BackgroundTransparency = "RowTransparency",
             Size = UDim2.new(1, 0, 0, 40),
             Text = "",
             Visible = Toggle.Visible,
@@ -7695,7 +7705,7 @@ do
         }
 
         local Holder = New("Frame", {
-            BackgroundColor3="MainColor",BackgroundTransparency=.08,
+            BackgroundColor3="MainColor",BackgroundTransparency="RowTransparency",
             Size = UDim2.new(1,0,0,40),
             Visible = Input.Visible,
             Parent = Container,
@@ -7958,7 +7968,7 @@ do
         }
 
         local Holder = New("Frame", {
-            Name="SliderRow",BackgroundColor3="MainColor",BackgroundTransparency=.08,
+            Name="SliderRow",BackgroundColor3="MainColor",BackgroundTransparency="RowTransparency",
             Size = UDim2.new(1,0,0,54),
             Visible = Slider.Visible,
             Parent = Container,
@@ -11079,7 +11089,7 @@ function Library:CreateWindow(WindowInfo)
         Library.KeybindFrame.Visible = false
 
         MainFrame = New("Frame", {
-            BackgroundTransparency = 0,
+            BackgroundTransparency = "GlassTransparency",
             Active=true,
             ClipsDescendants=true,
             BackgroundColor3 = "WhiteColor",
@@ -11108,10 +11118,10 @@ function Library:CreateWindow(WindowInfo)
         Library:AddOutline(MainFrame)
         BodySurface=New("Frame",{Name="BodySurface",BackgroundTransparency=1,
             Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,1,-44),Parent=MainFrame})
-        HeaderSurface=New("Frame",{Name="HeaderSurface",BackgroundColor3="HeaderColor",
+        HeaderSurface=New("Frame",{Name="HeaderSurface",BackgroundColor3="HeaderColor",BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,44),Parent=MainFrame})
         New("UICorner",{CornerRadius=UDim.new(0,WindowInfo.CornerRadius),Parent=HeaderSurface})
-        New("Frame",{BackgroundColor3="HeaderColor",Position=UDim2.fromScale(0,.5),
+        New("Frame",{BackgroundColor3="HeaderColor",BackgroundTransparency=1,Position=UDim2.fromScale(0,.5),
             Size=UDim2.fromScale(1,.5),Parent=HeaderSurface})
         Library:MakeLine(MainFrame,{Position=UDim2.fromOffset(0,43),Size=UDim2.new(1,0,0,1)})
 
@@ -12481,7 +12491,7 @@ function Library:CreateWindow(WindowInfo)
                 Parent = BoxHolder,
             })
             New("UIPadding", {
-                PaddingBottom = UDim.new(0, 4),
+                PaddingBottom = UDim.new(0, 8),
                 PaddingTop = UDim.new(0, 0),
                 Parent = BoxHolder,
             })
@@ -12628,8 +12638,8 @@ function Library:CreateWindow(WindowInfo)
                 })
                 New("UIPadding", {
                     PaddingBottom = UDim.new(0, 2),
-                    PaddingLeft = UDim.new(0, 0),
-                    PaddingRight = UDim.new(0, 0),
+                    PaddingLeft = UDim.new(0, 2),
+                    PaddingRight = UDim.new(0, 2),
                     PaddingTop = UDim.new(0, 2),
                     Parent = GroupboxContainer,
                 })
@@ -14973,7 +14983,7 @@ function Library:BeginStartup() self.Starting=true end
 function Library:FinishStartup() self.Starting=false end
 function Library:StyleFloatingPanel(frame)
     if not frame then return end
-    FillInstance({BackgroundColor3="BackgroundColor",BackgroundTransparency=.08,BorderSizePixel=0},frame)
+    FillInstance({BackgroundColor3="BackgroundColor",BackgroundTransparency="RowTransparency",BorderSizePixel=0},frame)
     local corner=frame:FindFirstChildOfClass("UICorner") or New("UICorner",{Parent=frame})
     corner.CornerRadius=UDim.new(0,self.CornerRadius)
     local stroke=frame:FindFirstChildOfClass("UIStroke")

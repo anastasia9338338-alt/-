@@ -1,10 +1,19 @@
 # Astral reference GUI
 
-v4.74 follows the supplied reference with one continuous rounded surface.
+v4.75 uses translucent white surfaces and dark captions throughout the menu,
+settings popups and watermark, with one continuous rounded outer surface.
 The 44 px header, icon-only 52 px sidebar and body share the same outer frame;
 there are no detached panels or gaps. Astral's original icon atlas and Fun icon
 are retained. Search appears beside the brand. Flat section headings, 40 px
 outlined rows and right-aligned square controls preserve the requested styling.
+Every scrolling section and gear popup reserves 2 px around its children so
+centered row strokes are not clipped. Section spacing is consistent.
+
+ESP is a flat group with no Toggles/Config strip. Existing configuration
+controls are relocated to gears on their owning ESP rows, keeping their IDs
+and callbacks. PCLD has one color picker for both fill and outline. Counter
+Attack (including the embedded duplicate), Graphics Particles and Boost FPS
+controls are removed as requested.
 
 `UIMotion.luau` maintains a single render listener for pending drags and opacity
 transitions. It sleeps when idle, accepts interrupted fades and cancels stale

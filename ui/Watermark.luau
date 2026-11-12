@@ -11,12 +11,13 @@ function HUD.Install(context)
     self.OriginalText=label.Text;context.Widget.Centered=nil
     label.AnchorPoint=Vector2.new(.5,0);label.Position=UDim2.new(.5,0,0,12);label.TextWrapped=false
     label.AutomaticSize=Enum.AutomaticSize.None
-    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.08
+    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.30
     label.RichText=true
     if context.Library then
         label.BackgroundColor3=context.Library.Scheme.HeaderColor
+        label.BackgroundTransparency=context.Library.Scheme.HeaderTransparency
         local registry=context.Library.Registry[label]
-        if registry then registry.BackgroundColor3="HeaderColor"end
+        if registry then registry.BackgroundColor3="HeaderColor";registry.BackgroundTransparency="HeaderTransparency"end
     end
     label.TextTruncate=Enum.TextTruncate.AtEnd;label.BorderSizePixel=0
     local round=label:FindFirstChildOfClass("UICorner")or Instance.new("UICorner")
