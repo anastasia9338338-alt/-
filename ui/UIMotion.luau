@@ -19,10 +19,48 @@ function Motion:Move(ui,target,allowed)
     item.Target=target;item.Allowed=allowed;self:Wake()
 end
 function Motion:StopMove(ui)self.Moves[ui]=nil;self:Sleep()end
+-- Normal Frames render without the CanvasGroup texture/compositing path.
+-- Capture only the displayed tab once; one observer fades its drawn properties.
+local function snapshot(root)
+    local entries={}
+    local nodes=root:GetDescendants();table.insert(nodes,root)
+    for _,node in nodes do
+        local drawn=true;local ancestor=node
+        while ancestor and ancestor~=root do
+            if ancestor:IsA("GuiObject")and not ancestor.Visible then drawn=false;break end
+            ancestor=ancestor.Parent
+        end
+        if drawn then
+            local properties={}
+            if node:IsA("GuiObject")then properties[#properties+1]="BackgroundTransparency"end
+            if node:IsA("TextLabel")or node:IsA("TextButton")or node:IsA("TextBox")then properties[#properties+1]="TextTransparency"end
+            if node:IsA("ImageLabel")or node:IsA("ImageButton")then properties[#properties+1]="ImageTransparency"end
+            if node:IsA("UIStroke")then properties[#properties+1]="Transparency"end
+            for _,property in properties do
+                local value=node[property]
+                if finite(value)and value<1 then entries[#entries+1]={Node=node,Property=property,Value=value}end
+            end
+        end
+    end
+    return entries
+end
+local function opacity(entries,alpha)
+    for _,entry in entries do
+        if entry.Node.Parent then entry.Node[entry.Property]=entry.Value+(1-entry.Value)*alpha end
+    end
+end
 function Motion:Show(ui,visible,animate)
     if self.Closed then return end
-    if not animate then self.Fades[ui]=nil;ui.GroupTransparency=visible and 0 or 1;ui.Visible=visible;self:Sleep();return end
-    ui.Visible=true;self.Fades[ui]={Target=visible and 0 or 1,Visible=visible};self:Wake()
+    local previous=self.Fades[ui]
+    if not animate or not visible and not ui.Visible then
+        self.Fades[ui]=nil
+        if previous then opacity(previous.Entries,0)end
+        ui.Visible=visible;self:Sleep();return
+    end
+    local item=previous or{Entries=snapshot(ui),Alpha=ui.Visible and 0 or 1}
+    item.Target=visible and 0 or 1;item.Visible=visible
+    ui.Visible=true;opacity(item.Entries,item.Alpha)
+    self.Fades[ui]=item;self:Wake()
 end
 function Motion:Sleep()
     if not next(self.Moves)and not next(self.Fades)and self.Connection then
@@ -44,9 +82,12 @@ function Motion:Step(dt)
     for ui,item in self.Fades do
         if not ui.Parent then self.Fades[ui]=nil
         else
-            local alpha=ui.GroupTransparency+(item.Target-ui.GroupTransparency)*fade
-            if math.abs(alpha-item.Target)<.004 then alpha=item.Target;ui.Visible=item.Visible;self.Fades[ui]=nil end
-            ui.GroupTransparency=alpha
+            item.Alpha=item.Alpha+(item.Target-item.Alpha)*fade
+            if math.abs(item.Alpha-item.Target)<.004 then
+                ui.Visible=item.Visible
+                opacity(item.Entries,0)
+                self.Fades[ui]=nil
+            else opacity(item.Entries,item.Alpha)end
         end
     end
     self:Sleep()

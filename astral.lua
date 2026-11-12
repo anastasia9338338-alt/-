@@ -23,10 +23,48 @@ function Motion:Move(ui,target,allowed)
     item.Target=target;item.Allowed=allowed;self:Wake()
 end
 function Motion:StopMove(ui)self.Moves[ui]=nil;self:Sleep()end
+-- Normal Frames render without the CanvasGroup texture/compositing path.
+-- Capture only the displayed tab once; one observer fades its drawn properties.
+local function snapshot(root)
+    local entries={}
+    local nodes=root:GetDescendants();table.insert(nodes,root)
+    for _,node in nodes do
+        local drawn=true;local ancestor=node
+        while ancestor and ancestor~=root do
+            if ancestor:IsA("GuiObject")and not ancestor.Visible then drawn=false;break end
+            ancestor=ancestor.Parent
+        end
+        if drawn then
+            local properties={}
+            if node:IsA("GuiObject")then properties[#properties+1]="BackgroundTransparency"end
+            if node:IsA("TextLabel")or node:IsA("TextButton")or node:IsA("TextBox")then properties[#properties+1]="TextTransparency"end
+            if node:IsA("ImageLabel")or node:IsA("ImageButton")then properties[#properties+1]="ImageTransparency"end
+            if node:IsA("UIStroke")then properties[#properties+1]="Transparency"end
+            for _,property in properties do
+                local value=node[property]
+                if finite(value)and value<1 then entries[#entries+1]={Node=node,Property=property,Value=value}end
+            end
+        end
+    end
+    return entries
+end
+local function opacity(entries,alpha)
+    for _,entry in entries do
+        if entry.Node.Parent then entry.Node[entry.Property]=entry.Value+(1-entry.Value)*alpha end
+    end
+end
 function Motion:Show(ui,visible,animate)
     if self.Closed then return end
-    if not animate then self.Fades[ui]=nil;ui.GroupTransparency=visible and 0 or 1;ui.Visible=visible;self:Sleep();return end
-    ui.Visible=true;self.Fades[ui]={Target=visible and 0 or 1,Visible=visible};self:Wake()
+    local previous=self.Fades[ui]
+    if not animate or not visible and not ui.Visible then
+        self.Fades[ui]=nil
+        if previous then opacity(previous.Entries,0)end
+        ui.Visible=visible;self:Sleep();return
+    end
+    local item=previous or{Entries=snapshot(ui),Alpha=ui.Visible and 0 or 1}
+    item.Target=visible and 0 or 1;item.Visible=visible
+    ui.Visible=true;opacity(item.Entries,item.Alpha)
+    self.Fades[ui]=item;self:Wake()
 end
 function Motion:Sleep()
     if not next(self.Moves)and not next(self.Fades)and self.Connection then
@@ -48,9 +86,12 @@ function Motion:Step(dt)
     for ui,item in self.Fades do
         if not ui.Parent then self.Fades[ui]=nil
         else
-            local alpha=ui.GroupTransparency+(item.Target-ui.GroupTransparency)*fade
-            if math.abs(alpha-item.Target)<.004 then alpha=item.Target;ui.Visible=item.Visible;self.Fades[ui]=nil end
-            ui.GroupTransparency=alpha
+            item.Alpha=item.Alpha+(item.Target-item.Alpha)*fade
+            if math.abs(item.Alpha-item.Target)<.004 then
+                ui.Visible=item.Visible
+                opacity(item.Entries,0)
+                self.Fades[ui]=nil
+            else opacity(item.Entries,item.Alpha)end
         end
     end
     self:Sleep()
@@ -14498,9 +14539,8 @@ function Library:CreateWindow(WindowInfo)
         Library.KeybindFrame.Position = UDim2.new(0, 6, 0.5, 0)
         Library.KeybindFrame.Visible = false
 
-        MainFrame = New("CanvasGroup", {
+        MainFrame = New("Frame", {
             BackgroundTransparency = 0,
-            GroupTransparency = 1,
             Active=true,
             ClipsDescendants=true,
             BackgroundColor3 = "WhiteColor",
@@ -14531,6 +14571,9 @@ function Library:CreateWindow(WindowInfo)
             Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,1,-44),Parent=MainFrame})
         HeaderSurface=New("Frame",{Name="HeaderSurface",BackgroundColor3="HeaderColor",
             Size=UDim2.new(1,0,0,44),Parent=MainFrame})
+        New("UICorner",{CornerRadius=UDim.new(0,WindowInfo.CornerRadius),Parent=HeaderSurface})
+        New("Frame",{BackgroundColor3="HeaderColor",Position=UDim2.fromScale(0,.5),
+            Size=UDim2.fromScale(1,.5),Parent=HeaderSurface})
         Library:MakeLine(MainFrame,{Position=UDim2.fromOffset(0,43),Size=UDim2.new(1,0,0,1)})
 
         DividerLine = New("Frame", {
@@ -17354,7 +17397,7 @@ function Library:CreateWindow(WindowInfo)
         return Dialog
     end
 
-    function Window:Toggle(Value: boolean?)
+    function Window:Toggle(Value: boolean?, Animate: boolean?)
         if Library.ActiveLoading then
             if Value == true then
                 return
@@ -17371,7 +17414,8 @@ function Library:CreateWindow(WindowInfo)
             Library.Toggled = not Library.Toggled
         end
 
-        GuiMotion:Show(MainFrame,Library.Toggled,Library.Animations and Library.Animations.ToggleWindow==true)
+        local animate=Animate~=false and not Library.Starting and Library.Animations and Library.Animations.ToggleWindow==true
+        GuiMotion:Show(MainFrame,Library.Toggled,animate)
         if not Library.Toggled then GuiMotion:StopMove(MainFrame)end
 
         if WindowInfo.UnlockMouseWhileOpen then
@@ -17409,8 +17453,8 @@ function Library:CreateWindow(WindowInfo)
         end
     end
 
-    function Library:Toggle(Value: boolean?)
-        return Window:Toggle(Value)
+    function Library:Toggle(Value: boolean?, Animate: boolean?)
+        return Window:Toggle(Value,Animate)
     end
 
     if WindowInfo.EnableSidebarResize then
@@ -17504,7 +17548,7 @@ function Library:CreateWindow(WindowInfo)
         Window:SetSidebarWidth(WindowInfo.SidebarCompactWidth)
     end
     if WindowInfo.AutoShow and not Library.ActiveLoading then
-        task.spawn(Library.Toggle)
+        Window:Toggle(true,false)
     end
 
     if Library.IsMobile then
@@ -20788,7 +20832,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.72 | FTAP")
+                                warn("Astral v4.73 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -38063,7 +38107,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.72",true)
+            box:AddLabel("Astral v4.73",true)
         end
 
         do
@@ -44567,12 +44611,19 @@ end
 local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
+-- ASTRAL_REPLACE_RUNNING_BEGIN
+if app.Running and not app.Starting and type(app.Library)=="table"and type(app.Library.Unload)=="function"then
+    local stopped,message=pcall(app.Library.Unload,app.Library)
+    if not stopped then warn("Astral could not unload its previous session: "..tostring(message))end
+end
 if app.Running or app.Starting then
-    warn("Astral v4.70: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.73: previous session is still starting or could not finish unloading")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.70 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.73",Text="Previous session is still starting or could not stop. Rejoin before running this file again.",Duration=8})end)
     return
 end
+-- ASTRAL_REPLACE_RUNNING_END
+app.LastStartupError=nil
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
 app.Starting=true
 environment=Identity.Environment(env,app)
@@ -44611,7 +44662,13 @@ app.Starting = false
 if not ok then
     if cleanup then pcall(cleanup) end
     app.Running = false
-    warn("astral initialization failed: " .. tostring(result))
+    app.LastStartupError=tostring(result)
+    warn("astral initialization failed: " .. app.LastStartupError)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification",{
+            Title="Astral v4.73: startup error",Text=app.LastStartupError:sub(1,220),Duration=12,
+        })
+    end)
     return nil, result
 end
 return result

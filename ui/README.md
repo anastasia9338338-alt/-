@@ -1,6 +1,6 @@
 # Astral reference GUI
 
-v4.72 follows the supplied reference with one continuous rounded surface.
+v4.73 follows the supplied reference with one continuous rounded surface.
 The 44 px header, icon-only 52 px sidebar and body share the same outer frame;
 there are no detached panels or gaps. Astral's original icon atlas and Fun icon
 are retained. Search appears beside the brand. Flat section headings, 40 px
@@ -8,8 +8,10 @@ outlined rows and right-aligned square controls preserve the requested styling.
 
 `UIMotion.luau` maintains a single render listener for pending drags and opacity
 transitions. It sleeps when idle, accepts interrupted fades and cancels stale
-moves when an external layout restore writes a position. A single CanvasGroup
-opacity drives the menu; no per-descendant fade pass runs when it opens.
+moves when an external layout restore writes a position. The first show is synchronous and uses a normal Frame. Later transitions capture
+only displayed descendants once and drive their opacity from one render listener.
+Inactive tabs retain their values; completion restores the captured values.
+No CanvasGroup or GroupTransparency property is required.
 The watermark follows the header color and uses muted rich-text separators,
 measured from its plain string so markup cannot inflate its width.
 
@@ -43,3 +45,8 @@ The old vendor files and their MIT notice remain as source history. Build.py
 removes the executable TheWorstUIV2 and Presentation modules; no alternate or
 hidden GUI starts. The native renderer's upstream provenance and notices remain
 in the standalone bundle. No GUI library is downloaded at runtime.
+
+The native startup harness enables AutoShow and window animation while construction
+is still guarded, then checks visibility and opacity before any render tick.
+The engine mock rejects GroupTransparency access on Frame. Startup errors remain
+in the console and are also offered as a Roblox notification when available.

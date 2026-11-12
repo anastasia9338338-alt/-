@@ -14,6 +14,9 @@ def run_feature_checks(modules,runner,folder):
         result=subprocess.run([str(runner),str(path)],capture_output=True,text=True)
         assert result.returncode==0,(name,result.stdout,result.stderr)
         print(result.stdout.strip())
+    if '-- ASTRAL_REPLACE_RUNNING_BEGIN'in modules.get('Bootstrap',''):
+        boot=modules['Bootstrap'];guard=boot.split('-- ASTRAL_REPLACE_RUNNING_BEGIN',1)[1].split('-- ASTRAL_REPLACE_RUNNING_END',1)[0]
+        run('startup_replace',read('startup_replace_body.luau').replace('__GUARD__',guard))
     if '-- Faster escape owns one held session;' in modules.get('Main',''):
         main=modules['Main']
         escape=main[main.index('\t\t-- Faster escape owns one held session;'):main.index('\t\t-- End bounded faster escape.')]

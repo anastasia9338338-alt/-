@@ -66,6 +66,7 @@ local signals={InputBegan=true,InputEnded=true,InputChanged=true,MouseEnter=true
 local viewport=Vector2.new(1280,900)
 local mt={}
 mt.__index=function(n,k)
+    if k=="GroupTransparency"and n.ClassName~="CanvasGroup"then error("GroupTransparency is not a valid member of "..n.ClassName)end
     if Node[k]then return Node[k]end
     if k=="__kind"then return"Instance"end
     if k=="Parent"then return rawget(n,"_parent")end
@@ -98,6 +99,7 @@ mt.__index=function(n,k)
     return nil
 end
 mt.__newindex=function(n,k,v)
+    if k=="GroupTransparency"and n.ClassName~="CanvasGroup"then error("GroupTransparency is not a valid member of "..n.ClassName)end
     if k=="Parent"then
         local old=rawget(n,"_parent");if old then local i=table.find(old._children,n);if i then table.remove(old._children,i)end end
         rawset(n,"_parent",v);if v then v._children[#v._children+1]=n end
@@ -124,7 +126,7 @@ function Node:Play()end
 function Node:Stop()end
 local Instance={new=function(class,parent)
     local n=setmetatable({_props={ClassName=class,Name=class,Size=UDim2.fromOffset(100,30),Position=UDim2.new(),AnchorPoint=Vector2.zero,Visible=true,
-        Text="",TextSize=16,TextTransparency=0,BackgroundTransparency=0,ImageTransparency=0,GroupTransparency=0,BackgroundColor3=Color3.new(),TextColor3=Color3.new(1,1,1),FontFace=Font.fromEnum(Enum.Font.Code),
+        Text="",TextSize=16,TextTransparency=0,BackgroundTransparency=0,ImageTransparency=0,BackgroundColor3=Color3.new(),TextColor3=Color3.new(1,1,1),FontFace=Font.fromEnum(Enum.Font.Code),
         ZIndex=1,CanvasPosition=Vector2.zero,CanvasSize=UDim2.new()},_children={},_signals={},_properties={}},mt)
     n.Parent=parent;return n
 end}

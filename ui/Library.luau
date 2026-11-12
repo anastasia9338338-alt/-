@@ -11077,9 +11077,8 @@ function Library:CreateWindow(WindowInfo)
         Library.KeybindFrame.Position = UDim2.new(0, 6, 0.5, 0)
         Library.KeybindFrame.Visible = false
 
-        MainFrame = New("CanvasGroup", {
+        MainFrame = New("Frame", {
             BackgroundTransparency = 0,
-            GroupTransparency = 1,
             Active=true,
             ClipsDescendants=true,
             BackgroundColor3 = "WhiteColor",
@@ -11110,6 +11109,9 @@ function Library:CreateWindow(WindowInfo)
             Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,1,-44),Parent=MainFrame})
         HeaderSurface=New("Frame",{Name="HeaderSurface",BackgroundColor3="HeaderColor",
             Size=UDim2.new(1,0,0,44),Parent=MainFrame})
+        New("UICorner",{CornerRadius=UDim.new(0,WindowInfo.CornerRadius),Parent=HeaderSurface})
+        New("Frame",{BackgroundColor3="HeaderColor",Position=UDim2.fromScale(0,.5),
+            Size=UDim2.fromScale(1,.5),Parent=HeaderSurface})
         Library:MakeLine(MainFrame,{Position=UDim2.fromOffset(0,43),Size=UDim2.new(1,0,0,1)})
 
         DividerLine = New("Frame", {
@@ -13933,7 +13935,7 @@ function Library:CreateWindow(WindowInfo)
         return Dialog
     end
 
-    function Window:Toggle(Value: boolean?)
+    function Window:Toggle(Value: boolean?, Animate: boolean?)
         if Library.ActiveLoading then
             if Value == true then
                 return
@@ -13950,7 +13952,8 @@ function Library:CreateWindow(WindowInfo)
             Library.Toggled = not Library.Toggled
         end
 
-        GuiMotion:Show(MainFrame,Library.Toggled,Library.Animations and Library.Animations.ToggleWindow==true)
+        local animate=Animate~=false and not Library.Starting and Library.Animations and Library.Animations.ToggleWindow==true
+        GuiMotion:Show(MainFrame,Library.Toggled,animate)
         if not Library.Toggled then GuiMotion:StopMove(MainFrame)end
 
         if WindowInfo.UnlockMouseWhileOpen then
@@ -13988,8 +13991,8 @@ function Library:CreateWindow(WindowInfo)
         end
     end
 
-    function Library:Toggle(Value: boolean?)
-        return Window:Toggle(Value)
+    function Library:Toggle(Value: boolean?, Animate: boolean?)
+        return Window:Toggle(Value,Animate)
     end
 
     if WindowInfo.EnableSidebarResize then
@@ -14083,7 +14086,7 @@ function Library:CreateWindow(WindowInfo)
         Window:SetSidebarWidth(WindowInfo.SidebarCompactWidth)
     end
     if WindowInfo.AutoShow and not Library.ActiveLoading then
-        task.spawn(Library.Toggle)
+        Window:Toggle(true,false)
     end
 
     if Library.IsMobile then

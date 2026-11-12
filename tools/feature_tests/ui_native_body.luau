@@ -4,7 +4,9 @@ local calls=0
 check(type(Library.BeginStartup)=="function"and type(Library.FinishStartup)=="function","Native UI has no initialization guard")
 Library:BeginStartup()
 Library.ForceCheckbox=true
-local window=Library:CreateWindow({Title="astral",Footer="",Size=UDim2.fromOffset(680,540),ShowCustomCursor=false,ShowMobileButtons=false,AutoShow=false,CornerRadius=18,Icon="sparkles",Compact=true,IconSidebar=true,SidebarCompactWidth=52,MinContainerWidth=440})
+local window=Library:CreateWindow({Title="astral",Footer="",Size=UDim2.fromOffset(680,540),ShowCustomCursor=false,ShowMobileButtons=false,AutoShow=true,Animations={ToggleWindow=true},CornerRadius=18,Icon="sparkles",Compact=true,IconSidebar=true,SidebarCompactWidth=52,MinContainerWidth=440})
+check(window.MainFrame.Visible and Library.Toggled and window.MainFrame.BackgroundTransparency==0,"AutoShow did not display the real window before any render tick")
+Library.Animations.ToggleWindow=false
 local tab=window:AddTab("Defense","shield")
 local group=tab:AddLeftGroupbox("Protection")
 local toggle=group:AddToggle("SpinT",{Text="Character Spin",Default=false,Callback=function(value)if value then calls+=1 end end})
@@ -56,7 +58,7 @@ check(toggle.TextLabel.TextTransparency==0,"Inactive captions are dimmed compare
 check(toggle.Parent.Holder.BackgroundTransparency==1 and not toggle.Parent.Holder:FindFirstChildOfClass("UIStroke"),"The old outer section cards returned")
 local search=window.MainFrame:FindFirstChild("SearchField",true)
 check(search and search.PlaceholderText=="Search"and search.TextXAlignment==Enum.TextXAlignment.Left,"Header search is blank or misaligned")
-check(window.MainFrame.ClassName=="CanvasGroup"and not surface:FindFirstChildOfClass("UICorner"),"The header/body are still separate rounded windows")
+check(window.MainFrame.ClassName=="Frame"and not surface:FindFirstChildOfClass("UICorner"),"The header/body are still separate rounded windows")
 local header=window.MainFrame:FindFirstChild("HeaderSurface")
 check(header and header.Size.Y.Offset==44 and surface.Position.Y.Offset==44,"Header and body do not use the reference geometry")
 check(header.BackgroundColor3:ToHex()=="26374f" and window.MainFrame:FindFirstChildOfClass("UIGradient"),"Reference palette or vertical body shading changed")
