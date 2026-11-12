@@ -24,6 +24,13 @@ local watched=0;toggle:OnChanged(function()watched+=1 end)
 check(watched==0,"Registering a native toggle observer invoked a gameplay action")
 toggle:SetValue(true);toggle:SetValue(false)
 check(calls==0 and watched==0,"Native startup replayed configured gameplay callbacks")
+-- Run the actual Main startup order: create controls, replace the default
+-- theme, then refresh registry callbacks. This used to erase the gradient colors.
+ThemeManager:SetLibrary(Library)
+ThemeManager:SetDefaultTheme(UIStyle.Theme())
+for _,name in {"HeaderColor","BodyTopColor","BodyBottomColor","CheckColor"}do
+    check(typeof(Library.Scheme[name])=="Color3","Default theme erased "..name)
+end
 Library:FinishStartup()
 check(calls==0 and not toggle.Value,"Native control construction enabled a disabled gameplay toggle")
 key("LeftAlt");key("LeftAlt",true)
@@ -88,6 +95,19 @@ local panelSignals=table.clone(panel.Connections)
 panel.Gear.Activated:Fire();toggle:Destroy()
 check(panel.Disposed and not panel.Frame.Parent and dropdown.Holder.Parent==originalParent,"Destroying an owner leaked its panel or destroyed shared settings")
 for _,connection in panelSignals do check(not connection.Connected,"Gear listener survived owner disposal")end
+-- The real theme settings build and default selection also refresh registry
+-- callbacks. Reuse their actual source rather than a fake theme manager.
+local paletteToggle=group:AddToggle("ThemePaletteToggle",{Text="Palette check",Default=false})
+local settingsTab=window:AddTab("Settings","settings")
+ThemeManager:ApplyToTab(settingsTab)
+local themed,themeError=UIStyle.ApplyStartupTheme(ThemeManager,Library)
+check(themed~=false,"Default theme selection failed: "..tostring(themeError))
+for _,name in {"HeaderColor","BodyTopColor","BodyBottomColor","CheckColor"}do
+    check(typeof(Library.Scheme[name])=="Color3","Theme application erased "..name)
+end
+paletteToggle:SetValue(true);paletteToggle:SetValue(false)
+check(not paletteToggle.Value and paletteToggle.Holder:FindFirstChild("Checkbox").BackgroundColor3==Library.Scheme.CheckColor,"Checkbox palette broke after applying the theme")
+check(window.MainFrame.Visible and window.MainFrame.BackgroundTransparency==0,"Applying a theme hid the menu")
 local signalsBefore=table.clone(Library.Signals)
 local actionListeners=table.clone(UIS.InputBegan.Connections)
 local releaseListeners=table.clone(UIS.InputEnded.Connections)

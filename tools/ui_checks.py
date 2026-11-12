@@ -70,7 +70,7 @@ def program(modules):
     s+='local UIMotion=(function()\n'+modules['UIMotion']+'\nend)()\n'
     s+='''
 local runtime={}
-local Identity={Runtime=function()return runtime end}
+local Identity={Root="Astral",ConfigFolder="Astral/Configs",ThemeFolder="Astral/Themes",Runtime=function()return runtime end}
 local Brand={Clean=function(text)return text end}
 local FakeIcons={GetAsset=function(name)return{Url="rbxassetid://1",ImageRectOffset=Vector2.zero,ImageRectSize=Vector2.zero}end}
 local MenuDecor={ItemImage=function()end,ValueIcon=function()return "box"end,BlockedTab=function()return false end,Icon=function()return "box"end}
@@ -82,6 +82,11 @@ if name=="Branding"then return Brand elseif name=="AppIdentity"then return Ident
 error(name)
 end)
 '''
+    if 'UIStyle'not in modules or 'ThemeManager'not in modules:
+        bundled=dict(re.findall(r'^sources\.(\w+) = \[========\[\n(.*?)\n\]========\]',(ROOT/'astral.lua').read_text(),re.M|re.S))
+        modules=dict(modules)
+        for name in ('UIStyle','ThemeManager'):modules.setdefault(name,bundled[name])
+    s+='local ThemeManager=(function(...)\n'+modules['ThemeManager']+'\nend)(function(name)assert(name=="AppIdentity");return Identity end)\n'
     if 'UIStyle'in modules:
         s+='local UIStyle=(function()\n'+modules['UIStyle']+'\nend)()\nUIStyle.ApplyBase(Library)\n'
     s+=startup_program(modules.get('Main'))

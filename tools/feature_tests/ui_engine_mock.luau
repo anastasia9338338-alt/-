@@ -59,7 +59,31 @@ function colors:Lerp(other,t)return Color3.new(self.R+(other.R-self.R)*t,self.G+
 local Font={fromEnum=function(value)return{Family=value.Name,Weight=Enum.FontWeight.Regular,Style=Enum.FontStyle.Normal,__kind="Font"}end}
 local TweenInfo={new=function(...)return{...}end}
 local function seq(...)return{...}end
-local ColorSequence,NumberSequence,ColorSequenceKeypoint,NumberSequenceKeypoint={new=seq},{new=seq},{new=seq},{new=seq}
+local ColorSequenceKeypoint={new=function(time,color)
+    assert(type(time)=="number"and time>=0 and time<=1,"ColorSequenceKeypoint.new(): time out of range")
+    assert(typeof(color)=="Color3","ColorSequenceKeypoint.new(): Color3 expected")
+    return {Time=time,Value=color,__kind="ColorSequenceKeypoint"}
+end}
+local ColorSequence={new=function(first,last)
+    local points
+    if typeof(first)=="Color3" then
+        assert(last==nil or typeof(last)=="Color3","ColorSequence.new(): Color3 expected")
+        points={ColorSequenceKeypoint.new(0,first),ColorSequenceKeypoint.new(1,last or first)}
+    else
+        assert(type(first)=="table","ColorSequence.new(): table expected")
+        points=first
+        assert(#points>=2,"ColorSequence.new(): at least two keypoints expected")
+        assert(points[1].Time==0 and points[#points].Time==1,"ColorSequence.new(): endpoints expected")
+        local previous=-1
+        for _,point in points do
+            assert(typeof(point)=="ColorSequenceKeypoint"and point.Time>=previous,"ColorSequence.new(): ordered color keypoints expected")
+            previous=point.Time
+        end
+    end
+    return {Keypoints=points,__kind="ColorSequence"}
+end}
+local NumberSequence,NumberSequenceKeypoint={new=seq},{new=seq}
+
 local Node={}
 local signals={InputBegan=true,InputEnded=true,InputChanged=true,MouseEnter=true,MouseLeave=true,MouseButton1Click=true,MouseButton2Click=true,
     MouseButton1Up=true,MouseButton1Down=true,MouseButton2Up=true,Focused=true,FocusLost=true,Changed=true,ChildAdded=true,ChildRemoved=true,DescendantAdded=true,Ended=true,Destroying=true}
@@ -99,6 +123,11 @@ mt.__index=function(n,k)
     return nil
 end
 mt.__newindex=function(n,k,v)
+    if k=="BackgroundColor3"or k=="ImageColor3"or k=="TextColor3"or k=="PlaceholderColor3"then
+        assert(typeof(v)=="Color3",k..": Color3 expected")
+    elseif k=="Color"and n.ClassName=="UIGradient"then
+        assert(typeof(v)=="ColorSequence","UIGradient.Color: ColorSequence expected")
+    end
     if k=="GroupTransparency"and n.ClassName~="CanvasGroup"then error("GroupTransparency is not a valid member of "..n.ClassName)end
     if k=="Parent"then
         local old=rawget(n,"_parent");if old then local i=table.find(old._children,n);if i then table.remove(old._children,i)end end

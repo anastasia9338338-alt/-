@@ -5361,7 +5361,8 @@ do
     end
 
     local HueSequenceTable = {}
-    for Hue = 0, 1, 0.1 do
+    for Step = 0, 10 do
+        local Hue = Step / 10
         table.insert(HueSequenceTable, ColorSequenceKeypoint.new(Hue, Color3.fromHSV(Hue, 1, 1)))
     end
     function Funcs:AddColorPicker(Idx, Info)

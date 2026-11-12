@@ -8823,7 +8823,8 @@ do
     end
 
     local HueSequenceTable = {}
-    for Hue = 0, 1, 0.1 do
+    for Step = 0, 10 do
+        local Hue = Step / 10
         table.insert(HueSequenceTable, ColorSequenceKeypoint.new(Hue, Color3.fromHSV(Hue, 1, 1)))
     end
     function Funcs:AddColorPicker(Idx, Info)
@@ -18878,7 +18879,9 @@ function ThemeManager:SetDefaultTheme(Theme: any)
     local Library = ThemeManager.Library
     local DefaultThemeData = ThemeManager.BuiltInThemes["Default"][2]
 
-    local LibraryScheme = {}
+    -- Keep extension roles (header, gradient endpoints, checkbox surface).
+    -- Controls and registry callbacks resolve them after the standard theme loads.
+    local LibraryScheme = table.clone(Library.Scheme)
     local FinalTheme = {}
 
     for _, SchemeIndex in SchemeIndexes do
@@ -20832,7 +20835,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.73 | FTAP")
+                                warn("Astral v4.74 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -38107,7 +38110,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.73",true)
+            box:AddLabel("Astral v4.74",true)
         end
 
         do
@@ -44617,9 +44620,9 @@ if app.Running and not app.Starting and type(app.Library)=="table"and type(app.L
     if not stopped then warn("Astral could not unload its previous session: "..tostring(message))end
 end
 if app.Running or app.Starting then
-    warn("Astral v4.73: previous session is still starting or could not finish unloading")
+    warn("Astral v4.74: previous session is still starting or could not finish unloading")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.73",Text="Previous session is still starting or could not stop. Rejoin before running this file again.",Duration=8})end)
+        Title="Astral v4.74",Text="Previous session is still starting or could not stop. Rejoin before running this file again.",Duration=8})end)
     return
 end
 -- ASTRAL_REPLACE_RUNNING_END
@@ -44666,7 +44669,7 @@ if not ok then
     warn("astral initialization failed: " .. app.LastStartupError)
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification",{
-            Title="Astral v4.73: startup error",Text=app.LastStartupError:sub(1,220),Duration=12,
+            Title="Astral v4.74: startup error",Text=app.LastStartupError:sub(1,220),Duration=12,
         })
     end)
     return nil, result
