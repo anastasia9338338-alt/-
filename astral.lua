@@ -1,4 +1,4 @@
--- Astral v4.77 | Blobman defense, native grab acknowledgement, combined Anti Explore and readable floating menus.
+-- Astral v4.78 | Restore the v4.76 charcoal glass GUI and watermark; retain the v4.77 gameplay additions.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -23,10 +23,48 @@ function Motion:Move(ui,target,allowed)
     item.Target=target;item.Allowed=allowed;self:Wake()
 end
 function Motion:StopMove(ui)self.Moves[ui]=nil;self:Sleep()end
+-- Normal Frames render without the CanvasGroup texture/compositing path.
+-- Capture only the displayed tab once; one observer fades its drawn properties.
+local function snapshot(root)
+    local entries={}
+    local nodes=root:GetDescendants();table.insert(nodes,root)
+    for _,node in nodes do
+        local drawn=true;local ancestor=node
+        while ancestor and ancestor~=root do
+            if ancestor:IsA("GuiObject")and not ancestor.Visible then drawn=false;break end
+            ancestor=ancestor.Parent
+        end
+        if drawn then
+            local properties={}
+            if node:IsA("GuiObject")then properties[#properties+1]="BackgroundTransparency"end
+            if node:IsA("TextLabel")or node:IsA("TextButton")or node:IsA("TextBox")then properties[#properties+1]="TextTransparency"end
+            if node:IsA("ImageLabel")or node:IsA("ImageButton")then properties[#properties+1]="ImageTransparency"end
+            if node:IsA("UIStroke")then properties[#properties+1]="Transparency"end
+            for _,property in properties do
+                local value=node[property]
+                if finite(value)and value<1 then entries[#entries+1]={Node=node,Property=property,Value=value}end
+            end
+        end
+    end
+    return entries
+end
+local function opacity(entries,alpha)
+    for _,entry in entries do
+        if entry.Node.Parent then entry.Node[entry.Property]=entry.Value+(1-entry.Value)*alpha end
+    end
+end
 function Motion:Show(ui,visible,animate)
     if self.Closed then return end
-    if not animate then self.Fades[ui]=nil;ui.GroupTransparency=visible and 0 or 1;ui.Visible=visible;self:Sleep();return end
-    ui.Visible=true;self.Fades[ui]={Target=visible and 0 or 1,Visible=visible};self:Wake()
+    local previous=self.Fades[ui]
+    if not animate or not visible and not ui.Visible then
+        self.Fades[ui]=nil
+        if previous then opacity(previous.Entries,0)end
+        ui.Visible=visible;self:Sleep();return
+    end
+    local item=previous or{Entries=snapshot(ui),Alpha=ui.Visible and 0 or 1}
+    item.Target=visible and 0 or 1;item.Visible=visible
+    ui.Visible=true;opacity(item.Entries,item.Alpha)
+    self.Fades[ui]=item;self:Wake()
 end
 function Motion:Sleep()
     if not next(self.Moves)and not next(self.Fades)and self.Connection then
@@ -48,9 +86,12 @@ function Motion:Step(dt)
     for ui,item in self.Fades do
         if not ui.Parent then self.Fades[ui]=nil
         else
-            local alpha=ui.GroupTransparency+(item.Target-ui.GroupTransparency)*fade
-            if math.abs(alpha-item.Target)<.004 then alpha=item.Target;ui.Visible=item.Visible;self.Fades[ui]=nil end
-            ui.GroupTransparency=alpha
+            item.Alpha=item.Alpha+(item.Target-item.Alpha)*fade
+            if math.abs(item.Alpha-item.Target)<.004 then
+                ui.Visible=item.Visible
+                opacity(item.Entries,0)
+                self.Fades[ui]=nil
+            else opacity(item.Entries,item.Alpha)end
         end
     end
     self:Sleep()
@@ -3736,15 +3777,13 @@ end
 local GuiMotion=UIMotion.new(RunService.RenderStepped)
 table.insert(Library.UnloadSignals,function()GuiMotion:Dispose()end)
 
-Library.Scheme.HeaderColor=Color3.fromRGB(38,55,79)
-Library.Scheme.BodyTopColor=Color3.fromRGB(42,61,82)
-Library.Scheme.BodyBottomColor=Color3.fromRGB(55,77,88)
-Library.Scheme.CheckColor=Color3.fromRGB(60,77,94)
-Library.Scheme.PopupColor=Color3.fromRGB(17,26,39)
-Library.Scheme.PopupRowColor=Color3.fromRGB(57,79,105)
-Library.Scheme.PopupTextColor=Color3.fromRGB(247,249,252)
-Library.Scheme.PopupOutlineColor=Color3.fromRGB(112,139,168)
-
+Library.Scheme.HeaderColor=Color3.fromRGB(23,25,28)
+Library.Scheme.BodyTopColor=Color3.fromRGB(24,26,29)
+Library.Scheme.BodyBottomColor=Color3.fromRGB(21,23,26)
+Library.Scheme.CheckColor=Color3.fromRGB(59,65,71)
+Library.Scheme.GlassTransparency=.55
+Library.Scheme.RowTransparency=.92
+Library.Scheme.HeaderTransparency=.45
 
 local Templates = {
 
@@ -5005,7 +5044,12 @@ local function FillInstance(Table: { [string]: any }, Instance: GuiObject)
     end
 end
 
+local SurfaceOpacity={BackgroundColor="GlassTransparency",MainColor="RowTransparency",HeaderColor="HeaderTransparency"}
 local function New(ClassName: string, Properties: { [string]: any }): any
+    local role=SurfaceOpacity[Properties.BackgroundColor3]
+    if role and Properties.BackgroundTransparency==nil then
+        Properties=table.clone(Properties);Properties.BackgroundTransparency=role
+    end
     local Instance = Instance.new(ClassName)
 
     if Templates[ClassName] then
@@ -6959,12 +7003,10 @@ function Library:AddContextMenu(
         Menu = New("ScrollingFrame", {
             AutomaticCanvasSize = Enum.AutomaticSize.None,
             AutomaticSize = List == 1 and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
-            BackgroundColor3 = "PopupColor",
-            BackgroundTransparency = 0,
-            Active = true,
+            BackgroundColor3 = "BackgroundColor",
             BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",
             CanvasSize = UDim2.fromOffset(0, 0),
-            ScrollBarImageColor3 = "PopupOutlineColor",
+            ScrollBarImageColor3 = "OutlineColor",
             ScrollBarThickness = List == 2 and 2 or 0,
             Size = typeof(Size) == "function" and Size() or Size,
             TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",
@@ -6974,9 +7016,7 @@ function Library:AddContextMenu(
         })
     else
         Menu = New("Frame", {
-            BackgroundColor3 = "PopupColor",
-            BackgroundTransparency = 0,
-            Active = true,
+            BackgroundColor3 = "BackgroundColor",
             Size = typeof(Size) == "function" and Size() or Size,
             Visible = false,
             ZIndex = 1,
@@ -6991,8 +7031,7 @@ function Library:AddContextMenu(
     )
 
     New("UIStroke", {
-        Color = "PopupOutlineColor",
-        Thickness = 2,
+        Color = "OutlineColor",
         Parent = Menu,
     })
 
@@ -7175,11 +7214,6 @@ function Library:AddContextMenu(
                 end
             end
 
-            if not HolderAllowed then
-                for panel in Library.SettingsPanels do
-                    if panel.Visible and Library:IsInsideFrame(panel,Holder)then HolderAllowed=true;break end
-                end
-            end
             if not HolderAllowed and Table.Active then
                 Table:Close()
             end
@@ -7487,7 +7521,7 @@ function Library:GetAddonHost(control)
     local isButton=control.Type=="Button" or control.Type=="SubButton"
     local row=isButton and control.Base or control.Holder
     if control.Type=="Label" then
-        row=New("Frame",{Name="LabelRow",BackgroundColor3="MainColor",BackgroundTransparency=.08,
+        row=New("Frame",{Name="LabelRow",BackgroundColor3="MainColor",BackgroundTransparency="RowTransparency",
             Size=UDim2.new(1,0,0,40),Visible=control.Visible,Parent=label.Parent})
         New("UICorner",{CornerRadius=UDim.new(0,8),Parent=row})
         New("UIStroke",{Color="OutlineColor",Parent=row})
@@ -7521,29 +7555,11 @@ end
 
 -- Gear panels reuse the existing controls and their callbacks/settings IDs.
 -- There is no second set of toggles and opening a panel performs no action.
--- Floating settings keep their own solid palette, independent of window transparency.
-function Library:StylePopup(frame)
-    FillInstance({BackgroundColor3="PopupColor",BackgroundTransparency=0,Active=true},frame)
-    local stroke=frame:FindFirstChildOfClass("UIStroke")
-    if stroke then FillInstance({Color="PopupOutlineColor",Thickness=2},stroke)end
-    for _,node in ipairs(frame:GetDescendants())do
-        local registry=self.Registry[node]
-        if node:IsA("TextLabel")or node:IsA("TextButton")or node:IsA("TextBox")then
-            if not registry or not registry.TextColor3 or registry.TextColor3=="FontColor"then
-                FillInstance({TextColor3="PopupTextColor"},node)
-            end
-        end
-        if registry and(registry.BackgroundColor3=="MainColor"or registry.BackgroundColor3=="BackgroundColor")then
-            FillInstance({BackgroundColor3="PopupRowColor"},node)
-        end
-    end
-end
-
 function Library:AttachSettings(owner, controls)
     if not owner or owner.Destroyed or owner.Type~="Toggle" then return end
     local data=owner.SettingsPanel
     if not data then
-        local frame=New("Frame",{Name="ControlSettings",BackgroundColor3="PopupColor",BackgroundTransparency=0,Active=true,
+        local frame=New("Frame",{Name="ControlSettings",BackgroundColor3="BackgroundColor",
             BorderSizePixel=0,Size=UDim2.fromOffset(300,100),Visible=false,ZIndex=30,Parent=Floats})
         New("UICorner",{CornerRadius=UDim.new(0,12),Parent=frame});Library:AddOutline(frame)
         local title=New("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(12,0),
@@ -7555,6 +7571,8 @@ function Library:AttachSettings(owner, controls)
             Position=UDim2.fromOffset(8,36),Size=UDim2.new(1,-16,1,-44),
             AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.fromOffset(0,0),
             ScrollBarThickness=2,ScrollBarImageColor3="OutlineColor",Parent=frame})
+        New("UIPadding",{PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2),
+            PaddingTop=UDim.new(0,2),PaddingBottom=UDim.new(0,2),Parent=body})
         local layout=New("UIListLayout",{Padding=UDim.new(0,4),Parent=body})
         local gear=New("ImageButton",{Name="SettingsGear",AnchorPoint=Vector2.new(1,.5),
             Position=UDim2.new(1,-8,.5,0),Size=UDim2.fromOffset(26,26),BackgroundTransparency=1,
@@ -7570,7 +7588,7 @@ function Library:AttachSettings(owner, controls)
         local function fit()
             if data.Disposed or owner.Destroyed then return end
             local viewport=workspace.CurrentCamera.ViewportSize
-            frame.Size=UDim2.fromOffset(math.min(300,viewport.X-24),math.min(math.max(80,layout.AbsoluteContentSize.Y/Library.DPIScale+44),math.max(80,viewport.Y-80)))
+            frame.Size=UDim2.fromOffset(math.min(300,viewport.X-24),math.min(math.max(80,layout.AbsoluteContentSize.Y/Library.DPIScale+48),math.max(80,viewport.Y-80)))
         end
         data.Fit=fit
         table.insert(data.Connections,layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fit))
@@ -7580,7 +7598,7 @@ function Library:AttachSettings(owner, controls)
             local show=not frame.Visible
             for other in Library.SettingsPanels do other.Visible=false end
             if not show then return end
-            fit();Library:StylePopup(frame)
+            fit()
             local viewport=workspace.CurrentCamera.ViewportSize
             local pos,size=gear.AbsolutePosition,frame.AbsoluteSize
             local x=pos.X+gear.AbsoluteSize.X+8
@@ -7623,7 +7641,6 @@ function Library:AttachSettings(owner, controls)
             if control.Parent and control.Parent.Resize then control.Parent:Resize()end
         end
     end
-    Library:StylePopup(data.Frame)
     data.Fit()
     return data
 end
@@ -7631,7 +7648,7 @@ function Library:AttachDependencySettings()
     for _,box in Library.DependencyBoxes do
         local dependency=box.Dependencies and box.Dependencies[1]
         local owner=dependency and dependency[1]
-        if owner and owner.Type=="Toggle" and dependency[2]==true and not box.DependencyPanelOwner then
+        if owner and not owner.Destroyed and owner.Type=="Toggle" and dependency[2]==true and not box.DependencyPanelOwner then
             box.DependencyPanelOwner=owner
             Library:AttachSettings(owner,{box})
             box:Update()
@@ -8818,8 +8835,8 @@ do
     end
 
     local HueSequenceTable = {}
-    for HueStep = 0, 10 do
-        local Hue = HueStep / 10
+    for Step = 0, 10 do
+        local Hue = Step / 10
         table.insert(HueSequenceTable, ColorSequenceKeypoint.new(Hue, Color3.fromHSV(Hue, 1, 1)))
     end
     function Funcs:AddColorPicker(Idx, Info)
@@ -10602,7 +10619,7 @@ do
             Active = not Toggle.Disabled,
             Name="ToggleRow",
             BackgroundColor3 = "MainColor",
-            BackgroundTransparency = .08,
+            BackgroundTransparency = "RowTransparency",
             Size = UDim2.new(1, 0, 0, 40),
             Text = "",
             Visible = Toggle.Visible,
@@ -11152,7 +11169,7 @@ do
         }
 
         local Holder = New("Frame", {
-            BackgroundColor3="MainColor",BackgroundTransparency=.08,
+            BackgroundColor3="MainColor",BackgroundTransparency="RowTransparency",
             Size = UDim2.new(1,0,0,40),
             Visible = Input.Visible,
             Parent = Container,
@@ -11415,7 +11432,7 @@ do
         }
 
         local Holder = New("Frame", {
-            Name="SliderRow",BackgroundColor3="MainColor",BackgroundTransparency=.08,
+            Name="SliderRow",BackgroundColor3="MainColor",BackgroundTransparency="RowTransparency",
             Size = UDim2.new(1,0,0,54),
             Visible = Slider.Visible,
             Parent = Container,
@@ -12292,7 +12309,7 @@ do
 
                 if Entry.ValueImage then
                     Row.Image.Visible = true
-                    local color=Entry.ValueImage.Photograph and "WhiteColor"or "PopupTextColor"
+                    local color=Entry.ValueImage.Photograph and "WhiteColor"or "FontColor"
                     Row.Image.ImageColor3=Library.Scheme[color]
                     if Library.Registry[Row.Image]then Library.Registry[Row.Image].ImageColor3=color end
                     Library:ApplyLucideIcon(Row.Image, Entry.ValueImage)
@@ -12413,7 +12430,7 @@ do
             }
 
             local Container = New("Frame", {
-                BackgroundColor3 = "PopupRowColor",
+                BackgroundColor3 = "MainColor",
                 BackgroundTransparency = 1,
                 Size = UDim2.new(1, 0, 0, ItemHeight),
                 Visible = false,
@@ -12443,8 +12460,7 @@ do
                 Size = UDim2.new(1, 0, 0, ItemHeight),
                 Text = "",
                 TextSize = 14,
-                TextColor3 = "PopupTextColor",
-                TextTransparency = 0.08,
+                TextTransparency = 0.5,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = Container,
             })
@@ -12474,8 +12490,8 @@ do
 
                 Row.Selected = Selected and true or false
 
-                Container.BackgroundTransparency = Selected and 0 or .92
-                Button.TextTransparency = Entry.IsDisabled and .55 or Selected and 0 or .08
+                Container.BackgroundTransparency = Selected and 0 or 1
+                Button.TextTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.5
 
                 if Entry.ValueImage then
                     Image.ImageTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.5
@@ -12530,7 +12546,7 @@ do
                     BackgroundTransparency = 0.85,
                 }):Play()
                 TweenService:Create(Button, Library.TweenInfo, {
-                    TextTransparency = 0,
+                    TextTransparency = 0.25,
                 }):Play()
 
                 if Image then
@@ -12554,7 +12570,7 @@ do
                     BackgroundTransparency = 1,
                 }):Play()
                 TweenService:Create(Button, Library.TweenInfo, {
-                    TextTransparency = 0.08,
+                    TextTransparency = 0.5,
                 }):Play()
 
                 if Image then
@@ -14536,9 +14552,8 @@ function Library:CreateWindow(WindowInfo)
         Library.KeybindFrame.Position = UDim2.new(0, 6, 0.5, 0)
         Library.KeybindFrame.Visible = false
 
-        MainFrame = New("CanvasGroup", {
-            BackgroundTransparency = 0,
-            GroupTransparency = 1,
+        MainFrame = New("Frame", {
+            BackgroundTransparency = "GlassTransparency",
             Active=true,
             ClipsDescendants=true,
             BackgroundColor3 = "WhiteColor",
@@ -14567,8 +14582,11 @@ function Library:CreateWindow(WindowInfo)
         Library:AddOutline(MainFrame)
         BodySurface=New("Frame",{Name="BodySurface",BackgroundTransparency=1,
             Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,1,-44),Parent=MainFrame})
-        HeaderSurface=New("Frame",{Name="HeaderSurface",BackgroundColor3="HeaderColor",
+        HeaderSurface=New("Frame",{Name="HeaderSurface",BackgroundColor3="HeaderColor",BackgroundTransparency=1,
             Size=UDim2.new(1,0,0,44),Parent=MainFrame})
+        New("UICorner",{CornerRadius=UDim.new(0,WindowInfo.CornerRadius),Parent=HeaderSurface})
+        New("Frame",{BackgroundColor3="HeaderColor",BackgroundTransparency=1,Position=UDim2.fromScale(0,.5),
+            Size=UDim2.fromScale(1,.5),Parent=HeaderSurface})
         Library:MakeLine(MainFrame,{Position=UDim2.fromOffset(0,43),Size=UDim2.new(1,0,0,1)})
 
         DividerLine = New("Frame", {
@@ -15937,7 +15955,7 @@ function Library:CreateWindow(WindowInfo)
                 Parent = BoxHolder,
             })
             New("UIPadding", {
-                PaddingBottom = UDim.new(0, 4),
+                PaddingBottom = UDim.new(0, 8),
                 PaddingTop = UDim.new(0, 0),
                 Parent = BoxHolder,
             })
@@ -16084,8 +16102,8 @@ function Library:CreateWindow(WindowInfo)
                 })
                 New("UIPadding", {
                     PaddingBottom = UDim.new(0, 2),
-                    PaddingLeft = UDim.new(0, 0),
-                    PaddingRight = UDim.new(0, 0),
+                    PaddingLeft = UDim.new(0, 2),
+                    PaddingRight = UDim.new(0, 2),
                     PaddingTop = UDim.new(0, 2),
                     Parent = GroupboxContainer,
                 })
@@ -17392,7 +17410,7 @@ function Library:CreateWindow(WindowInfo)
         return Dialog
     end
 
-    function Window:Toggle(Value: boolean?)
+    function Window:Toggle(Value: boolean?, Animate: boolean?)
         if Library.ActiveLoading then
             if Value == true then
                 return
@@ -17409,7 +17427,8 @@ function Library:CreateWindow(WindowInfo)
             Library.Toggled = not Library.Toggled
         end
 
-        GuiMotion:Show(MainFrame,Library.Toggled,Library.Animations and Library.Animations.ToggleWindow==true)
+        local animate=Animate~=false and not Library.Starting and Library.Animations and Library.Animations.ToggleWindow==true
+        GuiMotion:Show(MainFrame,Library.Toggled,animate)
         if not Library.Toggled then GuiMotion:StopMove(MainFrame)end
 
         if WindowInfo.UnlockMouseWhileOpen then
@@ -17447,8 +17466,8 @@ function Library:CreateWindow(WindowInfo)
         end
     end
 
-    function Library:Toggle(Value: boolean?)
-        return Window:Toggle(Value)
+    function Library:Toggle(Value: boolean?, Animate: boolean?)
+        return Window:Toggle(Value,Animate)
     end
 
     if WindowInfo.EnableSidebarResize then
@@ -17542,7 +17561,7 @@ function Library:CreateWindow(WindowInfo)
         Window:SetSidebarWidth(WindowInfo.SidebarCompactWidth)
     end
     if WindowInfo.AutoShow and not Library.ActiveLoading then
-        task.spawn(Library.Toggle)
+        Window:Toggle(true,false)
     end
 
     if Library.IsMobile then
@@ -18428,7 +18447,7 @@ function Library:BeginStartup() self.Starting=true end
 function Library:FinishStartup() self.Starting=false end
 function Library:StyleFloatingPanel(frame)
     if not frame then return end
-    FillInstance({BackgroundColor3="BackgroundColor",BackgroundTransparency=.08,BorderSizePixel=0},frame)
+    FillInstance({BackgroundColor3="BackgroundColor",BackgroundTransparency="RowTransparency",BorderSizePixel=0},frame)
     local corner=frame:FindFirstChildOfClass("UICorner") or New("UICorner",{Parent=frame})
     corner.CornerRadius=UDim.new(0,self.CornerRadius)
     local stroke=frame:FindFirstChildOfClass("UIStroke")
@@ -18441,8 +18460,8 @@ function Library:IsPointerOverUI(point)
         return point.X>=p.X and point.Y>=p.Y and point.X<=p.X+z.X and point.Y<=p.Y+z.Y
     end
     if self.Window and contains(self.Window.MainFrame)then return true end
-    for _,layer in ipairs({self.Floats,self.Overlay})do
-        for _,frame in layer:GetChildren()do
+    if self.Floats then
+        for _,frame in self.Floats:GetChildren()do
             if frame:IsA("GuiObject")and contains(frame)then return true end
         end
     end
@@ -18872,6 +18891,8 @@ function ThemeManager:SetDefaultTheme(Theme: any)
     local Library = ThemeManager.Library
     local DefaultThemeData = ThemeManager.BuiltInThemes["Default"][2]
 
+    -- Keep extension roles (header, gradient endpoints, checkbox surface).
+    -- Controls and registry callbacks resolve them after the standard theme loads.
     local LibraryScheme = table.clone(Library.Scheme)
     local FinalTheme = {}
 
@@ -20826,7 +20847,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.77 | FTAP")
+                                warn("Astral v4.78 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -21052,7 +21073,6 @@ do
 							AutoReset = false,
 							AutoLeave = false,
 							LoopTP = false,
-							CounterAttack = false,
 							DestroyVoid = false,
 							LoopApplyMethod = false,
 							LoopApplyMethodServer = false,
@@ -21133,11 +21153,9 @@ do
 							LineDistance = 0,
 							IncreaseLineDistance = 1,
 							SuperStrength = 400,
-							CounterMethod = "Kill",
 							ExplosionMethod = "BombMissile",
 							MissilesToFire = 1,
 							TargetedLimbAura = "All",
-							TargetedLimbCA = "All",
 							TargetedLimbTE = "All",
 							SAIMHitbox = 10,
 							SAIMRadius = 250,
@@ -36623,26 +36641,7 @@ Escape Timer: %*]]
 							tbl12.UpdateLastGrabbedLabel()
 						end
 
-						if tbl8.CounterAttack and not tbl12.IsProtectedPlayer(v23, true) then
-							local v24, v25 = tbl12.Char(v23)
 
-							if tbl9.CounterMethod == "Kill" then
-								tbl12.Kill(v23)
-							elseif tbl9.CounterMethod == "Void" then
-								tbl12.Void(v23)
-							elseif tbl9.CounterMethod == "Grab" and v25 then
-								tbl12.Grab(v25)
-							elseif tbl9.CounterMethod == "Delete Limbs" then
-								tbl12.BreakLimb(v23, tbl9.TargetedLimbCA)
-							elseif tbl9.CounterMethod == "Fling" and v25 and tbl12.SNO(v25) then
-								local _, ownRoot = tbl12.Char()
-                                if ownRoot then v25.AssemblyLinearVelocity = ownRoot.CFrame.LookVector * 100 + Vector3.new(0, 25, 0) end
-							elseif tbl9.CounterMethod == "Teleport to Spawn" and tbl12.SNO(v25) then
-								tbl12.Teleport(v25, CFrame.new(0, 10, 0))
-							elseif tbl9.CounterMethod == "Anchor" then
-								task.spawn(tbl12.SetAnchored, v23, true)
-							end
-						end
 					end
 				end)
 			end
@@ -37832,7 +37831,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.77",true)
+            box:AddLabel("Astral v4.78",true)
         end
 
         do
@@ -39272,46 +39271,6 @@ Escape Timer: %*]]
 	end
 
 	tbl12.UpdateLastGrabbedLabel()
-
-	do
-		local v20 = tbl15.Invincibility:AddLeftGroupbox("Counter-attack", "airplay")
-
-		v20:AddDropdown("CADropdown", {
-			Values = { "Grab", "Kill", "Void", "Delete Limbs", "Fling", "Teleport to Spawn", "Anchor" },
-			Default = "Kill",
-			Multi = false,
-			Text = "Consequences",
-			Tooltip = "What will you do when someone touches you and you have Counter-attack on",
-			Callback = function(counterMethod)
-				tbl9.CounterMethod = counterMethod
-			end,
-		})
-
-		v20:AddToggle("CAToggle", {
-			Text = "Counter Attack",
-			Default = false,
-			Tooltip = "People who touch you will have the selected consequences",
-			Callback = function(counterAttack)
-				tbl8.CounterAttack = counterAttack
-			end,
-		})
-
-		local v21 = v20:AddDependencyBox()
-		v21:SetupDependencies({ { options.CADropdown, "Delete Limbs" } })
-		v21:AddDivider("Delete Limb Settings")
-
-		v21:AddDropdown("deleteLimbsCounterBoxDropdown", {
-			Values = { "Legs", "Arms", "All" },
-			Default = 3,
-			Multi = false,
-			Searchable = true,
-			Text = "Limbs to delete",
-			Tooltip = "What limbs will you delete",
-			Callback = function(targetedLimbCA)
-				tbl9.TargetedLimbCA = targetedLimbCA
-			end,
-		})
-	end
 
 	do
 		local Config = tbl15.Invincibility:AddRightGroupbox("Config", "settings")
@@ -41036,14 +40995,14 @@ Escape Timer: %*]]
 
 	do
 		local espConfig = tbl7.ESPConfig
+        espConfig.Server.OutlineColor=espConfig.Server.FillColor
 
 		local function fn21(arg, arg2, arg3)
 			espConfig[arg][arg2] = arg3
 			tbl12.UpdateESP(arg)
 		end
 
-		local esp = tbl15.Visual:AddLeftTabbox("ESP")
-		local Toggles = esp:AddTab("Toggles", "toggle-right")
+		local Toggles = tbl15.Visual:AddLeftGroupbox("ESP", "eye")
 
 		Toggles:AddToggle("PlrESPT", {
 			Text = "Player ESP",
@@ -41110,33 +41069,11 @@ Escape Timer: %*]]
 			Default = espConfig.Server.FillColor,
 			Title = "Fill Color",
 			Callback = function(arg)
+				espConfig.Server.OutlineColor=arg
 				fn21("Server", "FillColor", arg)
 			end,
 		})
 
-		toggles.PCLDESPT:AddColorPicker("PCLDOutline", {
-			Default = espConfig.Server.OutlineColor,
-			Title = "Outline Color",
-			Callback = function(arg)
-				fn21("Server", "OutlineColor", arg)
-			end,
-		})
-
-		toggles.PCLDESPT:AddColorPicker("PCLDNameEspFill", {
-			Default = espConfig.Server.NameColor,
-			Title = "Name Color",
-			Callback = function(arg)
-				fn21("Server", "NameColor", arg)
-			end,
-		})
-
-		toggles.PCLDESPT:AddColorPicker("PCLDNameOutline", {
-			Default = espConfig.Server.NameOutlineColor,
-			Title = "Name Outline",
-			Callback = function(arg)
-				fn21("Server", "NameOutlineColor", arg)
-			end,
-		})
 
 		Toggles:AddToggle("StickyESPT", {
 			Text = "Sticky ESP",
@@ -41208,14 +41145,8 @@ Escape Timer: %*]]
 			end,
 		})
 
-		local Config = esp:AddTab("Config", "image")
-
-		Config:AddDropdown("EspConfDD", {
-			Values = { "Player ESP", "Server ESP", "Sticky ESP", "Blackhole ESP", "Blobman ESP", "Gucci ESP", "Item ESP" },
-			Default = 1,
-			Multi = false,
-			Text = "Select which to configure",
-		})
+		local Config = tbl15.Visual:AddRightGroupbox("ESP Settings", "settings")
+        Config:SetVisible(false)
 
         local objectESP=requireModule("ObjectESP").Install({Workspace=workspace,RunService=RunService,Players=Players,Parent=screenGui or workspace,
             Character=function()return tbl12.Char()end,Inventory=tbl12.GetInventory,Camera=function()return workspace.CurrentCamera end,
@@ -41224,12 +41155,12 @@ Escape Timer: %*]]
                 RunService:BindToRenderStep(name,Enum.RenderPriority.Camera.Value+15,callback)
                 return {Disconnect=function()RunService:UnbindFromRenderStep(name)end}
             end})
-        objectESP:BuildUI(Toggles,Config,options.EspConfDD)
+        objectESP:BuildUI(Toggles,Config,nil)
         lib:OnUnload(function()objectESP:Dispose()end)
 
 		Config:AddDivider()
 		local v20 = Config:AddDependencyBox()
-		v20:SetupDependencies({ { options.EspConfDD, "Player ESP" } })
+		v20:SetupDependencies({ { toggles.PlrESPT, true } })
 		v20:AddDivider("Highlight")
 
 		v20:AddToggle("PlayerHighlightEnabled", {
@@ -41267,7 +41198,7 @@ Escape Timer: %*]]
 		tbl12.AddRainbowToggle(v20, "PlayerFillRainbow", "Rainbow Fill", "HighlightFill")
 		tbl12.AddRainbowToggle(v20, "PlayerOutlineRainbow", "Rainbow Outline", "HighlightOutline")
 		local v21 = Config:AddDependencyBox()
-		v21:SetupDependencies({ { options.EspConfDD, "Player ESP" } })
+		v21:SetupDependencies({ { toggles.PlrESPT, true } })
 		v21:AddDivider("Name")
 
 		v21:AddToggle("NameESPEnabled", {
@@ -41371,7 +41302,7 @@ Escape Timer: %*]]
 		})
 
 		local v22 = Config:AddDependencyBox()
-		v22:SetupDependencies({ { options.EspConfDD, "Server ESP" } })
+		v22:SetupDependencies({ { toggles.PCLDESPT, true } })
 
 		v22:AddToggle("SmoothPCLD", {
 			Text = "Smooth Movement",
@@ -41425,7 +41356,6 @@ Escape Timer: %*]]
 		})
 
 		tbl12.AddRainbowToggle(v22, "PCLDFillRainbow", "Rainbow Fill", "PCLDFill")
-		tbl12.AddRainbowToggle(v22, "PCLDOutlineRainbow", "Rainbow Outline", "PCLDOutline")
 		v22:AddDivider("Owner Name")
 
 		v22:AddToggle("PCLDNameEnabled", {
@@ -41481,8 +41411,6 @@ Escape Timer: %*]]
 			end,
 		})
 
-		tbl12.AddRainbowToggle(v22, "PCLDNameFillRainbow", "Rainbow Name", "PCLDNameEspFill")
-		tbl12.AddRainbowToggle(v22, "PCLDNameOutlineRainbow", "Rainbow Outline", "PCLDNameOutline")
 
 		v22:AddSlider("PCLDNameOutlTrans", {
 			Text = "Name Outline Transparency",
@@ -41533,7 +41461,7 @@ Escape Timer: %*]]
 		})
 
 		local v23 = Config:AddDependencyBox()
-		v23:SetupDependencies({ { options.EspConfDD, "Sticky ESP" } })
+		v23:SetupDependencies({ { toggles.StickyESPT, true } })
 
 		v23:AddSlider("StickyFillTrans", {
 			Text = "Fill Transparency",
@@ -41574,7 +41502,7 @@ Escape Timer: %*]]
 		tbl12.AddRainbowToggle(v23, "StickyFillRainbow", "Rainbow Fill", "StickyFill")
 		tbl12.AddRainbowToggle(v23, "StickyOutlineRainbow", "Rainbow Outline", "StickyOutline")
 		local v24 = Config:AddDependencyBox()
-		v24:SetupDependencies({ { options.EspConfDD, "Blackhole ESP" } })
+		v24:SetupDependencies({ { toggles.BlackholeESPT, true } })
 		v24:AddDivider("Highlight")
 
 		v24:AddSlider("BlackholeFillTrans", {
@@ -42234,121 +42162,7 @@ Escape Timer: %*]]
 			end,
 		})
 
-		Graphics:AddDivider("Particles")
-		local particleSettings = tbl7.ParticleSettings
 
-		local function fn27(arg, arg2)
-			particleSettings[arg] = arg2
-
-			if particleSettings.Enabled then
-				tbl12.UpdateParticles(arg)
-			end
-		end
-
-		Graphics:AddToggle("ParticlesT", { Text = "Particles", Default = false, Callback = tbl12.SetParticlesEnabled }):AddColorPicker("ParticlesCo", {
-			Default = particleSettings.Color,
-			Title = "Color",
-			Callback = function(arg)
-				fn27("Color", arg)
-			end,
-		})
-
-		local v22 = Graphics:AddDependencyBox()
-		v22:SetupDependencies({ { toggles.ParticlesT, true } })
-
-		v22:AddDropdown("ParticlesDropdown", {
-			Values = { "Circles", "Snowflakes", "astral", "Custom" },
-			Multi = false,
-			Default = "Circles",
-			Searchable = true,
-			Text = "Texture",
-			Callback = function(arg)
-				if arg == "astral" then
-					fn27("Texture", "rbxassetid://79685990879972")
-				elseif arg == "Snowflakes" then
-					fn27("Texture", "rbxassetid://14443362047")
-				elseif arg == "Circles" then
-					fn27("Texture", "rbxassetid://242109931")
-				elseif arg == "Custom" and tbl9.CustomParticle then
-					fn27("Texture", tbl9.CustomParticle)
-				end
-			end,
-		})
-
-		local v23 = v22:AddDependencyBox()
-		v23:SetupDependencies({ { options.ParticlesDropdown, "Custom" } })
-
-		v23:AddInput("customParticleBoxInput", {
-			Text = "Custom Image ID/Link",
-			ClearTextOnFocus = false,
-			Callback = function(arg)
-				tbl12.ResolveAssetInput(arg, "ParticleTexture", "image", function(customParticle)
-					tbl9.CustomParticle = customParticle
-
-					if options.ParticlesDropdown.Value == "Custom" then
-						fn27("Texture", customParticle or "rbxassetid://242109931")
-					end
-				end)
-			end,
-		})
-
-		v22:AddSlider("PDensity", {
-			Text = "Density (Count)",
-			Default = particleSettings.Count,
-			Min = 100,
-			Max = 5000,
-			Compact = true,
-			Callback = function(arg)
-				fn27("Count", arg)
-			end,
-		})
-
-		v22:AddSlider("PSize", {
-			Text = "Size",
-			Default = particleSettings.ParticleSize,
-			Min = 0.1,
-			Max = 5,
-			Rounding = 1,
-			Compact = true,
-			Callback = function(arg)
-				fn27("ParticleSize", arg)
-			end,
-		})
-
-		v22:AddSlider("PMaxSp", {
-			Text = "Max Speed",
-			Default = particleSettings.SpeedMax,
-			Min = 0,
-			Max = 10,
-			Rounding = 1,
-			Compact = true,
-			Callback = function(arg)
-				fn27("SpeedMax", arg)
-			end,
-		})
-
-		v22:AddSlider("PBoxSize", {
-			Text = "Box Size",
-			Default = particleSettings.BoxSize,
-			Min = 50,
-			Max = 2000,
-			Compact = true,
-			Callback = function(arg)
-				fn27("BoxSize", arg)
-			end,
-		})
-
-		Graphics:AddDivider("Boost FPS")
-		Graphics:AddToggle("BoostFPS", { Text = "Boost FPS", Default = false, Callback = tbl12.SetBoostFPS })
-
-		Graphics:AddDropdown("BoostFPSOptions", {
-			Text = "Disable",
-			Values = { "Materials", "Textures", "Reflections", "Shadows" },
-			Default = { "Materials", "Textures", "Reflections", "Shadows" },
-			Multi = true,
-			AllowNull = true,
-			Callback = tbl12.SetBoostFPSOptions,
-		})
 	end
 
 	do
@@ -44292,7 +44106,6 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 		copyright = "Copyright (c) 2026 Project Resonance. All rights reserved.",
 	}
 end
-
 ]========]
 sources.Bootstrap = [========[
 local sources = ...
@@ -44323,9 +44136,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.77: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.78: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.77 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.78 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -44499,16 +44312,17 @@ Style.Icons = {
 
 function Style.Theme()
     return {
-        BackgroundColor = Color3.fromRGB(43,61,81),
-        MainColor = Color3.fromRGB(42,60,81),
-        AccentColor = Color3.fromRGB(209,220,230),
-        OutlineColor = Color3.fromRGB(66,86,106),
-        FontColor = Color3.fromRGB(246,247,250),
-        HeaderColor = Color3.fromRGB(38,55,79),
-        BodyTopColor = Color3.fromRGB(42,61,82),
-        BodyBottomColor = Color3.fromRGB(55,77,88),
-        CheckColor = Color3.fromRGB(60,77,94),
-        FontFace = "BuilderSans", BackgroundImage = "",
+        BackgroundColor=Color3.fromRGB(23,25,28),
+        MainColor=Color3.fromRGB(37,39,42),
+        AccentColor=Color3.fromRGB(180,189,199),
+        OutlineColor=Color3.fromRGB(75,80,84),
+        FontColor=Color3.fromRGB(231,234,238),
+        HeaderColor=Color3.fromRGB(23,25,28),
+        BodyTopColor=Color3.fromRGB(24,26,29),
+        BodyBottomColor=Color3.fromRGB(21,23,26),
+        CheckColor=Color3.fromRGB(59,65,71),
+        GlassTransparency=.55,RowTransparency=.92,HeaderTransparency=.45,
+        FontFace="BuilderSans",BackgroundImage="",
     }
 end
 
@@ -44520,7 +44334,7 @@ function Style.ApplyBase(library)
 end
 
 function Style.ApplyStartupTheme(manager, library)
-    -- Apply the current slate palette once without replaying gameplay state.
+    -- Apply the reference charcoal glass palette once without replaying gameplay state.
     -- Theme choices remain available for deliberate changes after loading.
     local choice = library.Options.ThemeManager_ThemeList
     if choice then choice:SetValue("Default") end
@@ -44556,7 +44370,6 @@ function Style.CreateYieldLauncher(context)
 end
 
 return Style
-
 ]========]
 sources.AppIdentity = [========[
 -- Astral owns its runtime state and storage. Legacy folders are not scanned.
@@ -46149,9 +45962,11 @@ function ESP:Update()
     end
 end
 function ESP:BuildUI(toggles,config,selection)
+    local itemToggle
     for _,kind in ipairs({"Blobman","Gucci","Item"})do
         local conf=self.Config[kind];local prefix="Astral"..kind.."ESP"
         local toggle=toggles:AddToggle(prefix,{Text=kind.." ESP",Default=false,Callback=function(v)conf.Enabled=v;self:Update()end})
+        if kind=="Item"then itemToggle=toggle end
         for _,field in ipairs({"FillColor","OutlineColor","NameColor","NameOutlineColor"})do local key=field
             toggle:AddColorPicker(prefix..field,{Default=conf[key],Title=kind.." "..key,Callback=function(v)conf[key]=v;self:Update()end})
         end
@@ -46165,7 +45980,7 @@ function ESP:BuildUI(toggles,config,selection)
             toggles:AddToggle("AstralGucciESPDistanceLimit",{Text="Limit Gucci ESP Distance",Default=false,Callback=function(v)self.GucciLimitEnabled=v;self:Update()end})
             toggles:AddToggle("AstralGucciESPArrows",{Text="Gucci Direction Arrows",Default=true,Callback=function(v)self.GucciArrows=v;self:Update()end})
         end
-        local box=config:AddDependencyBox();box:SetupDependencies({{selection,kind.." ESP"}})
+        local box=config:AddDependencyBox();box:SetupDependencies(selection and {{selection,kind.." ESP"}}or {{toggle,true}})
         if kind=="Item"then
             box:AddLabel(#self.Items.." embedded source-catalog items; pictures use the original game assets.",true)
         end
@@ -46182,7 +45997,7 @@ function ESP:BuildUI(toggles,config,selection)
             box:AddLabel("Gucci markers start beyond 1000 studs. Nearby vehicles remain ordinary items. Gucci? marks an unseated hidden/high inventory rig. Only loaded objects can be shown.",true)
         end
     end
-    local box=config:AddDependencyBox();box:SetupDependencies({{selection,"Item ESP"}})
+    local box=config:AddDependencyBox();box:SetupDependencies(selection and {{selection,"Item ESP"}}or {{itemToggle,true}})
     box:AddSlider("AstralObjectESPLimit",{Text="Max Object Highlights",Default=64,Min=8,Max=160,Rounding=0,Compact=true,Callback=function(v)self.Limit=v;self:Update()end})
 end
 function ESP:Dispose()
@@ -46190,7 +46005,6 @@ function ESP:Dispose()
     for _,c in ipairs(self.Connections)do c:Disconnect()end;self:Clear();self.Container:Destroy();self.Candidates={}
 end
 return ESP
-
 ]========]
 sources.LineStyles = [========[
 -- Real repeating textures plus Beam settings; live edits restore original values on disable.
@@ -56088,7 +55902,6 @@ if options.DefLoopTPType then
 local v55, v56, v57
 
 do
-local v58
 
 do
 options.DefLoopTPType:OnChanged(function()
@@ -56185,697 +55998,13 @@ local v60 = v59:AddTabbox({
 Side = 1,
 })
 
-v58 = v60:AddTab("<b>Counter Attack</b>", "swords")
 v55 = v60:AddTab("<b>Detection</b>", "radar")
 end
 end
 
-local tbl17 = {}
 v56 = nil
 v57 = nil
 
-_applyVoid = function(arg, parent, arg2, arg3)
-if not (arg and parent and parent.Parent) then
-return
-end
-
-bridge:TrackThread(task.spawn(function()
-arg:FindFirstChild("Head")
-
-if arg2 then
-for i = 1, 3 do
-pcall(function()
-arg2:FireServer(parent, parent.CFrame)
-end)
-
-task.wait(0.05)
-end
-end
-
-if arg3 then
-pcall(function()
-arg3:FireServer(parent)
-end)
-end
-
-pcall(function()
-local voidBV = parent:FindFirstChild("_voidBV")
-
-if voidBV then
-voidBV:Destroy()
-end
-
-local bodyVelocity = bridge:TrackInstance(Instance.new("BodyVelocity"))
-bodyVelocity.Name = "_voidBV"
-bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-bodyVelocity.Velocity = Vector3.new(0, -10000000, 0)
-bodyVelocity.P = 12500
-bodyVelocity.Parent = parent
-end)
-
-local connection3 = nil
-local now2 = tick()
-
-connection3 = bridge:TrackConnection(RunService3.Heartbeat:Connect(function()
-local flag22 = tick() - now2 > 3
-
-if not flag22 then
-flag22 = not (parent and parent.Parent)
-end
-
-if flag22 then
-connection3:Disconnect()
-return
-end
-
-pcall(function()
-if arg2 then
-arg2:FireServer(parent, parent.CFrame)
-end
-end)
-end))
-end))
-end
-
-v58:AddDropdown("DefConsequences", {
-Text = "Consequence",
-Values = {
-"Kill",
-"Void",
-"Ragdoll",
-"Fling",
-"Unstick",
-"Highlight",
-"TP to Spawn",
-"Struggle",
-},
-ValueImages = {
-Kill = "skull",
-Void = "cloud-off",
-Ragdoll = "user-minus",
-Fling = "wind",
-Unstick = "magnet",
-Highlight = "eye",
-["TP to Spawn"] = "map-pin",
-Struggle = "activity",
-},
-Default = 1,
-Multi = true,
-Callback = function(arg)
-tbl17 = arg or {}
-end,
-})
-
-local flag22 = false
-local connection3 = nil
-local connection4 = nil
-
-local function fn27()
-if connection4 then
-pcall(function()
-connection4:Disconnect()
-end)
-
-connection4 = nil
-end
-
-if connection3 then
-pcall(function()
-connection3:Disconnect()
-end)
-
-connection3 = nil
-end
-end
-
-_ct_isValidPart = function(arg)
-if not arg or not arg.Parent then
-return false
-end
-return true
-end
-
-_ct_lookAt = function(arg, arg2)
-local unit = (arg2 - arg).Unit
-local v59 = unit:Cross(Vector3.new(0, 1, 0))
-return CFrame.fromMatrix(arg, v59, v59:Cross(unit))
-end
-
-_ct_snowship = function(arg)
-local grabEvents2 = ReplicatedStorage:FindFirstChild("GrabEvents")
-local setNetworkOwner3 = grabEvents2 and grabEvents2:FindFirstChild("SetNetworkOwner")
-if not (setNetworkOwner3 and arg and arg.Parent) then
-return false
-end
-
-if not _ct_isValidPart(arg) then
-return false
-end
-local character4 = v46.Character
-local saviHRP
-
-if character4 then
-saviHRP = character4:FindFirstChild("saviHRP") or character4:FindFirstChild("HumanoidRootPart")
-else
-saviHRP = character4
-end
-
-if not saviHRP then
-return false
-end
-
-pcall(function()
-setNetworkOwner3:FireServer(arg, _ct_lookAt(saviHRP.Position, arg.Position))
-end)
-
-return true
-end
-
-_ct_snowshipRetry = function(arg, arg2, arg3)
-local n19 = arg3 or 1.5
-local n20 = tick() + n19
-
-while arg and arg.Parent and tick() < n20 do
-local head = arg2 and arg2.Character and arg2.Character:FindFirstChild("Head")
-head = head and head:FindFirstChild("PartOwner")
-if head and head.Value == v46.Name then
-return true
-end
-
-if not _ct_isValidPart(arg) then
-return false
-end
-
-pcall(function()
-local character4 = v46.Character
-local saviHRP
-
-if character4 then
-saviHRP = character4:FindFirstChild("saviHRP") or character4:FindFirstChild("HumanoidRootPart")
-else
-saviHRP = character4
-end
-
-if saviHRP then
-local grabEvents2 = ReplicatedStorage:FindFirstChild("GrabEvents")
-grabEvents2 = grabEvents2 and grabEvents2:FindFirstChild("SetNetworkOwner")
-
-if grabEvents2 then
-grabEvents2:FireServer(arg, _ct_lookAt(saviHRP.Position, arg.Position))
-end
-end
-end)
-
-RunService3.Heartbeat:Wait()
-end
-
-arg = arg and arg.Parent
-return arg ~= nil
-end
-
-_ct_ownedByMe = function(arg)
-if not (arg and arg.Character) then
-return false
-end
-local head = arg.Character:FindFirstChild("Head")
-head = head and head:FindFirstChild("PartOwner")
-return head and head.Value == v46.Name
-end
-
-_ct_createSkyVelocity = function(arg)
-if not arg or arg:FindFirstChild("SkyVelocity") then
-return
-end
-local bodyVelocity = bridge:TrackInstance(Instance.new("BodyVelocity", arg))
-bodyVelocity.Name = "SkyVelocity"
-bodyVelocity.Velocity = Vector3.new(0, 1e14, 0)
-bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-local parent = arg.Parent
-
-if parent and parent:IsA("Model") then
-for _, descendant in pairs(parent:GetDescendants()) do
-if descendant:IsA("BasePart") then
-pcall(function()
-bridge:SetProperty(descendant, "CanCollide", false)
-bridge:SetProperty(descendant, "CanTouch", false)
-bridge:SetProperty(descendant, "CanQuery", false)
-end)
-end
-end
-end
-
-bridge:TrackThread(task.delay(0.25, function()
-if bodyVelocity and bodyVelocity.Parent then
-pcall(function()
-bodyVelocity:Destroy()
-end)
-end
-end))
-end
-
-_ct_apply = function(arg)
-if not (arg and arg.Character) then
-return
-end
-
-if _isWhitelisted(arg) then
-return
-end
-local character4 = arg.Character
-local saviHRP = character4:FindFirstChild("saviHRP") or character4:FindFirstChild("HumanoidRootPart")
-local humanoid3 = character4:FindFirstChildOfClass("Humanoid")
-if not (saviHRP and humanoid3 and humanoid3.Health > 0) then
-return
-end
-local grabEvents2 = ReplicatedStorage:FindFirstChild("GrabEvents")
-local setNetworkOwner3 = grabEvents2 and grabEvents2:FindFirstChild("SetNetworkOwner")
-local destroyGrabLine = grabEvents2 and grabEvents2:FindFirstChild("DestroyGrabLine")
-local ragdollRemote3 = ReplicatedStorage:FindFirstChild("CharacterEvents") and ReplicatedStorage.CharacterEvents:FindFirstChild("RagdollRemote")
-local v59 = pairs
-local tbl18 = type(tbl17) == "table" and tbl17 or {}
-
-for k, v60 in v59(tbl18) do
-if v60 then
-bridge:TrackThread(task.spawn(function()
-_ct_runMode(k, arg, character4, saviHRP, humanoid3, grabEvents2, setNetworkOwner3, destroyGrabLine, ragdollRemote3)
-end))
-end
-end
-end
-
-_ct_runMode = function(arg, arg2, parent, arg3, arg4, arg5, arg6, arg7)
-if arg == "Kill" then
-bridge:TrackThread(task.spawn(function()
-if not (arg3 and arg3.Parent) then
-return
-end
-local n19 = tick() + 1.5
-
-while arg3 and arg3.Parent and tick() < n19 do
-if not _ct_isValidPart(arg3) then
-return
-end
-_ct_snowship(arg3)
-
-if _ct_ownedByMe(arg2) or arg3.AssemblyLinearVelocity.Magnitude > 500 then
-pcall(function()
-arg4.BreakJointsOnDeath = false
-arg4:ChangeState(Enum.HumanoidStateType.Dead)
-end)
-
-task.wait(0.1)
-
-if arg7 and arg3 and arg3.Parent then
-pcall(function()
-arg7:FireServer(arg3)
-end)
-end
-
-_ct_createSkyVelocity(arg3)
-return
-end
-
-RunService3.Heartbeat:Wait()
-end
-end))
-elseif arg == "Ragdoll" then
-bridge:TrackThread(task.spawn(function()
-if not (arg3 and arg3.Parent) then
-return
-end
-
-if not (arg4 and arg4.Health > 0) then
-return
-end
-local n19 = tick() + 2
-
-while true do
-if arg3 and arg3.Parent and tick() < n19 then
-if arg6 then
-pcall(function()
-arg6:FireServer(arg3, arg3.CFrame)
-end)
-end
-
-if not _ct_ownedByMe(arg2) then
-RunService3.Heartbeat:Wait()
-continue
-end
-end
-
-break
-end
-
-local menuToys = ReplicatedStorage:FindFirstChild("MenuToys")
-local spawnToyRemoteFunction3 = menuToys and menuToys:FindFirstChild("SpawnToyRemoteFunction")
-local destroyToy = menuToys and menuToys:FindFirstChild("DestroyToy")
-if not (spawnToyRemoteFunction3 and arg6) then
-return
-end
-local v59 = nil
-local v60 = workspace:FindFirstChild(v46.Name .. "SpawnedInToys")
-local connection5 = nil
-
-if v60 then
-connection5 = bridge:TrackConnection(v60.ChildAdded:Connect(function(child)
-if child.Name == "PalletLightBrown" then
-v59 = child
-end
-end))
-end
-
-local character4 = v46.Character
-local saviHRP
-
-if character4 then
-saviHRP = character4:FindFirstChild("saviHRP") or character4:FindFirstChild("HumanoidRootPart")
-else
-saviHRP = character4
-end
-
-bridge:TrackThread(task.spawn(function()
-pcall(function()
-spawnToyRemoteFunction3:InvokeServer("PalletLightBrown", saviHRP and saviHRP.CFrame * CFrame.new(0, 10, 20) or CFrame.new(), Vector3.zero)
-end)
-end))
-
-local n20 = tick() + 2
-
-while true do
-task.wait()
-if not (v59 or tick() > n20) then
-continue
-end
-break
-end
-
-if connection5 then
-connection5:Disconnect()
-end
-
-if not v59 then
-return
-end
-local v61 = v59
-local soundPart = v61:WaitForChild("SoundPart", 2)
-if not soundPart then
-return
-end
-v61.Name = "ragdollPalletCT"
-
-for _, child in pairs(v61:GetChildren()) do
-if child:IsA("Part") then
-pcall(function()
-bridge:SetProperty(child, "CanCollide", false)
-bridge:SetProperty(child, "CanQuery", false)
-bridge:SetProperty(child, "Transparency", 1)
-end)
-end
-end
-
-while true do
-task.wait()
-
-pcall(function()
-if arg6 then
-arg6:FireServer(soundPart, soundPart.CFrame)
-end
-end)
-
-local partOwner = soundPart:FindFirstChild("PartOwner")
-
-if not partOwner then
-partOwner = not (arg3 and arg3.Parent)
-end
-
-if not partOwner then
-continue
-end
-break
-end
-
-for i = 1, 15 do
-if arg4 and arg4.Health > 0 then
-if arg3 and arg3.Parent then
-bridge:TrackThread(task.spawn(function()
-pcall(function()
-soundPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0)
-soundPart.CFrame = arg3.CFrame
-task.wait(0.05)
-soundPart.CFrame = CFrame.new(0, 1e9, 0)
-end)
-end))
-
-task.wait(0.15)
-continue
-end
-end
-
-break
-end
-
-if v61 and destroyToy then
-pcall(function()
-destroyToy:FireServer(v61)
-end)
-end
-end))
-elseif arg == "Freeze" then
-pcall(function()
-bridge:SetProperty(arg3, "Anchored", true)
-arg3.AssemblyLinearVelocity = Vector3.zero
-arg3.AssemblyAngularVelocity = Vector3.zero
-end)
-
-bridge:TrackThread(task.delay(5, function()
-pcall(function()
-bridge:SetProperty(arg3, "Anchored", false)
-arg3.AssemblyLinearVelocity = Vector3.zero
-end)
-end))
-elseif arg == "Void" then
-bridge:TrackThread(task.spawn(function()
-if not (arg3 and arg3.Parent) then
-return
-end
-local n19 = tick() + 1.5
-
-while arg3 and arg3.Parent and tick() < n19 do
-if not _ct_isValidPart(arg3) then
-return
-end
-_ct_snowship(arg3)
-
-if _ct_ownedByMe(arg2) or arg3.AssemblyLinearVelocity.Magnitude > 500 then
-pcall(function()
-if arg7 then
-arg7:FireServer(arg3)
-end
-
-_ct_createSkyVelocity(arg3)
-end)
-
-return
-end
-
-RunService3.Heartbeat:Wait()
-end
-end))
-elseif arg == "Fling" then
-bridge:TrackThread(task.spawn(function()
-if not (arg3 and arg3.Parent) then
-return
-end
-local n19 = tick() + 1.5
-
-while arg3 and arg3.Parent and tick() < n19 do
-if not _ct_isValidPart(arg3) then
-return
-end
-_ct_snowship(arg3)
-
-if _ct_ownedByMe(arg2) or arg3.AssemblyLinearVelocity.Magnitude > 100 then
-pcall(function()
-local saviHRP = v46.Character and (v46.Character:FindFirstChild("saviHRP") or v46.Character:FindFirstChild("HumanoidRootPart"))
-arg3.AssemblyLinearVelocity = ((saviHRP and (arg3.Position - saviHRP.Position).Unit or Vector3.new(0, 1, 0)) + Vector3.new(0, 0.5, 0)).Unit * 500
-end)
-
-return
-end
-
-RunService3.Heartbeat:Wait()
-end
-end))
-elseif arg == "Unstick" then
-bridge:TrackThread(task.spawn(function()
-if not parent then
-return
-end
-local grabEvents2 = ReplicatedStorage:FindFirstChild("GrabEvents")
-local setNetworkOwner3 = grabEvents2 and grabEvents2:FindFirstChild("SetNetworkOwner")
-if not setNetworkOwner3 then
-return
-end
-local tbl18 = {}
-
-for _, descendant in ipairs(parent:GetDescendants()) do
-if descendant:IsA("BasePart") then
-for _, v59 in ipairs(descendant:GetConnectedParts()) do
-if v59 and not v59:IsDescendantOf(parent) then
-local stickyPart = v59.Name == "StickyPart" and v59 or v59:FindFirstChild("StickyPart", true)
-
-if stickyPart and stickyPart:IsA("BasePart") and not tbl18[stickyPart] then
-tbl18[stickyPart] = true
-
-pcall(function()
-setNetworkOwner3:FireServer(stickyPart, stickyPart.CFrame)
-end)
-end
-end
-end
-end
-end
-end))
-elseif arg == "Highlight" then
-bridge:TrackThread(task.spawn(function()
-if not parent then
-return
-end
-local highlight = bridge:TrackInstance(Instance.new("Highlight"))
-highlight.Name = "_ctHL"
-highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-highlight.FillColor = Color3.fromRGB(255, 50, 50)
-highlight.OutlineColor = Color3.fromRGB(255, 200, 0)
-highlight.FillTransparency = 0.3
-highlight.OutlineTransparency = 0
-highlight.Parent = parent
-
-bridge:TrackThread(task.delay(3, function()
-pcall(function()
-highlight:Destroy()
-end)
-end))
-end))
-elseif arg == "TP to Spawn" then
-bridge:TrackThread(task.spawn(function()
-if not (arg3 and arg3.Parent) then
-return
-end
-local n19 = tick() + 1.5
-
-while arg3 and arg3.Parent and tick() < n19 do
-if not _ct_isValidPart(arg3) then
-return
-end
-_ct_snowship(arg3)
-
-if _ct_ownedByMe(arg2) then
-pcall(function()
-local spawnLocations = workspace:FindFirstChild("SpawnLocations")
-spawnLocations = spawnLocations and spawnLocations:FindFirstChildOfClass("SpawnLocation")
-arg3.CFrame = (spawnLocations and spawnLocations.CFrame or CFrame.new(0, 5, 0)) + Vector3.new(0, 3, 0)
-
-if arg7 then
-arg7:FireServer(arg3)
-end
-end)
-
-return
-end
-
-RunService3.Heartbeat:Wait()
-end
-end))
-elseif arg == "Struggle" then
-bridge:TrackThread(task.spawn(function()
-if not (arg3 and arg3.Parent) then
-return
-end
-local n19 = tick() + 1.5
-
-while arg3 and arg3.Parent and tick() < n19 do
-if not _ct_isValidPart(arg3) then
-return
-end
-_ct_snowship(arg3)
-
-if _ct_ownedByMe(arg2) then
-local grabEvents2 = ReplicatedStorage:FindFirstChild("GrabEvents")
-local struggle2 = grabEvents2 and grabEvents2:FindFirstChild("Struggle")
-
-if struggle2 then
-pcall(function()
-struggle2:FireServer()
-end)
-end
-
-return
-end
-
-RunService3.Heartbeat:Wait()
-end
-end))
-end
-end
-
-v58:AddCheckbox("DefCounterAttack", {
-Text = "Counter Attack",
-Default = false,
-Callback = function(arg)
-flag22 = arg
-fn27()
-if not arg then
-return
-end
-
-_ct_hookChar = function(arg2)
-if connection4 then
-pcall(function()
-connection4:Disconnect()
-end)
-
-connection4 = nil
-end
-
-if not arg2 then
-return
-end
-local head = arg2:WaitForChild("Head", 8)
-if not head or not flag22 then
-return
-end
-
-connection4 = bridge:TrackConnection(head.ChildAdded:Connect(function(child)
-if not flag22 then
-return
-end
-
-if child.Name ~= "PartOwner" then
-return
-end
-local v59 = Players:FindFirstChild(child.Value)
-
-if v59 and v59 ~= v46 then
-bridge:TrackThread(task.spawn(function()
-_ct_apply(v59)
-end))
-end
-end))
-end
-
-_ct_hookChar(v46.Character)
-
-connection3 = bridge:TrackConnection(v46.CharacterAdded:Connect(function(character4)
-if not flag22 then
-return
-end
-
-bridge:TrackThread(task.spawn(function()
-_ct_hookChar(character4)
-end))
-end))
-end,
-})
 end
 
 do
@@ -88919,7 +88048,7 @@ tbl54 = {}
 tbl48 = {}
 tbl49 = {}
 color2 = Color3.fromHex("000000")
-color3 = Color3.fromHex("ffffff")
+color3 = color2
 n37 = 0.5
 transparency = 0
 lineThickness = 0.01
@@ -90169,13 +89298,11 @@ end
 
 options.NewESP_PCLD_ChamsColor:OnChanged(function()
 color2 = options.NewESP_PCLD_ChamsColor.Value
+color3 = color2
 fn74()
 end)
 
-options.NewESP_PCLD_OutlineColor:OnChanged(function()
-color3 = options.NewESP_PCLD_OutlineColor.Value
-fn74()
-end)
+
 
 options.NewESP_PCLD_FillTrans:OnChanged(function()
 n37 = 1 - options.NewESP_PCLD_FillTrans.Value
@@ -90195,16 +89322,12 @@ end)
 if toggles.NewESP_PCLD_RainbowFill then
 toggles.NewESP_PCLD_RainbowFill:OnChanged(function()
 flag56 = toggles.NewESP_PCLD_RainbowFill.Value
+flag57 = flag56
 fn74()
 end)
 end
 
-if toggles.NewESP_PCLD_RainbowOutline then
-toggles.NewESP_PCLD_RainbowOutline:OnChanged(function()
-flag57 = toggles.NewESP_PCLD_RainbowOutline.Value
-fn74()
-end)
-end
+
 
 if toggles.NewESP_PCLD_NameEnabled then
 toggles.NewESP_PCLD_NameEnabled:OnChanged(function()
@@ -90856,15 +89979,6 @@ Default = false,
 }):AddColorPicker("NewESP_PCLD_ChamsColor", {
 Default = Color3.new(0, 0, 0),
 Title = "Chams Color",
-}):AddColorPicker("NewESP_PCLD_OutlineColor", {
-Default = Color3.new(1, 1, 1),
-Title = "Outline Color",
-}):AddColorPicker("NewESP_PCLD_NameColor", {
-Default = Color3.new(1, 1, 1),
-Title = "Name Color",
-}):AddColorPicker("NewESP_PCLD_NameOutlineColor", {
-Default = Color3.new(0, 0, 0),
-Title = "Name Outline Color",
 })
 
 v89:AddDivider()
@@ -91131,10 +90245,7 @@ Text = "Rainbow Chams",
 Default = false,
 })
 
-v90:AddCheckbox("NewESP_PCLD_RainbowOutline", {
-Text = "Rainbow Outline",
-Default = false,
-})
+
 
 v90:AddDivider("Name Settings")
 
@@ -91231,10 +90342,7 @@ Text = "Player Icons",
 Default = true,
 })
 
-v90:AddCheckbox("NewESP_PCLD_NameRainbow", {
-Text = "Rainbow Name",
-Default = false,
-})
+
 
 v90:SetupDependencies({
 {
@@ -91899,7 +91007,6 @@ function FeatureHost.Install(context, gameplaySource)
 end
 
 return FeatureHost
-
 ]========]
 sources.Watermark = [========[
 -- Draggable telemetry pill. Center only once; later updates never touch the
@@ -91915,12 +91022,13 @@ function HUD.Install(context)
     self.OriginalText=label.Text;context.Widget.Centered=nil
     label.AnchorPoint=Vector2.new(.5,0);label.Position=UDim2.new(.5,0,0,12);label.TextWrapped=false
     label.AutomaticSize=Enum.AutomaticSize.None
-    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.08
+    label.TextXAlignment=Enum.TextXAlignment.Center;label.TextSize=13;label.BackgroundTransparency=.45
     label.RichText=true
     if context.Library then
         label.BackgroundColor3=context.Library.Scheme.HeaderColor
+        label.BackgroundTransparency=context.Library.Scheme.HeaderTransparency
         local registry=context.Library.Registry[label]
-        if registry then registry.BackgroundColor3="HeaderColor"end
+        if registry then registry.BackgroundColor3="HeaderColor";registry.BackgroundTransparency="HeaderTransparency"end
     end
     label.TextTruncate=Enum.TextTruncate.AtEnd;label.BorderSizePixel=0
     local round=label:FindFirstChildOfClass("UICorner")or Instance.new("UICorner")

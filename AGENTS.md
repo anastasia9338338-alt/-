@@ -9,3 +9,8 @@ The user requires a code review and fixes before every delivered script revision
 - Do not claim that Roblox physics, server hits or successful kicks were tested when only CLI/mocked checks ran. Report the scope of verification honestly.
 - Deliver the ready Lua in a ZIP with a verified commit-pinned download link. A raw Lua page opens as text in the user's client.
 - For the separate winter script, also build `python winter/build.py` and run `winter/tests/review_run.py`, `winter/tests/review_main.py`, `winter/tests/review_bundle.py` and `winter/tests/texture.py`. Keep Astral and Winter as separate deliverables.
+
+# Preserve the requested presentation
+
+- The user requires the transparent charcoal/gray GUI, watermark and original icons from v4.76 (e99250a77c14888c380ced88d12e11f66bd396e0).
+- Do not redesign colors, transparency, layout, icons or watermark while adding gameplay functions unless explicitly asked. Verify the UI modules against this reference.
