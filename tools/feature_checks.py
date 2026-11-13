@@ -54,7 +54,10 @@ def run_feature_checks(modules,runner,folder):
         end=main.index('\n            end})',start)+len('\n            end')
         program=read('model_mock.luau')+'\n'+read('teleport_cursor_prefix.luau')+'\nlocal teleport='+main[start:end]+'\n'+read('teleport_cursor_body.luau')
         run('teleport_cursor',program)
-    if 'BlobmanCadence'in modules:
+    if {'BlobmanKick','BlobmanDefense','AntiExplore'}<=modules.keys():
+        from defense_checks import run_defense_checks
+        run_defense_checks(modules,runner,folder)
+    elif 'BlobmanCadence'in modules:
         main=modules['Main'];start=main.index('        tbl14.BlobLoopTokens=')
         end=main.index('\n\t\ttbl14.LoopLock =',start)
         program=read('model_mock.luau')+'\nlocal Cadence=(function()\n'+modules['BlobmanCadence']+'\nend)()\n'+read('blobman_loop_prefix.luau')+'\n'+main[start:end]+'\n'+read('blobman_loop_body.luau')
@@ -100,7 +103,8 @@ def run_feature_checks(modules,runner,folder):
         assert cleanup,'Hold-key observer lacks direct unload cleanup'
         run('keybind',read('keybind_mock.luau')+declaration[0]+'\n'+cleanup[0]+'\n'+library[start:end]+read('keybind_body.luau'))
     if 'UIMotion'in modules:
-        run('ui_motion',read('ui_engine_mock.luau')+'\nlocal Motion=(function()\n'+modules['UIMotion']+'\nend)()\n'+read('ui_motion_body.luau'))
+        motion_body='ui_motion_group_body.luau'if 'GroupTransparency'in modules['UIMotion']else 'ui_motion_body.luau'
+        run('ui_motion',read('ui_engine_mock.luau')+'\nlocal Motion=(function()\n'+modules['UIMotion']+'\nend)()\n'+read(motion_body))
     if 'Watermark'in modules:
         run('watermark',read('ui_engine_mock.luau')+'\nlocal HUD=(function()\n'+modules['Watermark']+'\nend)()\n'+read('watermark_body.luau'))
     if {'AquaAssets','AquaPose','AquaMesh','AquaModel'}<=modules.keys():

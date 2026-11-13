@@ -65,7 +65,8 @@ check(toggle.TextLabel.TextTransparency==0,"Inactive captions are dimmed compare
 check(toggle.Parent.Holder.BackgroundTransparency==1 and not toggle.Parent.Holder:FindFirstChildOfClass("UIStroke"),"The old outer section cards returned")
 local search=window.MainFrame:FindFirstChild("SearchField",true)
 check(search and search.PlaceholderText=="Search"and search.TextXAlignment==Enum.TextXAlignment.Left,"Header search is blank or misaligned")
-check(window.MainFrame.ClassName=="Frame"and not surface:FindFirstChildOfClass("UICorner"),"The header/body are still separate rounded windows")
+-- The uploaded bundle uses one CanvasGroup to animate the unified window.
+check((window.MainFrame.ClassName=="Frame"or window.MainFrame.ClassName=="CanvasGroup")and not surface:FindFirstChildOfClass("UICorner"),"The header/body are still separate rounded windows")
 local header=window.MainFrame:FindFirstChild("HeaderSurface")
 check(header and header.Size.Y.Offset==44 and surface.Position.Y.Offset==44,"Header and body do not use the reference geometry")
 check(header.BackgroundColor3:ToHex()=="26374f" and window.MainFrame:FindFirstChildOfClass("UIGradient"),"Reference palette or vertical body shading changed")
