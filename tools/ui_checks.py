@@ -97,7 +97,7 @@ end)
         s=s.replace(fake,'local FakeIcons=(function()\n'+modules['Icons']+'\nend)()')
     if 'Toggles:AddToggle("PCLDESPT"'in main:
         a=main.index('Toggles:AddToggle("PCLDESPT"');b=main.index('Toggles:AddToggle("StickyESPT"',a)
-        s+='local function BuildPCLDRow(Toggles,toggles,espConfig,tbl12,fn21)\n'+main[a:b]+'\nend\n'
+        s+='local function BuildPCLDRow(Toggles,toggles,espConfig,tbl12,fn21)\nlocal tbl8={PCLDESP=false}\n'+main[a:b]+'\nend\n'
     extra=modules.get('ExtraFeatures','')
     if 'v89:AddCheckbox("NewESP_PCLDESP"'in extra:
         a=extra.index('v89:AddCheckbox("NewESP_PCLDESP"');b=extra.index('\nv89:AddDivider()',a)

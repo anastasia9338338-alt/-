@@ -122,14 +122,16 @@ if BuildPCLDRow then
     local espSection=tab:AddRightGroupbox("ESP")
     local server={FillColor=Color3.fromRGB(170,20,220),OutlineColor=Color3.new(),NameColor=Color3.new(1,1,1),NameOutlineColor=Color3.new()}
     local espConfig={Server=server};local updates=0
-    local api={SetRuntimeToggle=function()end,WakeRuntimeGate=function()end,SetSmoothPCLDConnection=function()end,UpdateESP=function()end,RefreshESP=function()end,SnapPCLDESP=function()end}
+    local api={SetRuntimeToggle=function()end,WakeRuntimeGate=function()end,SetSmoothPCLDConnection=function()end,UpdateESP=function()end,RefreshESP=function()end,SnapPCLDESP=function()end,PCLDAvatars={Refresh=function()end,SetMode=function()end}}
     BuildPCLDRow(espSection,Library.Toggles,espConfig,api,function(kind,key,value)espConfig[kind][key]=value;updates+=1 end)
     local pcld=Library.Toggles.PCLDESPT;local pickers=0
     for _,addon in pcld.Addons do if addon.Type=="ColorPicker"then pickers+=1 end end
-    check(pickers==1 and Library.Options.PCLDFill and not Library.Options.PCLDOutline,"PCLD still has several color pickers")
+    check(pickers==2 and Library.Options.PCLDFill and Library.Options.PCLDOutline,"PCLD is missing independent fill/outline colors")
     local chosen=Color3.fromRGB(40,120,220);local beforeColor=updates
     Library.Options.PCLDFill:SetValueRGB(chosen)
-    check(server.FillColor:ToHex()==chosen:ToHex() and server.OutlineColor:ToHex()==chosen:ToHex() and updates==beforeColor+1,"Single PCLD color does not drive fill and outline together")
+    check(server.FillColor:ToHex()==chosen:ToHex() and server.OutlineColor:ToHex()=="000000" and updates==beforeColor+1,"PCLD fill overwrites its independent outline")
+    Library.Options.PCLDOutline:SetValueRGB(Color3.fromRGB(240,40,60))
+    check(server.OutlineColor:ToHex()=="f0283c" and server.FillColor:ToHex()==chosen:ToHex(),"PCLD outline overwrites fill")
     local hidden=tab:AddRightGroupbox("ESP Settings");hidden:SetVisible(false)
     local object=setmetatable({Items={"Train"},Images={Train="rbxassetid://123"},Config={},Updates=0},{__index=ObjectESP})
     for _,kind in {"Blobman","Gucci","Item"}do object.Config[kind]={FillColor=chosen,OutlineColor=chosen,NameColor=chosen,NameOutlineColor=chosen,FillTransparency=.5,OutlineTransparency=0}end
@@ -177,6 +179,64 @@ check(window.MainFrame.Visible and window.MainFrame.BackgroundTransparency==.55,
 for _,entry in ipairs(Library.TabButtons)do
     check(entry.Icon and entry.Icon.ImageTransparency<=.5,"Menu animation left a sidebar icon faded out")
 end
+-- Additional regression cases executed inside the shipped native GUI harness.
+local resize=window.MainFrame:FindFirstChild("Resize")
+local glyph=resize and resize:FindFirstChild("ResizeGlyph")
+check(resize and resize.Size.X.Offset>=26 and glyph and glyph.Image~="","Resize affordance is absent or has no real icon")
+check(glyph.ImageColor3==Library.Scheme.FontColor and glyph.ImageTransparency==0 and glyph.ZIndex>resize.ZIndex,"Resize icon is dim or occluded")
+check(glyph.Position.X.Offset>=0 and glyph.Position.X.Offset+glyph.Size.X.Offset<=resize.Size.X.Offset,"Resize icon is clipped by its hit area")
+
+local action=group:AddToggle("ReadabilityOwner",{Text="Gucci settings",Default=false})
+local choices=group:AddDropdown("ReadabilityChoices",{Text="Gucci Type",Values={"Blobman","Tractor","Train"},Default="Blobman"})
+local previousParent=choices.Holder.Parent
+local config=Library:AttachSettings(action,{choices})
+config.Gear.Activated:Fire()
+check(config.Frame.Visible and config.Frame.Active and config.Frame.BackgroundTransparency<=.08,"Settings still blend with the window or click through")
+check(config.Frame.BackgroundColor3==Library.Scheme.BackgroundColor,"Popup introduced another palette")
+check(window.MainFrame.BackgroundTransparency==.55,"Popup styling changed the main glass window")
+check(Library.Scheme.HeaderTransparency==.45 and Library.Scheme.RowTransparency==.92,"Popup styling changed the watermark or normal rows")
+choices.Menu:Open()
+check(choices.Menu.Active and choices.Menu.Menu.Active and choices.Menu.Menu.BackgroundTransparency<=.08,"Dropdown menu still blends with settings")
+local marks=0;local names={}
+for _,row in ipairs(choices.Menu.Menu:GetChildren())do
+ if row.Name=="DropdownOption"and row.Visible then
+  local caption=row:FindFirstChildOfClass("TextButton")
+  local mark=row:FindFirstChild("SelectionMark")
+  check(caption and caption.TextTransparency<=.08,"Enabled choice is too dim")
+  names[caption.Text]=true
+  if mark and mark.Visible then marks+=1 end
+ end
+end
+check(names.Blobman and names.Tractor and names.Train and marks==1,"Choices or selected marker are missing")
+choices.Holder:GetPropertyChangedSignal("AbsolutePosition"):Fire()
+check(choices.Menu.Active,"Moving a setting inside its gear closes the combo unexpectedly")
+choices:SetValue("Train")
+marks=0
+for _,row in ipairs(choices.Menu.Menu:GetChildren())do
+ local mark=row:FindFirstChild("SelectionMark")
+ if row.Visible and mark and mark.Visible then
+  marks+=1;check(row:FindFirstChildOfClass("TextButton").Text=="Train","Selection marker did not follow choice")
+ end
+end
+check(marks==1,"Dropdown selection markers are ambiguous")
+config.Frame.Visible=false
+check(not choices.Menu.Active and not choices.Menu.Menu.Visible,"Closing gear leaves an orphan menu over the game")
+config.Gear.Activated:Fire();choices.Menu:Open();action:Destroy()
+check(config.Disposed and not choices.Menu.Active and choices.Holder.Parent==previousParent,"Destroying an owner loses settings or retains its popup")
+
+local tweaks=tab:AddLeftTabbox("Game Tweaks test")
+local line=tweaks:AddTab(nil,"spline");local hole=tweaks:AddTab(nil,"orbit")
+check(tweaks.Holder.BackgroundTransparency==1,"Game Tweaks has an extra gray surface unlike other groups")
+check(line.ButtonHolder.BackgroundTransparency==1 and hole.ButtonHolder.BackgroundTransparency==1,"Internal tab buttons create a different solid color")
+hole:Show();line:Show()
+check(line.ButtonHolder.BackgroundTransparency==1 and hole.ButtonHolder.BackgroundTransparency==1,"Changing internal tabs restores the solid bar")
+
+local floating=Instance.new("Frame",Library.Floats)
+Library:StyleFloatingPanel(floating)
+check(floating.BackgroundTransparency<=.08 and floating.BackgroundColor3==Library.Scheme.BackgroundColor,"Teleport/floating controls remain unreadably transparent")
+floating:Destroy()
+print('PASS: settings, dropdown selection/lifecycle, Game Tweaks consistency and resize visibility')
+
 local signalsBefore=table.clone(Library.Signals)
 local actionListeners=table.clone(UIS.InputBegan.Connections)
 local releaseListeners=table.clone(UIS.InputEnded.Connections)

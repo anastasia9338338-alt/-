@@ -51,4 +51,21 @@ do
  local ride,d,pre,c,r,h,blob,seat=fixture();ride:SitOnce();h.Health=0;d.Queue[1]()
  check(not h.SeatPart and d.Teleports==0,'Dead avatar was auto-seated');ride:Dispose()
 end
+do
+ local ride,d,pre,c,r,h,blob,seat,root,native=fixture();local jump=signal()
+ ride:Dispose()
+ local notifications=0
+ local ctx=ride.Context;ctx.JumpRequest=jump;ctx.OnDismount=function()notifications+=1 end
+ function h:ChangeState(state)self.State=state end
+ ride=Ride.Install(ctx);h.SeatPart=seat;seat.Occupant=h;h.Sit=true
+ ride:SetAutoSit(true);ride:SetFrozen(true);ride:Step(1/60);local force=ride.Session.Position
+ jump:Fire()
+ check(not ride.AutoSit and not ride.Frozen and not ride.Flying and not force.Parent,'Jump retained Auto Sit/vehicle forces')
+ check(not h.Sit and h.Jump and h.State==Enum.HumanoidStateType.Jumping and notifications==1,'Jump failed to request native seat release')
+ h.SeatPart=nil;seat.Occupant=nil;ride:Step(1/60);d.Now=10;ride:Step(1/60)
+ check(not ride.Dismounting and #d.Queue==0,'Manual exit was countered by Auto Sit')
+ ride:SetAutoSit(true);ride:Step(1/60);local job=d.Queue[1];check(job~=nil,'Seat task fixture missing')
+ jump:Fire();job();check(not h.SeatPart and not ride.AutoSit and notifications==2,'Pending seat task ignored manual exit')
+ ride:Dispose();check(not jump.Connections[1].Connected,'Jump observer leaked')
+end
 print('PASS: '..checks..' Blobman seat, freeze, flight, ownership and cancellation checks (mocked)')

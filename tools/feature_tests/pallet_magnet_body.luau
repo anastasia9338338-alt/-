@@ -1,41 +1,34 @@
 local checks=0;local function check(v,m)assert(v,m);checks+=1 end
-function Proxy:GetConnectedParts()return self._connected or{}end
-local function fixture(owned)
- local world=newNode('Folder');local c=newNode('Model');c.Parent=world;local r=newNode('Part');r.Size=Vector3.new(2,2,1);r.CFrame=CFrame.new(0,3.2,0);r.Parent=c
- local leg=newNode('Part','Left Leg');leg.Size=Vector3.new(1,2,1);leg.Parent=c
- local h={Health=100,HipHeight=0,State=Enum.HumanoidStateType.Running};function h:GetState()return self.State end
- local model=newNode('Model','PalletLightBrown');model.Parent=world;local root=newNode('Part','Main');root.Size=Vector3.new(8,.4,6);root.Parent=model;root.AssemblyMass=60
- local d={Now=0,Owned=owned~=false,Queue={},Reserved=nil};local pre=signal()
- local ctx={RunService={PreSimulation=pre},Clock=function()return d.Now end,Character=function()return c,r,h end,Owned=function()return d.Owned end,
-  UnderFeet=function()return root,Vector3.new(0,.2,0),Vector3.yAxis end,Blocked=function()return d.Blocked end,
-  SpawnThread=function(fn)d.Queue[#d.Queue+1]=fn end,Acquire=function(p,valid)if valid()then d.Owned=true end end,
-  Reserved=function()return d.Reserved end,Reserve=function(_,v)d.Reserved=v end}
- return Magnet.Install(ctx),d,ctx,c,r,h,model,root,pre
+local function fixture()
+ local world=newNode('Folder');local c=newNode('Model');c.Parent=world
+ local r=newNode('Part','HumanoidRootPart');r.Parent=c;r.CFrame=CFrame.new(2,5,7)*CFrame.Angles(.2,1.2,.3)
+ local h=newNode('Humanoid');h.Parent=c;h.Health=100
+ local board=newNode('Part','Pallet');board.Parent=world;board.CFrame=CFrame.new(10,2,-3)
+ local d={Part=board};local beat=signal()
+ local m=Magnet.Install({RunService={Heartbeat=beat},Character=function()return d.Character or c,d.Root or r,d.Humanoid or h end,
+  UnderFeet=function()return d.Part end,Blocked=function()return d.Blocked end})
+ return m,d,c,r,h,board,beat
 end
 do
- local m,d,ctx,c,r,h,model,root,pre=fixture();local original=r.CFrame;m:SetEnabled(true);m:Step(1/60)
- check(m.Session and d.Reserved and not root.CanTouch,'Pallet was not attached/reserved')
- check(m.Session.Position.MaxForce.Y>0 and m.Session.Position.MaxForce.Y<math.huge,'Pallet force invalid')
- r.CFrame=CFrame.new(4,3.2,-2);original=r.CFrame;m:Step(1/60)
- check(math.abs(m.Session.Position.Position.X-4)<.001 and math.abs(m.Session.Position.Position.Z+2)<.001,'Board did not follow feet')
- for _=1,100 do m:Step(1/60);check(r.CFrame==original and r.AssemblyLinearVelocity==Vector3.zero,'Magnet wrote avatar transform/velocity')end
- h.State=Enum.HumanoidStateType.Jumping;r.CFrame=CFrame.new(4,5,-2);m:Step(1/60)
- check(m.Session.Height>1.5,'Genuine jump did not move attached board')
- d.Owned=false;m:Step(1/60);check(not m.Session and root.CanTouch and not d.Reserved,'Ownership loss retained magnet')
- m:Dispose();check(not pre.Connections[1].Connected,'Magnet callback leaked')
+ local m,d,c,r,h,board,beat=fixture();local original=board.CFrame;local rotation=r.CFrame.Rotation
+ check(not m.Connection and not m.Enabled,'Disabled magnet has an idle callback')
+ check(m:SetEnabled(true),'Valid underfoot part rejected')
+ r.AssemblyLinearVelocity=Vector3.new(10,-3,2);r.AssemblyAngularVelocity=Vector3.new(1,2,3);beat:Fire(1/60)
+ check(r.Position==board.Position+Vector3.new(0,3.5,0),'Avatar does not follow the supplied underfoot lock')
+ check((r.CFrame.LookVector-rotation.LookVector).Magnitude<1e-6,'Supplied lock changed player rotation')
+ check(r.AssemblyLinearVelocity==Vector3.zero and r.AssemblyAngularVelocity==Vector3.zero,'Lock does not stop local drift')
+ board.CFrame=CFrame.new(-9,4,8)*CFrame.Angles(.1,.2,.3);beat:Fire(1/60)
+ check(r.Position==board.Position+Vector3.new(0,3.5,0),'Moving underfoot part not followed')
+ check(board.CanTouch and board.CanCollide and #board:GetChildren()==0,'Magnet modified board physics')
+ local conn=m.Connection;m:SetEnabled(false);local released=r.CFrame;board.Position=Vector3.zero;beat:Fire(1/60)
+ check(not conn.Connected and not m.Connection and r.CFrame==released,'Disabled magnet retained lock')
+ m:Dispose();check(not m:SetEnabled(true),'Disposed magnet reactivated')
 end
-do
- local m,d,ctx,c,r,h,model,root=fixture(false);m:SetEnabled(true);m:Step(1/60)
- check(not m.Session and #d.Queue==1,'Unowned board moved before acquisition')
- m:SetEnabled(false);d.Queue[1]();check(not d.Owned and not m.Session,'Canceled acquisition acted on board');m:Dispose()
+for _,reason in ipairs({'death','respawn','seat','deleted','blocked'})do
+ local m,d,c,r,h,board,beat=fixture();m:SetEnabled(true);local conn=m.Connection
+ if reason=='death'then h.Health=0 elseif reason=='respawn'then d.Character=newNode('Model')elseif reason=='seat'then h.SeatPart=newNode('Seat')elseif reason=='deleted'then board:Destroy()else d.Blocked=true end
+ local cf=r.CFrame;beat:Fire(1/60)
+ check(not m.Enabled and not m.Session and not conn.Connected and r.CFrame==cf,'Lock retained after '..reason);m:Dispose()
 end
-do
- local m,d,ctx,c,r,h,model,root=fixture();local other=newNode('Part');other.Parent=c;root._connected={other}
- m:SetEnabled(true);m:Step(1/60);check(not m.Session,'Avatar-connected board accepted');root._connected={};model.Name='RagdollRSC';m:Step(1/60)
- check(not m.Session,'Native kick pallet was captured');m:Dispose()
-end
-do
- local m,d,ctx,c,r,h,model,root=fixture();model.Name='PalletPlayer';newNode('Humanoid').Parent=model
- m:SetEnabled(true);m:Step(1/60);check(not m.Session,'Player avatar with pallet in its name was captured');m:Dispose()
-end
-print('PASS: '..checks..' pallet feet target, ownership, native movement and cleanup checks (mocked)')
+do local m,d,c,r,h=fixture();d.Part=nil;check(not m:SetEnabled(true)and not m.Connection,'No-part enable retained active state');d.Part=r;check(not m:SetEnabled(true),'Own avatar accepted as floor');m:Dispose()end
+print('PASS: '..checks..' supplied underfoot magnet, rotation, cancellation and cleanup checks (mocked)')

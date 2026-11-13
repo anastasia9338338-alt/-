@@ -43,6 +43,20 @@ def run_feature_checks(modules,runner,folder):
             ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
+    if 'PCLDAvatarESP'in modules:
+        main=modules['Main']
+        tweaks=main[main.index('local v20 = tbl15.Visual:AddLeftTabbox("Game Tweaks")'):main.index('local Sky = tbl15.Visual:AddLeftGroupbox',main.index('local v20 = tbl15.Visual:AddLeftTabbox("Game Tweaks")'))]
+        assert tweaks.count('v20:AddTab(')==2 and 'volume-2'not in tweaks and '"crosshair"'not in tweaks
+        assert 'boolValue.Name = "RootAttachment"'not in main
+        assert 'Enabled=function()return not flag11 and not tbl8.GucciAntiGrab and tbl8.AntiGrab end'in main
+        for token in ('JumpRequest=UserInputService.JumpRequest','tbl12.BlobmanRide:Dismount()','tbl12.PCLDAvatars:SetMode(value)','CatalogRoots=function()','Vector3.new(0,-20,0)'):
+            assert token in main,('missing native integration',token)
+    if 'PCLDAvatarESP'in modules:
+        run('pcld_avatar',read('model_mock.luau')+'\nlocal Avatars=(function()\n'+modules['PCLDAvatarESP']+'\nend)()\n'+read('pcld_avatar_body.luau'))
+    if 'Discover'in modules.get('AssetCatalog',''):
+        program=read('model_mock.luau')+'\nlocal Catalog=(function()\n'+modules['AssetCatalog']+'\nend)()\n'
+        program+='local ObjectESP=(function(...)\n'+modules['ObjectESP']+'\nend)(function()return Catalog end)\n'+read('catalog479_body.luau')
+        run('catalog479',program)
     if 'local spinState = {Enabled = false}'in modules.get('Main',''):
         main=modules['Main'];start=main.index('local spinState = {Enabled = false}')
         end=main.index('            Character:AddToggle("AstralWallClimb"',start)

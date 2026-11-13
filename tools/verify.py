@@ -59,7 +59,7 @@ def main():
             if path.stem in {'Main','embedded'}:
                 for name in re.findall(r"Unknown global '([^']+)'",log):
                     assert not re.fullmatch(r'(?:v|tbl|fn|flag|n)\d+',name),(path.name,'unresolved local',name)
-                    assert name not in {'train','inPlot','inOwnedPlot','Character','_at_refreshRainbow','_abanaRunning'},(path.name,'obsolete global',name)
+                    assert name not in {'train','inPlot','inOwnedPlot','Character','isHeld','_at_refreshRainbow','_abanaRunning'},(path.name,'obsolete global',name)
             if 'TheWorstUIV2'in modules and path.stem in {'Library','TheWorstUIV2','Presentation','Watermark'}:
                 allowed={'game','workspace','Enum','Color3','ColorSequence','ColorSequenceKeypoint','NumberSequence','NumberSequenceKeypoint',
                     'UDim','UDim2','Vector2','Vector3','Font','TweenInfo','Instance','task','tick','warn','gethui'}

@@ -3540,6 +3540,8 @@ function Library:AddContextMenu(
             AutomaticCanvasSize = Enum.AutomaticSize.None,
             AutomaticSize = List == 1 and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
             BackgroundColor3 = "BackgroundColor",
+            BackgroundTransparency = .04,
+            Active = true,
             BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",
             CanvasSize = UDim2.fromOffset(0, 0),
             ScrollBarImageColor3 = "OutlineColor",
@@ -3553,6 +3555,8 @@ function Library:AddContextMenu(
     else
         Menu = New("Frame", {
             BackgroundColor3 = "BackgroundColor",
+            BackgroundTransparency = .04,
+            Active = true,
             Size = typeof(Size) == "function" and Size() or Size,
             Visible = false,
             ZIndex = 1,
@@ -3567,7 +3571,8 @@ function Library:AddContextMenu(
     )
 
     New("UIStroke", {
-        Color = "OutlineColor",
+        Color = "FontColor",
+        Transparency = .65,
         Parent = Menu,
     })
 
@@ -3751,7 +3756,10 @@ function Library:AddContextMenu(
             end
 
             if not HolderAllowed and Table.Active then
-                Table:Close()
+                for panel in Library.SettingsPanels do
+                    if panel.Visible and Library:IsInsideFrame(panel,Holder)then HolderAllowed=true;break end
+                end
+                if not HolderAllowed then Table:Close()end
             end
         end)
     end
@@ -4091,11 +4099,16 @@ end
 
 -- Gear panels reuse the existing controls and their callbacks/settings IDs.
 -- There is no second set of toggles and opening a panel performs no action.
+local function closeSettingsMenus(frame)
+    for _,menu in ipairs(Library.ContextMenus)do
+        if menu.Active and menu.Holder and Library:IsInsideFrame(frame,menu.Holder)then menu:Close()end
+    end
+end
 function Library:AttachSettings(owner, controls)
     if not owner or owner.Destroyed or owner.Type~="Toggle" then return end
     local data=owner.SettingsPanel
     if not data then
-        local frame=New("Frame",{Name="ControlSettings",BackgroundColor3="BackgroundColor",
+        local frame=New("Frame",{Name="ControlSettings",BackgroundColor3="BackgroundColor",BackgroundTransparency=.04,Active=true,
             BorderSizePixel=0,Size=UDim2.fromOffset(300,100),Visible=false,ZIndex=30,Parent=Floats})
         New("UICorner",{CornerRadius=UDim.new(0,12),Parent=frame});Library:AddOutline(frame)
         local title=New("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(12,0),
@@ -4127,6 +4140,9 @@ function Library:AttachSettings(owner, controls)
             frame.Size=UDim2.fromOffset(math.min(300,viewport.X-24),math.min(math.max(80,layout.AbsoluteContentSize.Y/Library.DPIScale+48),math.max(80,viewport.Y-80)))
         end
         data.Fit=fit
+        table.insert(data.Connections,frame:GetPropertyChangedSignal("Visible"):Connect(function()
+            if not frame.Visible then closeSettingsMenus(frame)end
+        end))
         table.insert(data.Connections,layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fit))
         table.insert(data.Connections,close.Activated:Connect(function()frame.Visible=false end))
         table.insert(data.Connections,gear.Activated:Connect(function()
@@ -4147,6 +4163,7 @@ function Library:AttachSettings(owner, controls)
         end))
         function data.Dispose(restore)
             if data.Disposed then return end;data.Disposed=true
+            closeSettingsMenus(frame)
             for _,connection in data.Connections do connection:Disconnect()end
             if restore then
                 for control,originalParent in data.Controls do
@@ -8966,6 +8983,7 @@ do
             }
 
             local Container = New("Frame", {
+                Name = "DropdownOption",
                 BackgroundColor3 = "MainColor",
                 BackgroundTransparency = 1,
                 Size = UDim2.new(1, 0, 0, ItemHeight),
@@ -8996,7 +9014,7 @@ do
                 Size = UDim2.new(1, 0, 0, ItemHeight),
                 Text = "",
                 TextSize = 14,
-                TextTransparency = 0.5,
+                TextTransparency = 0.08,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = Container,
             })
@@ -9010,6 +9028,9 @@ do
             Row.Corner = Corner
             Row.Image = Image
             Row.Button = Button
+            local SelectionMark=New("Frame",{Name="SelectionMark",AnchorPoint=Vector2.new(1,.5),
+                BackgroundColor3="AccentColor",BackgroundTransparency=0,BorderSizePixel=0,
+                Position=UDim2.new(1,-3,.5,0),Size=UDim2.fromOffset(3,13),Visible=false,Parent=Container})
 
             function Row:UpdateButton()
                 local Entry = Row.Entry
@@ -9026,11 +9047,12 @@ do
 
                 Row.Selected = Selected and true or false
 
-                Container.BackgroundTransparency = Selected and 0 or 1
-                Button.TextTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.5
+                Container.BackgroundTransparency = Selected and .1 or 1
+                Button.TextTransparency = Entry.IsDisabled and .65 or Selected and 0 or .08
+                SelectionMark.Visible=Selected and true or false
 
                 if Entry.ValueImage then
-                    Image.ImageTransparency = Entry.IsDisabled and 0.8 or Selected and 0 or 0.5
+                    Image.ImageTransparency = Entry.IsDisabled and .65 or Selected and 0 or .08
                 end
             end
 
@@ -9082,12 +9104,12 @@ do
                     BackgroundTransparency = 0.85,
                 }):Play()
                 TweenService:Create(Button, Library.TweenInfo, {
-                    TextTransparency = 0.25,
+                    TextTransparency = 0,
                 }):Play()
 
                 if Image then
                     TweenService:Create(Image, Library.TweenInfo, {
-                        ImageTransparency = 0.25,
+                        ImageTransparency = 0,
                     }):Play()
                 end
             end))
@@ -9106,12 +9128,12 @@ do
                     BackgroundTransparency = 1,
                 }):Play()
                 TweenService:Create(Button, Library.TweenInfo, {
-                    TextTransparency = 0.5,
+                    TextTransparency = 0.08,
                 }):Play()
 
                 if Image then
                     TweenService:Create(Image, Library.TweenInfo, {
-                        ImageTransparency = 0.5,
+                        ImageTransparency = 0.08,
                     }):Play()
                 end
             end))
@@ -11373,13 +11395,13 @@ function Library:CreateWindow(WindowInfo)
         FooterLabel = New("TextLabel", {BackgroundTransparency=1,Text="",Parent=FooterHolder})
         if WindowInfo.Resizable then
             ResizeButton = New("TextButton", {Name="Resize",AnchorPoint=Vector2.new(1,1),
-                Position=UDim2.fromScale(1,1),Size=UDim2.fromOffset(20,20),BackgroundTransparency=1,
+                Position=UDim2.fromScale(1,1),Size=UDim2.fromOffset(26,26),BackgroundTransparency=1,
                 Text="",ZIndex=5,Parent=MainFrame})
             Library:MakeResizable(MainFrame,ResizeButton,function()
                 for _,Tab in Library.Tabs do Tab:Resize(true)end
             end)
-            local ResizeImage=New("ImageLabel",{BackgroundTransparency=1,ImageColor3="OutlineColor",
-                Size=UDim2.fromOffset(12,12),Position=UDim2.fromOffset(3,3),Parent=ResizeButton})
+            local ResizeImage=New("ImageLabel",{Name="ResizeGlyph",BackgroundTransparency=1,ImageColor3="FontColor",ImageTransparency=0,
+                Size=UDim2.fromOffset(16,16),Position=UDim2.fromOffset(5,5),ZIndex=6,Parent=ResizeButton})
             if ResizeIcon then Library:ApplyLucideIcon(ResizeImage,ResizeIcon)end
         end
         local CloseButton=New("TextButton",{Name="CloseMenu",AnchorPoint=Vector2.new(1,.5),
@@ -12123,6 +12145,7 @@ function Library:CreateWindow(WindowInfo)
             do
                 TabboxHolder = New("Frame", {
                     BackgroundColor3 = "BackgroundColor",
+                    BackgroundTransparency = 1,
                     Size = UDim2.fromScale(1, 0),
                     Parent = BoxHolder,
                 })
@@ -12193,7 +12216,7 @@ function Library:CreateWindow(WindowInfo)
 
                 local Button = New("TextButton", {
                     BackgroundColor3 = "MainColor",
-                    BackgroundTransparency = 0,
+                    BackgroundTransparency = 1,
                     Size = UDim2.fromOffset(0, 34),
                     Text = "",
                     Parent = TabboxButtons,
@@ -12319,7 +12342,7 @@ function Library:CreateWindow(WindowInfo)
                 end
 
                 function Tab:Hide()
-                    Button.BackgroundTransparency = 0
+                    Button.BackgroundTransparency = 1
 
                     if ButtonLabel then
                         ButtonLabel.TextTransparency = 0.5
@@ -14983,7 +15006,7 @@ function Library:BeginStartup() self.Starting=true end
 function Library:FinishStartup() self.Starting=false end
 function Library:StyleFloatingPanel(frame)
     if not frame then return end
-    FillInstance({BackgroundColor3="BackgroundColor",BackgroundTransparency="RowTransparency",BorderSizePixel=0},frame)
+    FillInstance({BackgroundColor3="BackgroundColor",BackgroundTransparency=.04,BorderSizePixel=0},frame)
     local corner=frame:FindFirstChildOfClass("UICorner") or New("UICorner",{Parent=frame})
     corner.CornerRadius=UDim.new(0,self.CornerRadius)
     local stroke=frame:FindFirstChildOfClass("UIStroke")
@@ -14996,8 +15019,8 @@ function Library:IsPointerOverUI(point)
         return point.X>=p.X and point.Y>=p.Y and point.X<=p.X+z.X and point.Y<=p.Y+z.Y
     end
     if self.Window and contains(self.Window.MainFrame)then return true end
-    if self.Floats then
-        for _,frame in self.Floats:GetChildren()do
+    for _,layer in ipairs({self.Floats,self.Overlay})do
+        for _,frame in layer:GetChildren()do
             if frame:IsA("GuiObject")and contains(frame)then return true end
         end
     end
