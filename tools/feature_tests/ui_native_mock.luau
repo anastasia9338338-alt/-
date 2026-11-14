@@ -46,3 +46,24 @@ function Node:FindFirstChildWhichIsA(class,recursive)
         if recursive then local found=child:FindFirstChildWhichIsA(class,true);if found then return found end end
     end
 end
+function Font.new(family,weight,style)return{Family=family,Weight=weight,Style=style,__kind='Font'}end
+local Content={fromUri=function(uri)return{Uri=uri}end,fromObject=function(object)return{Object=object}end}
+local editableImages={}
+local function editable(w,h,pixels)
+ local image={Size=Vector2.new(w,h),Pixels=pixels or buffer.create(w*h*4),Destroyed=false}
+ function image:ReadPixelsBuffer()return self.Pixels end
+ function image:WritePixelsBuffer(_,_,p)self.Pixels=p end
+ function image:Destroy()self.Destroyed=true end
+ editableImages[#editableImages+1]=image;return image
+end
+services.AssetService={}
+function services.AssetService:CreateEditableImageAsync()
+ local w,h=96,64;local p=buffer.create(w*h*4)
+ for y=0,h-1 do for x=0,w-1 do
+  local v=(math.floor(x/8)+math.floor(y/8))%2==0 and 82 or 106
+  if (x>=7 and x<=88 and(y>=7 and y<=11 or y>=52 and y<=56))or(y>=7 and y<=56 and(x>=7 and x<=11 or x>=84 and x<=88))then v=242 end
+  local i=(y*w+x)*4;buffer.writeu8(p,i,v);buffer.writeu8(p,i+1,v);buffer.writeu8(p,i+2,v);buffer.writeu8(p,i+3,255)
+ end end
+ return editable(w,h,p)
+end
+function services.AssetService:CreateEditableImage(options)return editable(options.Size.X,options.Size.Y)end

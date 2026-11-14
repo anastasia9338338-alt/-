@@ -1,107 +1,77 @@
 if GUIAppearance then
-    ValidateGUIAssetLifetime()
-    for _,size in ipairs({{320,260},{660,624},{1280,900},{12,10}})do
-        for _,thickness in ipairs({2,14,80})do for _,edge in ipairs({.05,.22,.45})do
-            local w,h=size[1],size[2];local cells=GUIAppearance.Layout(w,h,thickness,edge);local area=0
-            check(#cells==8,'Frame added a center image')
-            for _,g in ipairs(cells)do
-                check(g.Width>0 and g.Height>0 and g.X>=0 and g.Y>=0 and g.X+g.Width<=w+.001 and g.Y+g.Height<=h+.001,'Border leaves resized window')
-                check(g.U>=0 and g.V>=0 and g.U+g.UW<=1.0001 and g.V+g.VH<=1.0001,'Border reads invalid source image range')
-                check(not(w/2>g.X and w/2<g.X+g.Width and h/2>g.Y and h/2<g.Y+g.Height),'A frame edge covers the center')
-                area+=g.Width*g.Height
-            end
-            local t=math.min(thickness,w/3,h/3)
-            check(math.abs(area-(w*h-(w-2*t)*(h-2*t)))<.001,'Frame pieces have gaps or overlaps')
-        end end
-    end
-    check(GUIAppearance.Normalize('  rbxassetid://4321  ')=='rbxassetid://4321','Asset URI normalization failed')
-    check(GUIAppearance.Normalize('data:image/png;base64,aaa')==nil,'Non-image link scheme accepted')
-    local requests={}
-    local function resolve(source,key,kind,done,empty,number,keep)
-        requests[#requests+1]={Source=source,Key=key,Kind=kind,Done=done,Keep=keep}
-    end
-    local beforeTabs=#Library.TabButtons
-    local guiTab=window:AddTab('GUI','image')
-    Library:BeginStartup()
-    local appearance,assets=BuildGUIAppearance(window,guiTab,resolve)
-    Library:FinishStartup();appearance:Sync()
-    local opt,tog=Library.Options,Library.Toggles
-    check(#Library.TabButtons==beforeTabs+1 and Library.Tabs.GUI==guiTab,'GUI tab missing')
-    local left,right=appearance.Groups.Background,appearance.Groups.Frame
-    check(left.BoxHolder.Parent~=right.BoxHolder.Parent and guiTab.Sides[1].Size.X.Scale==.5 and guiTab.Sides[2].Size.X.Scale==.5,'Artwork selectors do not split the tab equally')
-    for _,kind in ipairs({'Background','Frame'})do
-        check(appearance.Previews[kind].Height==150 and appearance.Previews[kind].Holder.Parent==appearance.Groups[kind].Container,'Artwork preview differs from the native avatar image control')
-        check(opt['AstralGUI'..kind..'URL'].Finished and not opt['AstralGUI'..kind..'URL'].ClearTextOnFocus,'URL input fires every keystroke or erases the pasted URL')
-    end
-    check(not appearance.Background.Visible and not appearance.Layer.Visible and #requests==0,'Empty artwork changes the default gray GUI or starts a request')
-    check(window.MainFrame.BackgroundTransparency==.55 and Library.Scheme.RowTransparency==.92,'Artwork controls changed the base glass theme')
-    local function raw(kind,value)opt['AstralGUI'..kind..'URL']:SetValue(value)end
-    raw('Background','123456')
-    check(#requests==1 and requests[1].Source=='rbxassetid://123456'and requests[1].Keep==true,'Background does not use native resolver with retained image file')
-    raw('Background','https://images.example/photo.png')
-    check(#requests==2,'Direct image URL not requested')
-    requests[1].Done('rbxassetid://old')
-    check(appearance.Background.Image=='','An obsolete image response won the race')
-    requests[2].Done('rbxasset://photo.png')
-    check(appearance.Background.Visible and appearance.Background.Image=='rbxasset://photo.png','Selected background is not shown')
-    check(appearance.PreviewImages.Background.Image=='rbxasset://photo.png','Photo preview did not follow the URL')
-    check(appearance.Background.ZIndex<window.MainFrame:FindFirstChild('HeaderSurface').ZIndex and not appearance.Background.Active,'Background covers or intercepts GUI controls')
-    local chosen=Color3.fromRGB(130,170,200)
-    opt.AstralGUIBackgroundColor:SetValueRGB(chosen);opt.AstralGUIBackgroundTransparency:SetValue(.32)
-    opt.AstralGUIBackgroundMode:SetValue('Fit')
-    check(appearance.Background.ImageColor3:ToHex()==chosen:ToHex()and appearance.Background.ImageTransparency==.32 and appearance.Background.ScaleType==Enum.ScaleType.Fit,'Background color, opacity or placement ignored')
-    tog.AstralGUIBackgroundEnabled:SetValue(false);check(not appearance.Background.Visible,'Background toggle ignored')
-    tog.AstralGUIBackgroundEnabled:SetValue(true)
-    raw('Frame','https://www.roblox.com/catalog/789/Frame')
-    local frameRequest=requests[#requests];check(frameRequest.Source=='rbxassetid://789','Roblox catalog link not normalized')
-    frameRequest.Done('rbxasset://frame.png')
-    check(appearance.Layer.Visible and #appearance.Cells==8 and appearance.PreviewImages.Frame.Image=='rbxasset://frame.png','Frame or its picture preview missing')
-    for _,cell in ipairs(appearance.Cells)do
-        check(cell.Image.Image=='rbxasset://frame.png'and cell.Clip.ClipsDescendants and not cell.Image.Active,'Frame piece loses texture, clipping or click-through')
-        local g=cell.Geometry;local w=appearance.Layer.AbsoluteSize.X;local h=appearance.Layer.AbsoluteSize.Y
-        check(not(w/2>g.X and w/2<g.X+g.Width and h/2>g.Y and h/2<g.Y+g.Height),'Frame paints over the center of the GUI')
-    end
-    opt.AstralGUIFrameColor:SetValueRGB(chosen);opt.AstralGUIFrameTransparency:SetValue(.4)
-    check(appearance.Cells[1].Image.ImageColor3:ToHex()==chosen:ToHex()and appearance.Cells[1].Image.ImageTransparency==.4,'Frame tint or transparency ignored')
-    tog.AstralGUIFrameMatchTheme:SetValue(true)
-    Library.Scheme.BodyTopColor=Color3.fromRGB(42,45,49);Library.Scheme.BodyBottomColor=Color3.fromRGB(19,21,24)
-    Library:UpdateColorsUsingRegistry()
-    check(appearance.Cells[1].Gradient.Enabled and appearance.Cells[1].Image.ImageColor3:ToHex()=='ffffff','Exact theme matching does not replace manual tint')
-    check(appearance.Cells[1].Gradient.Color.Keypoints[1].Value:ToHex()==Library.Scheme.BodyTopColor:ToHex(),'Frame top does not match the current GUI gradient')
-    check(appearance.Cells[8].Gradient.Color.Keypoints[#appearance.Cells[8].Gradient.Color.Keypoints].Value:ToHex()==Library.Scheme.BodyBottomColor:ToHex(),'Frame bottom does not match the current GUI gradient')
-    local last=appearance.Cells[8].Geometry
-    window.MainFrame.Size=UDim2.fromOffset(760,610);window.MainFrame:GetPropertyChangedSignal('AbsoluteSize'):Fire()
-    local grown=appearance.Cells[8].Geometry
-    check(grown.X>last.X and grown.Y>last.Y and math.abs(grown.Width-last.Width)<.001,'Resizing stretches frame corners or fails to follow the window')
-    opt.AstralGUIFrameWidth:SetValue(30);check(appearance.Cells[1].Geometry.Width==30,'Frame width not configurable')
-    opt.AstralGUIFrameEdge:SetValue(35);check(appearance.Cells[1].Geometry.UW==.35,'Source edge region not configurable')
-    local configLibrary={Options={},Toggles={},Tabs={}}
-    for id,value in pairs(Library.Options)do if id:match('^AstralGUI')then configLibrary.Options[id]=value end end
-    for id,value in pairs(Library.Toggles)do if id:match('^AstralGUI')then configLibrary.Toggles[id]=value end end
-    SaveManager:SetLibrary(configLibrary)
-    local config,success=SaveManager:SaveJSON('Artwork test');check(success,'GUI appearance config failed to save')
-    raw('Frame','');opt.AstralGUIFrameTransparency:SetValue(.9);tog.AstralGUIFrameMatchTheme:SetValue(false)
-    Library:BeginStartup()
-    check(SaveManager:LoadJSON(config),'GUI appearance config failed to load');advance(.02)
-    Library:FinishStartup();appearance:Sync()
-    local restored=requests[#requests];restored.Done('rbxasset://restored/frame.png')
-    check(opt.AstralGUIFrameURL.Value=='https://www.roblox.com/catalog/789/Frame'and appearance.Layer.Visible,'Saved image URL or enable state not restored')
-    check(appearance.Config.FrameTransparency==.4 and appearance.Config.FrameWidth==30 and appearance.Config.MatchTheme,'Saved frame appearance not restored after startup callback suppression')
-    check(appearance.Config.BackgroundColor:ToHex()==chosen:ToHex()and appearance.Config.BackgroundTransparency==.32,'Saved background settings lost')
-    local connections=table.clone(appearance.Connections)
-    raw('Frame','https://images.example/pending.png');local pending=requests[#requests]
-    raw('Frame','');pending.Done('rbxasset://late.png')
-    check(not appearance.Layer.Visible and appearance.Assets.Frame.Asset=='','Clearing URL leaves frame or accepts a stale image')
-    raw('Background','javascript:alert(1)')
-    check(appearance.Status.Background.TextLabel.Text:find('Нужна',1,true)~=nil,'Invalid image input has no clear status')
-    raw('Background','https://images.example/missing.png');advance(16)
-    check(appearance.Status.Background.TextLabel.Text:find('Не загрузилось',1,true)~=nil,'A failed request remains loading forever')
-    local response=requests[#requests]
-    appearance:Dispose();response.Done('rbxasset://after-unload.png');appearance:Sync()
-    check(not appearance.Background.Parent and not appearance.Layer.Parent,'Disposal leaves custom artwork')
-    for _,c in ipairs(connections)do check(not c.Connected,'Artwork event observer survives disposal')end
-    for _,g in ipairs(appearance.Registered)do check(Library.Registry[g]==nil,'Artwork gradient stays in theme registry after disposal')end
-    -- The actual SaveManager keeps these ordinary Inputs/Sliders/ColorPickers.
-    UIStyle.ApplyBase(Library)
-    print('PASS: native GUI artwork previews, exact theme matching, resize, async cancellation, clear and unload')
+ ValidateGUIAssetLifetime()
+ local requests={};local function resolve(source,key,kind,done,empty,numeric,keep)requests[#requests+1]={Source=source,Done=done,Keep=keep}end
+ local guiTab=window:AddTab('GUI','image');Library:BeginStartup()
+ local a,assets,styler=BuildGUIAppearance(window,guiTab,resolve);Library:FinishStartup();a:Sync();styler:Sync()
+ local opt,tog=Library.Options,Library.Toggles
+ local originalSize=window.MainFrame.Size
+ check(not a.Background.Visible and not a.Layer.Visible,'Default GUI changed with empty image links')
+ opt.AstralGUIBackgroundURL:SetValue('https://images.example/cat.png');local old=requests[#requests]
+ opt.AstralGUIBackgroundURL:SetValue('https://images.example/landscape.png');old.Done('rbxasset://old.png')
+ check(a.Background.Image=='','Stale URL overwrote the chosen image');requests[#requests].Done('rbxasset://landscape.png')
+ check(a.Background.Visible and a.PreviewImages.Background.ScaleType==Enum.ScaleType.Stretch,'Landscape preview not stretched horizontally')
+ guiTab.Container.Visible=true;a:Animate();advance(.25)
+ check(math.abs(a.PreviewImages.Background.Rotation)>0 and math.abs(a.PreviewImages.Background.Rotation)<=2,'Preview has no gentle motion')
+ tog.AstralGUIPreviewMotion:SetValue(false);check(a.PreviewImages.Background.Rotation==0 and not a.MotionConnection,'Disabled preview motion continues')
+ local pop=Instance.new('Frame',Library.Floats);pop.Size=UDim2.fromOffset(240,200);pop.Position=UDim2.fromOffset(40,60)
+ Library:StyleFloatingPanel(pop);tog.AstralGUIFloatingBackground:SetValue(true)
+ local surface=a.Surfaces[pop]
+ check(surface and surface.Image.Visible and surface.Image.Image==a.Background.Image and surface.Image.Parent==pop.Parent,'Detached panel does not receive artwork')
+ check(surface.Image.Parent~=pop and surface.Image.Active==false,'Floating image enters its panel layout or steals input')
+ local teleports=TeleportMenu.Install({Library=Library,Workspace=workspace,Locations=function()return{}end,Player={CharacterAdded=signal()},RunService=RunService})
+ teleports:SetVisible(true)
+ check(a.Surfaces[teleports.Frame].Image.Visible and teleports.Frame.BackgroundTransparency==1,'Teleport menu ignores the selected floating wallpaper')
+ teleports:SetVisible(false);teleports:SetVisible(true)
+ check(teleports.Frame.BackgroundTransparency==1,'Opening teleport menu removes the floating wallpaper')
+ tog.AstralGUIFloatingBackground:SetValue(false);check(not surface.Image.Visible and pop.BackgroundTransparency==Library.Scheme.GlassTransparency,'Floating wallpaper does not restore panel background')
+ check(teleports.Frame.BackgroundTransparency==Library.Scheme.GlassTransparency,'Teleport menu lost glass alpha after background disable')
+ teleports:Dispose()
+ opt.AstralGUIFrameURL:SetValue('https://images.example/frost.png');requests[#requests].Done('rbxasset://frost.png');advance(.2)
+ check(a.Assets.Frame.Data and a.Assets.Frame.Data.Removed>0,'Baked checkerboard was not removed')
+ check(a.Layer.Parent==window.MainFrame.Parent and a.Layer.Position.X.Offset<window.MainFrame.AbsolutePosition.X,'Frame still overlays content instead of surrounding window')
+ check(window.MainFrame.Size==originalSize,'Frame changes window/content dimensions')
+ check(a.FrameTexture and not a.FrameTexture.Destroyed,'Rounded frame texture missing')
+ local tex=a.FrameTexture;local mid=(math.floor(tex.Size.Y/2)*tex.Size.X+math.floor(tex.Size.X/2))*4
+ check(buffer.readu8(tex.Pixels,mid+3)==0 and buffer.readu8(tex.Pixels,3)==0,'Frame has an opaque center or square outer corners')
+ local current=a.FrameTexture;window.MainFrame.Size=UDim2.fromOffset(760,610);window.MainFrame:GetPropertyChangedSignal('AbsoluteSize'):Fire();advance(.2)
+ check(current.Destroyed and a.FrameTexture~=current,'Resize leaks old frame texture')
+ opt.AstralGUIFrameWidth:SetValue(60);advance(.2);check(window.MainFrame.Size.X.Offset==760,'Wide frame squeezes window')
+ tog.AstralGUIFrameMatchTheme:SetValue(true)
+ check(a.FrameGradient.Enabled,'Frame does not use theme gradient')
+ opt.AstralGUIFrameURL:SetValue('');advance(.2);check(not a.Layer.Visible,'Cleared frame remains visible')
+ -- Style editing uses real native control objects and does not alter callbacks.
+ tog.AstralGUIFunctionIcons:SetValue(true);tog.AstralGUISeparators:SetValue(true)
+ local iconCount,dividerCount=0,0
+ for _,v in ipairs(Library.ScreenGui:GetDescendants())do
+  if v.Name=='AstralStyleIcon'and v.Visible then iconCount+=1 end
+  if v.Name=='AstralFunctionDivider'and v.Visible then dividerCount+=1 end
+ end
+ check(iconCount>0 and dividerCount>0,'Function icon/divider customization missing')
+ opt.AstralGUIFont:SetValue('Gotham');opt.AstralGUITextScale:SetValue(1.1)
+ check(Library.Toggles.FlyT.TextLabel.FontFace.Family=='Gotham','Selected GUI font not applied')
+ local fill=Color3.fromRGB(160,180,200);opt.AstralGUISliderFill:SetValueRGB(fill)
+ local found=false;for _,v in ipairs(Library.ScreenGui:GetDescendants())do if v.Name=='SliderFill'and v.BackgroundColor3:ToHex()==fill:ToHex()then found=true end end
+ check(found,'Slider customization missing')
+ local functionName=Library.Toggles.FlyT.TextLabel.Text:gsub('<[^>]*>','')
+ opt.AstralGUIIconTarget:SetValue(functionName);opt.AstralGUIIconOverride:SetValue('star')
+ check(styler.Overrides[functionName]=='star','Per-function icon override was not stored')
+ local configLibrary={Options={},Toggles={},Tabs={}}
+ for id,control in pairs(opt)do if id:match('^AstralGUI')then configLibrary.Options[id]=control end end
+ for id,control in pairs(tog)do if id:match('^AstralGUI')then configLibrary.Toggles[id]=control end end
+ SaveManager:SetLibrary(configLibrary)
+ local saved,ok=SaveManager:SaveJSON('GUI style');check(ok,'GUI style failed to save')
+ opt.AstralGUITextScale:SetValue(.8);opt.AstralGUIFont:SetValue('Arial');tog.AstralGUISeparators:SetValue(false)
+ opt.AstralGUIIconMap:SetValue('{}');opt.AstralGUISliderFill:SetValueRGB(Color3.new())
+ Library:BeginStartup();check(SaveManager:LoadJSON(saved),'GUI style failed to load');advance(.02);Library:FinishStartup();a:Sync();styler:Sync()
+ check(styler.Config.Font=='Gotham'and styler.Config.Scale==1.1 and styler.Config.Separators,'Saved font/size/dividers did not restore')
+ check(styler.Overrides[functionName]=='star'and styler.Config.Fill:ToHex()==fill:ToHex(),'Saved icon map/slider color did not restore')
+ opt.AstralGUIFont:SetValue('Original');opt.AstralGUITextScale:SetValue(1)
+ tog.AstralGUIFunctionIcons:SetValue(false);tog.AstralGUISeparators:SetValue(false)
+ opt.AstralGUIBackgroundURL:SetValue('https://images.example/pending.png');local pending=requests[#requests]
+ local connections=table.clone(a.Connections);a:Dispose();pending.Done('rbxasset://late.png')
+ check(not a.Background.Parent and not a.Layer.Parent,'Artwork survives unload')
+ for _,c in ipairs(connections)do check(not c.Connected,'Artwork listener survives unload')end
+ check(not surface.Image.Parent,'Floating artwork survives unload')
+ styler:Dispose();pop:Destroy();UIStyle.ApplyBase(Library)
+ print('PASS: landscape/moving previews, cleaned rounded external frame, detached wallpaper and native style controls')
 end

@@ -233,7 +233,7 @@ check(line.ButtonHolder.BackgroundTransparency==1 and hole.ButtonHolder.Backgrou
 
 local floating=Instance.new("Frame",Library.Floats)
 Library:StyleFloatingPanel(floating)
-check(floating.BackgroundTransparency<=.08 and floating.BackgroundColor3==Library.Scheme.WhiteColor and floating:FindFirstChild("AstralPopupGradient")~=nil,"Teleport/floating controls remain unreadably transparent")
+check(floating.BackgroundTransparency==Library.Scheme.GlassTransparency and floating.BackgroundColor3==Library.Scheme.WhiteColor and floating:FindFirstChild("AstralPopupGradient")~=nil,"Floating panel does not match the main glass surface")
 floating:Destroy()
 print('PASS: settings, dropdown selection/lifecycle, Game Tweaks consistency and resize visibility')
 

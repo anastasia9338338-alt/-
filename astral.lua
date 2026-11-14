@@ -1,4 +1,4 @@
--- Astral v4.81 | Last GUI tab: background/frame image previews, URL selection, tint, opacity and exact theme gradient.
+-- Astral v4.82 | GUI artwork cleanup, rounded external frames, floating backgrounds, full style controls and native toy-shop reskin.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -6203,6 +6203,11 @@ function Library:MakeBoxPopOut(Box: any, Options: {
                 ZIndex = 1,
                 Parent = Floats,
             })
+            Library:StylePopupSurface(Float)
+            Float.BackgroundTransparency=Library.Scheme.GlassTransparency
+            New("UICorner",{CornerRadius=UDim.new(0,Library.CornerRadius),Parent=Float})
+            Library:AddOutline(Float)
+            Library:RegisterArtworkSurface(Float)
             FloatScale = New("UIScale", {
                 Parent = Float,
             })
@@ -11460,6 +11465,7 @@ do
             Size = UDim2.new(1,-24,0,22),Text = "",Parent = Holder,
         })
         local Track = New("Frame", {
+            Name="SliderTrack",
             AnchorPoint = Vector2.new(0,.5),BackgroundColor3 = "MainColor",
             Position = UDim2.fromScale(0,.5),Size = UDim2.new(1,0,0,SliderDiameter),Parent = Bar,
         })
@@ -11499,12 +11505,14 @@ do
         end
 
         local Fill = New("Frame", {
+            Name="SliderFill",
             BackgroundColor3 = "AccentColor",Size = UDim2.fromScale(.5,1),
             ZIndex = Bar.ZIndex+1,Parent = Track,
         })
         New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Track})
         New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Fill})
         local Thumb = New("Frame", {
+            Name="SliderThumb",
             AnchorPoint = Vector2.new(.5,.5),BackgroundColor3 = "WhiteColor",
             Position = UDim2.fromScale(.5,.5),Size = UDim2.fromOffset(SliderDiameter,SliderDiameter),
             ZIndex = Bar.ZIndex+2,Parent = Track,
@@ -11527,8 +11535,8 @@ do
                 InputTextBox.TextTransparency = Slider.Disabled and 0.8 or 0
             end
 
-            Fill.BackgroundColor3 = Slider.Disabled and Library.Scheme.OutlineColor or Library.Scheme.AccentColor
-            Library.Registry[Fill].BackgroundColor3 = Slider.Disabled and "OutlineColor" or "AccentColor"
+            Fill.BackgroundColor3 = Slider.Disabled and Library.Scheme.OutlineColor or Library.GUICustomSlider and Library.GUICustomSlider.Fill or Library.Scheme.AccentColor
+            Library.Registry[Fill].BackgroundColor3 = function()return Slider.Disabled and Library.Scheme.OutlineColor or Library.GUICustomSlider and Library.GUICustomSlider.Fill or Library.Scheme.AccentColor end
         end
 
         function Slider:Display()
@@ -18452,7 +18460,10 @@ function Library:AllowsFunctionIcons(node)
     end
     return true
 end
-function Library:FunctionIcon() end
+function Library:FunctionIcon(label,text)
+    self.FunctionLabels=self.FunctionLabels or setmetatable({},{__mode='k'})
+    if label then self.FunctionLabels[label]=tostring(text or''):gsub('<[^>]*>','')end
+end
 
 function Library:BeginStartup() self.Starting=true end
 function Library:FinishStartup() self.Starting=false end
@@ -18467,9 +18478,17 @@ function Library:StylePopupSurface(frame)
         end,Parent=frame})
     end
 end
+function Library:RegisterArtworkSurface(frame)
+    self.ArtworkSurfaces=self.ArtworkSurfaces or setmetatable({},{__mode='k'})
+    self.ArtworkSurfaces[frame]=true
+    if self.AppearanceController then self.AppearanceController:AddSurface(frame)end
+end
 function Library:StyleFloatingPanel(frame)
     if not frame then return end
     self:StylePopupSurface(frame)
+    frame.BackgroundTransparency=self.Scheme.GlassTransparency
+    self:RegisterArtworkSurface(frame)
+    if self.AppearanceController then self.AppearanceController:ApplySurfaces()end
     frame.BorderSizePixel=0
     local corner=frame:FindFirstChildOfClass("UICorner") or New("UICorner",{Parent=frame})
     corner.CornerRadius=UDim.new(0,self.CornerRadius)
@@ -20870,7 +20889,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.81 | FTAP")
+                                warn("Astral v4.82 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -37784,7 +37803,23 @@ Escape Timer: %*]]
 		}
 
         do
-            tbl12.GUIAppearance=requireModule("GUIAppearance").Install({Library=lib,Window=v19,Tab=tbl15.GUI,Delay=task.delay,
+            tbl12.GUIAppearance=requireModule("GUIAppearance").Install({Library=lib,Window=v19,Tab=tbl15.GUI,Delay=task.delay,RunService=RunService,
+                PrepareFrame=function(asset,removeGrid,valid,done)
+                    task.spawn(function()
+                        local ok,data=pcall(function()
+                            local art=requireModule("FrameArtwork")
+                            local decoded=art.Decode(asset,game:GetService("AssetService"))
+                            if not valid()then return end
+                            return art.Clean(decoded.Pixels,decoded.Width,decoded.Height,removeGrid)
+                        end)
+                        if valid()then done(ok and data or nil,not ok and("EditableImage: "..tostring(data))or nil)end
+                    end)
+                end,
+                MakeTexture=function(pixels,w,h)return requireModule("FrameArtwork").Texture(pixels,w,h,game:GetService("AssetService"))end,
+                RasterFrame=function(data,w,h,border,radius,edge)
+                    local art=requireModule("FrameArtwork");local pixels,iw,ih=art.Raster(data,w,h,border,radius,edge)
+                    return art.Texture(pixels,iw,ih,game:GetService("AssetService"))
+                end,
                 Resolve=function(source,kind,callback)
                     return tbl12.ResolveAssetInput(source,"GUI"..kind,"image",callback,"",false,true)
                 end,
@@ -37796,6 +37831,15 @@ Escape Timer: %*]]
                 end,
             })
             lib:OnUnload(function()tbl12.GUIAppearance:Dispose()end)
+            tbl12.GUIStyle=requireModule("GUIStyle").Install({Library=lib,Tab=tbl15.GUI,Defer=task.defer,
+                Icon=function(text)return requireModule("MenuDecor").Icon(text)end,
+                Encode=function(value)return HttpService:JSONEncode(value)end,Decode=function(value)return HttpService:JSONDecode(value)end})
+            lib:OnUnload(function()tbl12.GUIStyle:Dispose()end)
+            local playerUI=localPlayer:FindFirstChild("PlayerGui")
+            if playerUI then
+                tbl12.GameShopStyle=requireModule("GameShopStyle").Install({Library=lib,Tab=tbl15.GUI,PlayerGui=playerUI,Defer=task.defer})
+                lib:OnUnload(function()tbl12.GameShopStyle:Dispose()end)
+            end
         end
 
         tbl15.Home:AddLeftGroupbox("Tools", "wrench"):AddButton("Infinite Yield", UIStyle.CreateYieldLauncher({
@@ -37819,7 +37863,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.81",true)
+            box:AddLabel("Astral v4.82",true)
         end
 
         do
@@ -43027,12 +43071,13 @@ Escape Timer: %*]]
 
 	do
 		local Menu = tbl15.Settings:AddLeftGroupbox("Menu", "wrench")
+        local GUIVisuals=tbl15.GUI:AddRightGroupbox("Отображение","monitor")
         Menu:AddButton({Text="Hide Menu",Func=function()lib:Toggle(false)end})
         Menu:AddButton({Text = "Unload astral", Func = function() lib:Unload() end})
 		Menu:AddLabel("Menu Keybind"):AddKeyPicker("menukey", { Text = "Menu Keybind", Mode = "Toggle", Default = "RightShift", NoUI = false })
 		lib.ToggleKeybind = options.menukey
 
-		Menu:AddToggle("WatermarkT", {
+		GUIVisuals:AddToggle("WatermarkT", {
 			Default = true,
 			Text = "Watermark",
 			Callback = function(arg)
@@ -43150,7 +43195,7 @@ Escape Timer: %*]]
 	end
 
 	do
-		local Display = tbl15.Settings:AddLeftGroupbox("Display", "monitor")
+		local Display = tbl15.GUI:AddLeftGroupbox("Display", "monitor")
 		Display:AddDivider("Cursor")
 
 		Display:AddToggle("ShowCustomCursor", {
@@ -43232,7 +43277,7 @@ Escape Timer: %*]]
 	end
 
 	do
-		local Notifications = tbl15.Settings:AddRightGroupbox("Notifications", "bell-ring")
+		local Notifications = tbl15.GUI:AddRightGroupbox("Notifications", "bell-ring")
 
 		local tbl16 = {
 			Default = 97643101798871,
@@ -43604,7 +43649,8 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 	lib2:SetDefaultTheme(UIStyle.Theme())
 
 	task.spawn(function()
-		lib2:ApplyToTab(tbl15.Settings)
+		lib2:ApplyToTab(tbl15.GUI)
+        if options.FontFace then options.FontFace:SetVisible(false)end
 		UIStyle.ApplyStartupTheme(lib2, lib)
 	end)
 
@@ -43914,6 +43960,8 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
     lib:AttachDependencySettings()
     lib:FinishStartup()
     tbl12.GUIAppearance:Sync()
+    tbl12.GUIStyle:Sync()
+    if tbl12.GameShopStyle then tbl12.GameShopStyle:Sync()end
 	fn18("Script loaded in " .. math.round((tick() - app.LoadTime) * 100) / 100 .. " seconds", "astral", 71450094482101)
 	app.LoadTime = nil
 
@@ -44112,8 +44160,8 @@ return Avatars
 
 ]========]
 sources.GUIAppearance = [========[
--- Opt-in window artwork. Eight clipped edge pieces leave the center empty;
--- normalized image coordinates work without privileged image-size APIs.
+-- Optional artwork with client-side checker removal and a rounded external frame.
+-- A separate surface keeps decoration out of the native content layout.
 local Appearance = {}; Appearance.__index = Appearance
 local white = Color3.new(1, 1, 1)
 local function trim(value) return tostring(value or ''):match('^%s*(.-)%s*$') end
@@ -44137,20 +44185,6 @@ function Appearance.Normalize(value)
     if host and not source:find('%s') then return source end
     return nil, 'Нужна прямая ссылка на картинку или Roblox ID.'
 end
-function Appearance.Layout(width, height, thickness, edge)
-    width = math.max(1, width); height = math.max(1, height)
-    local t = math.min(thickness, width / 3, height / 3)
-    local x = {0, t, width-t, width}; local y = {0, t, height-t, height}
-    local uv = {0, edge, 1-edge, 1}; local result = {}
-    for row = 1, 3 do for col = 1, 3 do
-        if row ~= 2 or col ~= 2 then
-            result[#result+1] = {X=x[col],Y=y[row],Width=x[col+1]-x[col],Height=y[row+1]-y[row],
-                U=uv[col],V=uv[row],UW=uv[col+1]-uv[col],VH=uv[row+1]-uv[row],
-                Start=y[row]/height,Finish=y[row+1]/height}
-        end
-    end end
-    return result
-end
 local function new(class, props)
     local object = Instance.new(class)
     for key, value in pairs(props) do object[key] = value end
@@ -44161,36 +44195,42 @@ function Appearance:Track(connection)
     return connection
 end
 function Appearance.Install(ctx)
-    local self = setmetatable({Context=ctx,Library=ctx.Library,Window=ctx.Window,Connections={},Registered={},
-        Assets={Background={Asset='',Token=0},Frame={Asset='',Token=0}},Cells={},Building=true},Appearance)
+    local self = setmetatable({Context=ctx,Library=ctx.Library,Window=ctx.Window,Connections={},Registered={},Surfaces={},FrameGeneration=0,
+        Assets={Background={Asset='',Token=0},Frame={Asset='',Token=0}},Building=true},Appearance)
     self.Background = new('ImageLabel',{Name='AstralGUIBackground',BackgroundTransparency=1,BorderSizePixel=0,
         Position=UDim2.fromScale(0,0),Size=UDim2.fromScale(1,1),Image='',Active=false,Selectable=false,
         ZIndex=0,Visible=false,ScaleType=Enum.ScaleType.Crop,Parent=ctx.Window.MainFrame})
     self.BackgroundCorner = new('UICorner',{Parent=self.Background})
     self.Layer = new('Frame',{Name='AstralGUIFrame',BackgroundTransparency=1,BorderSizePixel=0,
-        Position=UDim2.fromScale(0,0),Size=UDim2.fromScale(1,1),Active=false,Selectable=false,
-        ZIndex=4,Visible=false,Parent=ctx.Window.MainFrame})
-    for index=1,8 do
-        local cell = {}
-        cell.Clip = new('Frame',{Name='Edge'..index,BackgroundTransparency=1,BorderSizePixel=0,
-            ClipsDescendants=true,Active=false,Selectable=false,Parent=self.Layer})
-        cell.Image = new('ImageLabel',{Name='Artwork',BackgroundTransparency=1,BorderSizePixel=0,
-            Image='',ScaleType=Enum.ScaleType.Stretch,Active=false,Selectable=false,Parent=cell.Clip})
-        cell.Gradient = new('UIGradient',{Rotation=90,Enabled=false,Parent=cell.Image})
-        self.Cells[index] = cell
-        ctx.Library:AddToRegistry(cell.Gradient,{Color=function()return self:Gradient(cell)end})
-        self.Registered[#self.Registered+1] = cell.Gradient
-    end
+        Active=false,Selectable=false,ZIndex=ctx.Window.MainFrame.ZIndex-1,Visible=false,Parent=ctx.Window.MainFrame.Parent})
+    self.FramePicture=new('ImageLabel',{Name='FrameArtwork',BackgroundTransparency=1,BorderSizePixel=0,
+        Size=UDim2.fromScale(1,1),Active=false,Selectable=false,Image='',Parent=self.Layer})
+    self.FrameGradient=new('UIGradient',{Rotation=90,Enabled=false,Parent=self.FramePicture})
+    ctx.Library:AddToRegistry(self.FrameGradient,{Color=function()return self:Gradient()end})
+    self.Registered[#self.Registered+1]=self.FrameGradient
+    self.Fallback=new('Frame',{Name='FrameFallback',BackgroundTransparency=1,BorderSizePixel=0,Active=false,Visible=false,Parent=self.Layer})
+    self.FallbackCorner=new('UICorner',{Parent=self.Fallback})
+    self.FallbackStroke=new('UIStroke',{Thickness=1,Color=white,Parent=self.Fallback})
     local mainCorner = ctx.Window.MainFrame:FindFirstChildOfClass('UICorner')
     local function updateCorner()
-        if not self.Closed then self.BackgroundCorner.CornerRadius = mainCorner and mainCorner.CornerRadius or UDim.new(0,12) end
+        if not self.Closed then
+            self.BackgroundCorner.CornerRadius = mainCorner and mainCorner.CornerRadius or UDim.new(0,12)
+            self:Apply()
+        end
     end
     if mainCorner then self:Track(mainCorner:GetPropertyChangedSignal('CornerRadius'):Connect(updateCorner)) end
     updateCorner()
+    self.MainCorner=mainCorner
     self:Track(ctx.Window.MainFrame:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()self:Apply()end))
+    self:Track(ctx.Window.MainFrame:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()self:Apply()end))
+    self:Track(ctx.Window.MainFrame:GetPropertyChangedSignal('Visible'):Connect(function()self:Apply();self:Animate()end))
+    self:Track(ctx.Tab.Container:GetPropertyChangedSignal('Visible'):Connect(function()self:Animate()end))
+    self.Tab=ctx.Tab
     self:BuildUI(ctx.Tab)
     self.Building=false
     self:Sync()
+    self.Library.AppearanceController=self
+    for frame in pairs(self.Library.ArtworkSurfaces or{})do self:AddSurface(frame)end
     return self
 end
 function Appearance:Gradient(cell)
@@ -44215,28 +44255,50 @@ function Appearance:SetSource(kind, value)
     local entry = self.Assets[kind]
     local source, why = Appearance.Normalize(value)
     local request = trim(value)
-    if request==entry.Request then return end
+    local key=request..(kind=='Frame'and tostring(self.Config.RemoveGrid)or'')
+    if key==entry.RequestKey then return end
+    entry.RequestKey=key
     entry.Request=request;entry.Token+=1;entry.Pending=false
+    if kind=='Frame'then self.FrameGeneration+=1 end
     local token=entry.Token
     if self.Context.Cancel then self.Context.Cancel(kind)end
     if not source then self:SetStatus(kind,why);return end
     if source==''then
-        entry.Asset='';self.Previews[kind]:SetImage('image');self:SetStatus(kind,'Вставь ссылку под превью.');self:Apply();return
+        entry.Asset='';entry.Data=nil;if kind=='Frame'then
+            self.FrameKey=nil;self.FrameUnavailable=nil
+            if self.FrameTexture then self.FrameTexture:Destroy();self.FrameTexture=nil end
+            if self.PreviewTexture then self.PreviewTexture:Destroy();self.PreviewTexture=nil end
+        end;self.Previews[kind]:SetImage('image');self:SetStatus(kind,'Вставь ссылку под превью.');self:Apply();return
     end
     entry.Pending=true;self:SetStatus(kind,'Загрузка изображения…')
     local function valid()return not self.Closed and entry.Token==token end
     local function accept(asset)
         if not valid()then return end
         if type(asset)~='string'or asset==''then self:SetStatus(kind,'Не удалось загрузить изображение.');return end
-        entry.Asset=asset;entry.Pending=false
-        -- The resolver already returned a registered image URI. Some executors
-        -- use URI shapes outside the icon atlas parser; do not reject those.
-        local preview=self.PreviewImages[kind]
-        local glyph=preview:FindFirstChild('AstralFunctionGlyph');if glyph then glyph:Destroy()end
-        preview.Image=asset;preview.ImageRectOffset=Vector2.zero;preview.ImageRectSize=Vector2.zero
-        self.Previews[kind].Image=asset;self.Previews[kind].RectOffset=Vector2.zero;self.Previews[kind].RectSize=Vector2.zero
-        self:Apply()
-        if self.PreviewImages[kind].IsLoaded then self:SetStatus(kind,'Изображение загружено.')end
+        local function display(data,why)
+            if not valid()then return end
+            entry.Asset=asset;entry.Pending=false
+            if kind=='Frame'then
+                entry.Data=data;self.FrameKey=nil
+                if self.PreviewTexture then self.PreviewTexture:Destroy();self.PreviewTexture=nil end
+                if data and self.Context.MakeTexture then
+                    local ok,image,content=pcall(self.Context.MakeTexture,data.Pixels,data.Width,data.Height)
+                    if ok then self.PreviewTexture=image;self.PreviewImages.Frame.ImageContent=content end
+                end
+                if not data then self:SetStatus(kind,why or'Обработка рамки недоступна: показан округлый контур.')
+                else self:SetStatus(kind,data.Removed>0 and'Сетка удалена. Рамка подготовлена.'or'Рамка подготовлена.')end
+            else
+                local preview=self.PreviewImages[kind]
+                local glyph=preview:FindFirstChild('AstralFunctionGlyph');if glyph then glyph:Destroy()end
+                preview.Image=asset;preview.ImageRectOffset=Vector2.zero;preview.ImageRectSize=Vector2.zero
+                self.Previews[kind].Image=asset
+                self:SetStatus(kind,'Изображение загружено.')
+            end
+            self:Apply()
+        end
+        if kind=='Frame'and self.Context.PrepareFrame then self.Context.PrepareFrame(asset,self.Config.RemoveGrid,valid,display)
+        elseif kind=='Frame'then display(nil,'EditableImage недоступен: рамка показана округлым контуром.')
+        else display()end
     end
     if source:match('^rbxthumb://')or source:match('^rbxasset://')then accept(source)
     else
@@ -44244,7 +44306,7 @@ function Appearance:SetSource(kind, value)
         if not ok and valid()then self:SetStatus(kind,'Ошибка загрузки: '..tostring(message))end
     end
     if self.Context.Delay then self.Context.Delay(15,function()
-        if valid()and (entry.Pending or entry.Asset==''or not self.PreviewImages[kind].IsLoaded)then
+        if valid()and (entry.Pending or entry.Asset==''or kind=='Background'and not self.PreviewImages[kind].IsLoaded)then
             self:SetStatus(kind,'Не загрузилось. Проверь прямую ссылку на PNG/JPG.')
         end
     end)end
@@ -44256,18 +44318,36 @@ function Appearance:Apply()
     self.Background.ImageColor3=c.BackgroundColor;self.Background.ImageTransparency=c.BackgroundTransparency
     self.Background.ScaleType=c.BackgroundMode=='Fit'and Enum.ScaleType.Fit or c.BackgroundMode=='Stretch'and Enum.ScaleType.Stretch or Enum.ScaleType.Crop
     self.Background.Visible=c.BackgroundEnabled and self.Assets.Background.Asset~=''
-    self.Layer.Visible=c.FrameEnabled and self.Assets.Frame.Asset~=''
-    local size=self.Layer.AbsoluteSize;local dpi=math.max(.1,self.Library.DPIScale or 1)
-    local layout=Appearance.Layout(size.X/dpi,size.Y/dpi,c.FrameWidth,c.FrameEdge)
-    for index,cell in ipairs(self.Cells)do
-        local g=layout[index];cell.Geometry=g
-        cell.Clip.Position=UDim2.fromOffset(g.X,g.Y);cell.Clip.Size=UDim2.fromOffset(g.Width,g.Height)
-        cell.Image.Position=UDim2.fromScale(-g.U/g.UW,-g.V/g.VH)
-        cell.Image.Size=UDim2.fromScale(1/g.UW,1/g.VH)
-        cell.Image.Image=self.Assets.Frame.Asset;cell.Image.ImageTransparency=c.FrameTransparency
-        cell.Image.ImageColor3=c.MatchTheme and white or c.FrameColor
-        cell.Gradient.Enabled=c.MatchTheme;cell.Gradient.Color=self:Gradient(cell)
+    self.Layer.Visible=c.FrameEnabled and self.Assets.Frame.Asset~=''and self.Window.MainFrame.Visible
+    local owner=self.Window.MainFrame;local size=owner.AbsoluteSize;local dpi=math.max(.1,self.Library.DPIScale or 1)
+    local t=c.FrameWidth*dpi;local parentPos=self.Layer.Parent.AbsolutePosition or Vector2.zero
+    self.Layer.Position=UDim2.fromOffset(owner.AbsolutePosition.X-parentPos.X-t,owner.AbsolutePosition.Y-parentPos.Y-t)
+    self.Layer.Size=UDim2.fromOffset(size.X+t*2,size.Y+t*2)
+    local radius=self.MainCorner and self.MainCorner.CornerRadius.Offset*dpi or 22*dpi
+    self.Fallback.Position=UDim2.fromOffset(t*.5,t*.5);self.Fallback.Size=UDim2.new(1,-t,1,-t)
+    self.FallbackCorner.CornerRadius=UDim.new(0,radius+t*.5)
+    self.FallbackStroke.Thickness=t;self.FallbackStroke.Color=c.MatchTheme and self.Library.Scheme.BodyTopColor or c.FrameColor
+    self.FallbackStroke.Transparency=c.FrameTransparency
+    self.Fallback.Visible=not self.Assets.Frame.Data or self.FrameUnavailable==true
+    self.FramePicture.Visible=self.Assets.Frame.Data~=nil and not self.FrameUnavailable
+    self.FramePicture.ImageColor3=c.MatchTheme and white or c.FrameColor;self.FramePicture.ImageTransparency=c.FrameTransparency
+    self.FrameGradient.Enabled=c.MatchTheme;self.FrameGradient.Color=self:Gradient()
+    local key=table.concat({size.X,size.Y,t,radius,c.FrameEdge,tostring(self.Assets.Frame.Data)},':')
+    if self.Assets.Frame.Data and key~=self.FrameKey then
+        self.FrameKey=key;self.FrameGeneration+=1;local generation=self.FrameGeneration
+        local function raster()
+            if self.Closed or generation~=self.FrameGeneration then return end
+            local ok,image,content=pcall(self.Context.RasterFrame,self.Assets.Frame.Data,size.X,size.Y,t,radius,c.FrameEdge)
+            if self.Closed or generation~=self.FrameGeneration then if ok and image then image:Destroy()end;return end
+            if ok and image then
+                local previous=self.FrameTexture;self.FrameTexture=image;self.FramePicture.ImageContent=content
+                self.FrameUnavailable=false;self.Fallback.Visible=false;self.FramePicture.Visible=true
+                if previous then previous:Destroy()end
+            else self.FrameUnavailable=true;self.Fallback.Visible=true;self.FramePicture.Visible=false;self:SetStatus('Frame','Рендер рамки недоступен: '..tostring(image))end
+        end
+        if self.Context.Delay then self.Context.Delay(.12,raster)else raster()end
     end
+    self:ApplySurfaces()
     if self.Previews then
         self.Previews.Background:SetColor(c.BackgroundColor);self.Previews.Background:SetTransparency(c.BackgroundTransparency)
         self.Previews.Frame:SetColor(c.MatchTheme and white or c.FrameColor);self.Previews.Frame:SetTransparency(c.FrameTransparency)
@@ -44283,10 +44363,12 @@ function Appearance:Sync()
         BackgroundTransparency=clamp(value('AstralGUIBackgroundTransparency',.65),.65,0,1),
         FrameTransparency=clamp(value('AstralGUIFrameTransparency',0),0,0,1),FrameWidth=clamp(value('AstralGUIFrameWidth',14),14,2,80),
         FrameEdge=clamp(value('AstralGUIFrameEdge',22),22,5,45)/100,MatchTheme=value('AstralGUIFrameMatchTheme',false),
-        BackgroundMode=value('AstralGUIBackgroundMode','Crop')}
+        BackgroundMode=value('AstralGUIBackgroundMode','Crop'),Floating=value('AstralGUIFloatingBackground',false),
+        Motion=value('AstralGUIPreviewMotion',true),RemoveGrid=value('AstralGUIFrameRemoveGrid',true)}
     self:Apply()
     self:SetSource('Background',value('AstralGUIBackgroundURL',''))
     self:SetSource('Frame',value('AstralGUIFrameURL',''))
+    self:Animate()
 end
 function Appearance:BuildUI(tab)
     local background=tab:AddLeftGroupbox('Фон GUI','image')
@@ -44295,9 +44377,11 @@ function Appearance:BuildUI(tab)
     local function changed()if not self.Building then self:Sync()end end
     for _,kind in ipairs({'Background','Frame'})do
         local box=self.Groups[kind]
-        local preview=box:AddImage('AstralGUI'..kind..'Preview',{Image='image',Height=150,ScaleType=Enum.ScaleType.Fit,BackgroundTransparency=1})
+        local preview=box:AddImage('AstralGUI'..kind..'Preview',{Image='image',Height=150,ScaleType=Enum.ScaleType.Stretch,BackgroundTransparency=1})
         self.Previews[kind]=preview
         local image=preview.Holder:FindFirstChildWhichIsA('ImageLabel',true);self.PreviewImages[kind]=image
+        image.Parent.ClipsDescendants=true
+        if kind=='Background'then image.AnchorPoint=Vector2.new(.5,.5);image.Position=UDim2.fromScale(.5,.5);image.Size=UDim2.fromScale(1.12,1.12)end
         self:Track(image:GetPropertyChangedSignal('IsLoaded'):Connect(function()
             if not self.Closed and not self.Assets[kind].Pending and image.IsLoaded and self.Assets[kind].Asset~=''and image.Image==self.Assets[kind].Asset then self:SetStatus(kind,'Изображение загружено.')end
         end))
@@ -44306,12 +44390,15 @@ function Appearance:BuildUI(tab)
         box:AddLabel('Цвет'):AddColorPicker('AstralGUI'..kind..'Color',{Default=white,Title=kind=='Background'and'Цвет фона' or'Цвет рамки',Callback=changed})
         box:AddSlider('AstralGUI'..kind..'Transparency',{Text='Прозрачность',Default=kind=='Background'and .65 or 0,Min=0,Max=1,Rounding=2,Compact=true,Callback=changed})
         if kind=='Background'then
+            box:AddToggle('AstralGUIFloatingBackground',{Text='Фон вынесенных окон',Default=false,Callback=changed})
+            box:AddToggle('AstralGUIPreviewMotion',{Text='Покачивание превью',Default=true,Callback=changed})
             box:AddDropdown('AstralGUIBackgroundMode',{Text='Размещение фото',Values={'Crop','Fit','Stretch'},Default='Crop',AllowNull=false,Callback=changed})
         else
+            box:AddToggle('AstralGUIFrameRemoveGrid',{Text='Автоматически убирать сетку',Default=true,Callback=changed})
             box:AddToggle('AstralGUIFrameMatchTheme',{Text='Точно под цвет GUI',Default=false,Callback=changed})
             box:AddSlider('AstralGUIFrameWidth',{Text='Ширина рамки',Default=14,Min=2,Max=80,Rounding=0,Suffix=' px',Compact=true,Callback=changed})
             box:AddSlider('AstralGUIFrameEdge',{Text='Область краёв фото',Default=22,Min=5,Max=45,Rounding=0,Suffix=' %',Compact=true,Callback=changed})
-            box:AddLabel('Рамка растягивается по контуру. Середина остаётся пустой. Для точного цвета подходит белая PNG-рамка с прозрачными полями.',true)
+            box:AddLabel('Рамка находится снаружи окна. Сетка удаляется при обработке картинки; середина и углы вырезаются по форме GUI.',true)
         end
         box:AddButton({Text='Убрать картинку',Func=function()self.Library.Options['AstralGUI'..kind..'URL']:SetValue('')end})
         self.Status[kind]=box:AddLabel('Вставь ссылку под превью.',true)
@@ -44320,15 +44407,391 @@ function Appearance:BuildUI(tab)
     self.Library:AddToRegistry(self.PreviewGradient,{Color=function()return self:Gradient()end})
     self.Registered[#self.Registered+1]=self.PreviewGradient
 end
+function Appearance:Animate()
+    local enabled=not self.Closed and self.Config and self.Config.Motion and self.Window.MainFrame.Visible and self.Tab.Container.Visible
+    if not enabled then
+        if self.MotionConnection then self.MotionConnection:Disconnect();self.MotionConnection=nil end
+        for _,image in pairs(self.PreviewImages or{})do image.Rotation=0 end
+        return
+    end
+    if self.MotionConnection or not self.Context.RunService then return end
+    self.MotionConnection=self.Context.RunService.Heartbeat:Connect(function(dt)
+        self.Phase=(self.Phase or 0)+math.min(dt,.1)
+        for _,image in pairs(self.PreviewImages)do image.Rotation=math.sin(self.Phase*.8)*2 end
+    end)
+end
+function Appearance:AddSurface(frame)
+    if self.Closed or not frame or self.Surfaces[frame]then return end
+    local image=new('ImageLabel',{Name='AstralFloatingBackground',Image='',BackgroundTransparency=1,BorderSizePixel=0,Active=false,
+        Visible=false,ZIndex=frame.ZIndex-1,ScaleType=Enum.ScaleType.Crop,Parent=frame.Parent})
+    local corner=new('UICorner',{CornerRadius=UDim.new(0,12),Parent=image})
+    local record={Frame=frame,Image=image,Corner=corner,Transparency=frame.BackgroundTransparency,Connections={}}
+    self.Surfaces[frame]=record
+    for _,key in ipairs({'AbsolutePosition','AbsoluteSize','Visible','Parent','ZIndex'})do
+        record.Connections[#record.Connections+1]=frame:GetPropertyChangedSignal(key):Connect(function()self:ApplySurfaces()end)
+    end
+    record.Connections[#record.Connections+1]=frame.Destroying:Connect(function()self:RemoveSurface(frame)end)
+    self:ApplySurfaces()
+end
+function Appearance:RemoveSurface(frame)
+    local record=self.Surfaces[frame];if not record then return end;self.Surfaces[frame]=nil
+    for _,c in ipairs(record.Connections)do c:Disconnect()end
+    if frame.Parent and frame.BackgroundTransparency==1 and record.Applied then frame.BackgroundTransparency=record.Transparency end
+    record.Image:Destroy()
+end
+function Appearance:ApplySurfaces()
+    if not self.Config then return end
+    for frame,record in pairs(self.Surfaces)do
+        local c=self.Config;local visible=c.Floating and c.BackgroundEnabled and self.Assets.Background.Asset~=''and frame.Visible and frame.Parent~=nil
+        record.Image.Visible=visible
+        if visible then
+            record.Image.Parent=frame.Parent
+            local origin=frame.Parent.AbsolutePosition or Vector2.zero
+            record.Image.Position=UDim2.fromOffset(frame.AbsolutePosition.X-origin.X,frame.AbsolutePosition.Y-origin.Y)
+            record.Image.Size=UDim2.fromOffset(frame.AbsoluteSize.X,frame.AbsoluteSize.Y);record.Image.ZIndex=frame.ZIndex-1
+            record.Image.Image=self.Assets.Background.Asset;record.Image.ImageColor3=c.BackgroundColor;record.Image.ImageTransparency=c.BackgroundTransparency
+            local corner=frame:FindFirstChildOfClass('UICorner')
+            if corner then
+                local scale=frame:FindFirstChildOfClass('UIScale');local r=corner.CornerRadius
+                record.Corner.CornerRadius=UDim.new(r.Scale,r.Offset*(scale and scale.Scale or 1))
+            end
+            frame.BackgroundTransparency=1;record.Applied=true
+        elseif record.Applied then
+            if frame.BackgroundTransparency==1 then frame.BackgroundTransparency=record.Transparency end;record.Applied=false
+        end
+    end
+end
 function Appearance:Dispose()
     if self.Closed then return end
-    self.Closed=true
+    self.Closed=true;self.FrameGeneration+=1
+    if self.MotionConnection then self.MotionConnection:Disconnect()end
+    local frames={};for frame in pairs(self.Surfaces)do frames[#frames+1]=frame end;for _,frame in ipairs(frames)do self:RemoveSurface(frame)end
+    if self.Library.AppearanceController==self then self.Library.AppearanceController=nil end
+    if self.FrameTexture then self.FrameTexture:Destroy()end;if self.PreviewTexture then self.PreviewTexture:Destroy()end
     for kind,entry in pairs(self.Assets)do entry.Token+=1;if self.Context.Cancel then self.Context.Cancel(kind)end end
     for _,c in ipairs(self.Connections)do c:Disconnect()end;table.clear(self.Connections)
     for _,node in ipairs(self.Registered)do self.Library:RemoveFromRegistry(node)end
     self.Background:Destroy();self.Layer:Destroy();self.PreviewGradient:Destroy()
 end
 return Appearance
+
+]========]
+sources.FrameArtwork = [========[
+-- Pixel processing stays on the Roblox client. No image is sent to a service.
+local Art={}
+local function gray(p,i)
+ local r,g,b=buffer.readu8(p,i),buffer.readu8(p,i+1),buffer.readu8(p,i+2)
+ if math.max(r,g,b)-math.min(r,g,b)>12 or buffer.readu8(p,i+3)<248 then return end
+ return(r+g+b)/3
+end
+function Art.Clean(p,w,h,enabled)
+ local out=buffer.create(w*h*4);buffer.copy(out,0,p,0,w*h*4)
+ local histogram={};local neutral,transparent,sampled=0,0,0;local step=math.max(1,math.floor(math.sqrt(w*h/100000)))
+ for y=0,h-1,step do for x=0,w-1,step do
+  sampled+=1;if buffer.readu8(p,(y*w+x)*4+3)<248 then transparent+=1 end
+  local v=gray(p,(y*w+x)*4)
+  if v then local bin=math.floor(v/4);histogram[bin]=(histogram[bin]or 0)+1;neutral+=1 end
+ end end
+ local a,ac,b,bc=nil,0,nil,0
+ for k,n in pairs(histogram)do if n>ac then a,ac=k,n end end
+ if a then for k,n in pairs(histogram)do if math.abs(k-a)>=3 and math.abs(k-a)<=22 and n>bc then b,bc=k,n end end end
+ local tones=a and b and{a*4+2,b*4+2}or nil
+ local regularRows,regularColumns=0,0
+ if enabled and transparent<sampled*.05 and tones and ac+bc>neutral*.48 and bc>neutral*.1 then
+  for _,fraction in ipairs({.05,.25,.5,.75,.95})do
+   for axis=1,2 do
+    local limit=axis==1 and w or h;local fixed=math.floor((axis==1 and h-1 or w-1)*fraction)
+    local last,run,changes,runs=nil,0,0,{}
+    for k=0,limit-1 do
+     local i=axis==1 and(fixed*w+k)*4 or(k*w+fixed)*4;local v=gray(p,i)
+     local tag=v and math.min(math.abs(v-tones[1]),math.abs(v-tones[2]))<=8 and(math.abs(v-tones[1])<math.abs(v-tones[2])and 1 or 2)or nil
+     if tag and tag==last then run+=1 else
+      if tag and last and run>=3 and run<=80 then changes+=1;runs[#runs+1]=run end
+      last=tag;run=1
+     end
+    end
+    if changes>=5 then
+     table.sort(runs);local median=runs[math.ceil(#runs/2)];local count=0
+     for _,v in ipairs(runs)do if math.abs(v-median)<=math.max(2,median*.35)then count+=1 end end
+     if count>=#runs*.65 then if axis==1 then regularRows+=1 else regularColumns+=1 end end
+    end
+   end
+  end
+ end
+ local removed=0
+ if enabled and tones and regularRows>0 and regularColumns>0 then
+  for i=0,w*h-1 do
+   local v=gray(p,i*4)
+   if v and math.min(math.abs(v-tones[1]),math.abs(v-tones[2]))<=9 then buffer.writeu8(out,i*4+3,0);removed+=1 end
+  end
+ end
+ local x0,y0,x1,y1=w,h,-1,-1
+ for y=0,h-1 do for x=0,w-1 do
+  if buffer.readu8(out,(y*w+x)*4+3)>16 then x0=math.min(x0,x);y0=math.min(y0,y);x1=math.max(x1,x);y1=math.max(y1,y)end
+ end end
+ if x1<x0 then error('В рамке не осталось видимых пикселей')end
+ return{Pixels=out,Width=w,Height=h,X0=x0,Y0=y0,X1=x1,Y1=y1,Removed=removed}
+end
+local function inside(x,y,w,h,r)
+ if x<0 or y<0 or x>=w or y>=h then return false end
+ local dx=math.max(r-x,x-(w-r),0);local dy=math.max(r-y,y-(h-r),0)
+ return dx*dx+dy*dy<=r*r
+end
+function Art.Raster(data,width,height,border,radius,edge)
+ local ow,oh=width+border*2,height+border*2
+ local scale=math.min(1,960/math.max(ow,oh));local w,h=math.max(1,math.floor(ow*scale)),math.max(1,math.floor(oh*scale))
+ local result=buffer.create(w*h*4);local corner=math.min(radius+border,ow/3,oh/3)
+ local function uv(v,total)
+  if v<corner then return v/corner*edge end
+  if v>total-corner then return 1-edge+(v-total+corner)/corner*edge end
+  return edge+(v-corner)/(total-corner*2)*(1-edge*2)
+ end
+ for y=0,h-1 do for x=0,w-1 do
+  local px,py=(x+.5)/scale,(y+.5)/scale
+  if inside(px,py,ow,oh,radius+border)and not inside(px-border,py-border,width,height,radius)then
+   local u,v=uv(px,ow),uv(py,oh)
+   local sx=math.clamp(math.floor(data.X0+u*(data.X1-data.X0)),0,data.Width-1)
+   local sy=math.clamp(math.floor(data.Y0+v*(data.Y1-data.Y0)),0,data.Height-1)
+   buffer.copy(result,(y*w+x)*4,data.Pixels,(sy*data.Width+sx)*4,4)
+  end
+ end end
+ return result,w,h
+end
+function Art.Decode(asset,service)
+ local image=assert(service:CreateEditableImageAsync(Content.fromUri(asset)),'EditableImage недоступен')
+ local ok,result=pcall(function()
+  local size=image.Size
+  return{Pixels=image:ReadPixelsBuffer(Vector2.zero,size),Width=size.X,Height=size.Y}
+ end)
+ image:Destroy();if not ok then error(result)end;return result
+end
+function Art.Texture(p,w,h,service)
+ local image=assert(service:CreateEditableImage({Size=Vector2.new(w,h)}),'Недостаточно памяти для рамки')
+ local ok,content=pcall(function()
+  image:WritePixelsBuffer(Vector2.zero,Vector2.new(w,h),p)
+  return assert(Content.fromObject(image),'ImageContent недоступен')
+ end)
+ if not ok then image:Destroy();error(content)end
+ return image,content
+end
+return Art
+
+]========]
+sources.GUIStyle = [========[
+local Style={};Style.__index=Style
+local function new(class,parent,props)local o=Instance.new(class);for k,v in pairs(props)do o[k]=v end;o.Parent=parent;return o end
+function Style.Install(ctx)
+ local self=setmetatable({Context=ctx,Library=ctx.Library,Records={},Adornments={},Connections={},Building=true},Style)
+ self:Build(ctx.Tab);self.Building=false
+ self.Previous=ctx.Library.UpdateColorsUsingRegistry
+ self.Hook=function(library,...)
+  self.Previous(library,...)
+  if not self.Closed and not self.Applying then self:Apply()end
+ end
+ ctx.Library.UpdateColorsUsingRegistry=self.Hook
+ self.Connections[1]=ctx.Library.ScreenGui.DescendantAdded:Connect(function(v)
+  if self.Closed or self.Applying then return end
+  if v:IsA('TextLabel')or v:IsA('TextButton')or v:IsA('TextBox')or v.Name=='SliderThumb'then
+   if not self.Queued then self.Queued=true;ctx.Defer(function()self.Queued=false;self:Apply()end)end
+  end
+ end)
+ self:Sync();return self
+end
+function Style:Build(tab)
+ local lib=self.Library;local function changed()if not self.Building then self:Sync()end end
+ local text=tab:AddLeftGroupbox('Текст и шрифт','type')
+ text:AddDropdown('AstralGUIFont',{Text='Шрифт',Values={'Original','BuilderSans','Gotham','SourceSans','Arial','Code','Cartoon','Fantasy'},Default='Original',AllowNull=false,Callback=changed})
+ text:AddSlider('AstralGUITextScale',{Text='Размер текста',Default=1,Min=.75,Max=1.5,Rounding=2,Compact=true,Callback=changed})
+ text:AddToggle('AstralGUITextCustom',{Text='Свой цвет текста',Default=false,Callback=changed}):AddColorPicker('AstralGUITextColor',{Default=lib.Scheme.FontColor,Title='Цвет текста',Callback=changed})
+ local icons=tab:AddRightGroupbox('Иконки и разделители','shapes')
+ icons:AddToggle('AstralGUIFunctionIcons',{Text='Иконки функций',Default=false,Callback=changed})
+ icons:AddSlider('AstralGUIIconSize',{Text='Размер иконок функций',Default=16,Min=10,Max=24,Rounding=0,Compact=true,Callback=changed})
+ icons:AddLabel('Цвет иконок'):AddColorPicker('AstralGUIIconColor',{Default=lib.Scheme.FontColor,Title='Иконки функций',Callback=changed})
+ icons:AddToggle('AstralGUISeparators',{Text='Линии между функциями',Default=false,Callback=changed})
+ icons:AddSlider('AstralGUISeparatorAlpha',{Text='Прозрачность линий',Default=.6,Min=0,Max=1,Rounding=2,Compact=true,Callback=changed})
+ icons:AddLabel('Цвет линий'):AddColorPicker('AstralGUISeparatorColor',{Default=lib.Scheme.OutlineColor,Title='Разделители',Callback=changed})
+ local selected=icons:AddDropdown('AstralGUIIconTarget',{Text='Выбрать функцию',Values={'—'},Default='—',AllowNull=false,Searchable=true,Callback=function(v)
+  if self.Building or self.Selecting then return end
+  self.Selecting=true;lib.Options.AstralGUIIconOverride:SetValue((self.Overrides or{})[v]or'');self.Selecting=false
+ end})
+ self.Target=selected
+ icons:AddInput('AstralGUIIconOverride',{Text='Иконка: Lucide или Roblox ID',Default='',Finished=true,ClearTextOnFocus=false,Callback=function(value)
+  if self.Building or self.Selecting then return end
+  local name=selected.Value;if type(name)~='string'or name=='—'then return end
+  self.Overrides=self.Overrides or{};self.Overrides[name]=value~=''and value or nil
+  local ok,json=pcall(self.Context.Encode,self.Overrides)
+  if ok then lib.Options.AstralGUIIconMap:SetValue(json)end;self:Apply()
+ end})
+ local storage=icons:AddInput('AstralGUIIconMap',{Text='Saved icons',Default='{}',Callback=changed});storage:SetVisible(false)
+ local slider=tab:AddLeftGroupbox('Ползунки','sliders-horizontal')
+ slider:AddLabel('Заливка'):AddColorPicker('AstralGUISliderFill',{Default=lib.Scheme.AccentColor,Title='Цвет ползунков',Callback=changed})
+ slider:AddLabel('Дорожка'):AddColorPicker('AstralGUISliderTrack',{Default=lib.Scheme.MainColor,Title='Дорожка',Callback=changed})
+ slider:AddLabel('Бегунок'):AddColorPicker('AstralGUISliderThumb',{Default=Color3.new(1,1,1),Title='Бегунок',Callback=changed})
+ slider:AddSlider('AstralGUISliderHeight',{Text='Толщина дорожки',Default=16,Min=4,Max=18,Rounding=0,Compact=true,Callback=changed})
+ slider:AddToggle('AstralGUISliderSquare',{Text='Квадратный бегунок',Default=false,Callback=changed})
+ local palette=tab:AddRightGroupbox('Прозрачность окна','blend')
+ palette:AddSlider('AstralGUIWindowAlpha',{Text='Окно',Default=.55,Min=0,Max=.95,Rounding=2,Compact=true,Callback=changed})
+ palette:AddSlider('AstralGUIRowAlpha',{Text='Строки функций',Default=.92,Min=0,Max=1,Rounding=2,Compact=true,Callback=changed})
+ palette:AddButton({Text='Сбросить стиль',Func=function()
+  for id,value in pairs({AstralGUIFont='Original',AstralGUITextScale=1,AstralGUITextCustom=false,AstralGUIFunctionIcons=false,AstralGUISeparators=false,AstralGUISliderHeight=16,AstralGUISliderSquare=false,AstralGUIWindowAlpha=.55,AstralGUIRowAlpha=.92})do
+   local control=lib.Options[id]or lib.Toggles[id];control:SetValue(value)
+  end
+ end})
+end
+function Style:Sync()
+ if self.Closed then return end
+ local lib=self.Library;local function v(id,default)local x=lib.Options[id]or lib.Toggles[id];return x and x.Value~=nil and x.Value or default end
+ self.Config={Font=v('AstralGUIFont','Original'),Scale=v('AstralGUITextScale',1),CustomText=v('AstralGUITextCustom',false),TextColor=v('AstralGUITextColor',lib.Scheme.FontColor),
+  Icons=v('AstralGUIFunctionIcons',false),IconSize=v('AstralGUIIconSize',16),IconColor=v('AstralGUIIconColor',lib.Scheme.FontColor),
+  Separators=v('AstralGUISeparators',false),LineAlpha=v('AstralGUISeparatorAlpha',.6),LineColor=v('AstralGUISeparatorColor',lib.Scheme.OutlineColor),
+  Fill=v('AstralGUISliderFill',lib.Scheme.AccentColor),Track=v('AstralGUISliderTrack',lib.Scheme.MainColor),Thumb=v('AstralGUISliderThumb',Color3.new(1,1,1)),Height=v('AstralGUISliderHeight',16),Square=v('AstralGUISliderSquare',false)}
+ local ok,map=pcall(self.Context.Decode,v('AstralGUIIconMap','{}'));self.Overrides=ok and type(map)=='table'and map or{}
+ lib.GUICustomSlider={Fill=self.Config.Fill}
+ lib.Scheme.GlassTransparency=v('AstralGUIWindowAlpha',.55);lib.Scheme.RowTransparency=v('AstralGUIRowAlpha',.92)
+ if self.Config.CustomText then
+  if not self.LastTextColor then self.OriginalTextColor=lib.Scheme.FontColor end
+  lib.Scheme.FontColor=self.Config.TextColor;self.LastTextColor=self.Config.TextColor
+ elseif self.LastTextColor then
+  if lib.Scheme.FontColor==self.LastTextColor then lib.Scheme.FontColor=self.OriginalTextColor end;self.LastTextColor=nil
+ end
+ lib:UpdateColorsUsingRegistry();self:Apply()
+end
+function Style:Apply()
+ if self.Closed or not self.Config or self.Applying then return end;self.Applying=true
+ local lib,c=self.Library,self.Config;local names={};local seen={}
+ local face=c.Font~='Original'and Font.fromEnum(Enum.Font[c.Font])or nil
+ for _,node in ipairs(lib.ScreenGui:GetDescendants())do
+  if node:IsA('TextLabel')or node:IsA('TextButton')or node:IsA('TextBox')then
+   local record=self.Records[node]
+   if not record then record={Size=node.TextSize,Face=node.FontFace,Position=node.Position,Bounds=node.Size};self.Records[node]=record end
+   node.TextSize=math.clamp(math.floor(record.Size*c.Scale+.5),8,40)
+   node.Position=UDim2.new(record.Position.X.Scale,record.Position.X.Offset,record.Position.Y.Scale,record.Position.Y.Offset*c.Scale)
+   node.Size=UDim2.new(record.Bounds.X.Scale,record.Bounds.X.Offset,record.Bounds.Y.Scale,record.Bounds.Y.Offset*c.Scale)
+   node.FontFace=face and Font.new(face.Family,record.Face.Weight,record.Face.Style)or record.Face
+  elseif node.Name=='SliderFill'then node.BackgroundColor3=c.Fill
+  elseif node.Name=='SliderTrack'then node.BackgroundColor3=c.Track;node.Size=UDim2.new(node.Size.X.Scale,node.Size.X.Offset,0,c.Height)
+  elseif node.Name=='SliderThumb'then
+   node.BackgroundColor3=c.Thumb
+   local corner=node:FindFirstChildOfClass('UICorner');if corner then corner.CornerRadius=c.Square and UDim.new(0,2)or UDim.new(1,0)end
+  end
+ end
+ for label,name in pairs(lib.FunctionLabels or{})do if label.Parent then
+  if not seen[name]then seen[name]=true;names[#names+1]=name end
+  local a=self.Adornments[label]
+  if not a then
+   a={Icon=new('ImageLabel',label,{Name='AstralStyleIcon',BackgroundTransparency=1,AnchorPoint=Vector2.new(0,.5),Active=false,Visible=false}),
+    Line=new('Frame',label.Parent,{Name='AstralFunctionDivider',BorderSizePixel=0,Active=false,AnchorPoint=Vector2.new(0,1),Position=UDim2.new(0,8,1,0),Size=UDim2.new(1,-16,0,1),Visible=false}),Position=label.Position,Size=label.Size,RowSize=label.Parent.Size}
+   self.Adornments[label]=a
+  end
+  local row=a.RowSize
+  if row.Y.Scale==0 then label.Parent.Size=UDim2.new(row.X.Scale,row.X.Offset,0,row.Y.Offset*c.Scale)end
+  a.Icon.Visible=c.Icons;a.Line.Visible=c.Separators;a.Line.BackgroundColor3=c.LineColor;a.Line.BackgroundTransparency=c.LineAlpha
+  if c.Icons then
+   local icon=lib:GetCustomIcon(self.Overrides[name]or self.Context.Icon(name)or'circle')
+   if icon then lib:ApplyLucideIcon(a.Icon,icon)end
+   a.Icon.ImageColor3=c.IconColor;a.Icon.Size=UDim2.fromOffset(c.IconSize,c.IconSize);a.Icon.Position=UDim2.new(0,-c.IconSize-5,.5,0)
+   label.Position=UDim2.new(a.Position.X.Scale,a.Position.X.Offset+c.IconSize+5,a.Position.Y.Scale,a.Position.Y.Offset*c.Scale)
+   label.Size=UDim2.new(a.Size.X.Scale,a.Size.X.Offset-c.IconSize-5,a.Size.Y.Scale,a.Size.Y.Offset*c.Scale)
+  else label.Position=UDim2.new(a.Position.X.Scale,a.Position.X.Offset,a.Position.Y.Scale,a.Position.Y.Offset*c.Scale);label.Size=UDim2.new(a.Size.X.Scale,a.Size.X.Offset,a.Size.Y.Scale,a.Size.Y.Offset*c.Scale) end
+ end end
+ table.sort(names)
+ if #names~=(self.NameCount or-1)then self.NameCount=#names;if #names>0 then self.Target:SetValues(names)end end
+ self.Applying=false
+end
+function Style:Dispose()
+ if self.Closed then return end;self.Closed=true
+ if self.Library.UpdateColorsUsingRegistry==self.Hook then self.Library.UpdateColorsUsingRegistry=self.Previous end
+ for _,c in ipairs(self.Connections)do c:Disconnect()end
+ for label,a in pairs(self.Adornments)do
+  if label.Parent then
+   label.Position=a.Position;label.Size=a.Size
+   local size=label.Parent.Size;label.Parent.Size=UDim2.new(size.X.Scale,size.X.Offset,a.RowSize.Y.Scale,a.RowSize.Y.Offset)
+  end
+  a.Icon:Destroy();a.Line:Destroy()
+ end
+ for node,r in pairs(self.Records)do if node.Parent then node.TextSize=r.Size;node.FontFace=r.Face;node.Position=r.Position;node.Size=r.Bounds end end
+end
+return Style
+
+]========]
+sources.GameShopStyle = [========[
+-- Reskin the real MenuGui/Menu only. Native buttons, favorites, category
+-- pages, item images, ordering and event connections are retained.
+local Shop={};Shop.__index=Shop
+local function add(class,parent,props)local v=Instance.new(class);for k,x in pairs(props)do v[k]=x end;v.Parent=parent;return v end
+function Shop.Install(ctx)
+ local self=setmetatable({Context=ctx,Records={},Created={},Connections={},Enabled=false},Shop)
+ local box=ctx.Tab:AddRightGroupbox('Игровой магазин','shopping-bag')
+ box:AddToggle('AstralGUIShopStyle',{Text='Магазин как на образце',Default=true,Callback=function(v)self:SetEnabled(v)end})
+ box:AddLabel('Оформляется игровой Your Toys. Предметы, категории и звёзды остаются игровыми.',true)
+ self.Status=box:AddLabel('Ожидание игрового магазина.',true)
+ self.Connections[1]=ctx.PlayerGui.DescendantAdded:Connect(function(v)
+  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu')then ctx.Defer(function()self:Find()end)end
+ end)
+ return self
+end
+function Shop:Write(node,key,value)
+ local r=self.Records[node];if not r then r={};self.Records[node]=r end
+ if r[key]==nil then r[key]={Original=node[key]}end
+ node[key]=value;r[key].Forced=value
+end
+function Shop:Round(node,radius)
+ local c=node:FindFirstChildOfClass('UICorner')
+ if not c then c=add('UICorner',node,{CornerRadius=UDim.new(0,radius)});self.Created[#self.Created+1]=c
+ else self:Write(c,'CornerRadius',UDim.new(0,radius))end
+end
+function Shop:Style(node)
+ if not self.Enabled or not self.Menu or not node:IsDescendantOf(self.Menu)and node~=self.Menu then return end
+ if node:GetAttribute('AstralShopOwned')then return end
+ local name=node.Name:lower()
+ if node==self.Menu then
+  self:Write(node,'BackgroundColor3',Color3.fromRGB(61,63,66));self:Write(node,'BackgroundTransparency',.18);self:Write(node,'BorderSizePixel',0);self:Round(node,20)
+ elseif node:IsA('TextLabel')or node:IsA('TextButton')or node:IsA('TextBox')then
+  self:Write(node,'TextColor3',Color3.fromRGB(245,245,245));self:Write(node,'FontFace',Font.fromEnum(Enum.Font.BuilderSansBold))
+  if node:IsA('TextLabel')then self:Write(node,'BackgroundTransparency',1)end
+ end
+ if node:IsA('ImageButton')or node:IsA('TextButton')then
+  if name:find('star',1,true)or name:find('fav',1,true)then self:Write(node,'BackgroundTransparency',1)
+  else self:Write(node,'BackgroundColor3',Color3.fromRGB(38,40,42));self:Write(node,'BackgroundTransparency',.3);self:Write(node,'BorderSizePixel',0);self:Round(node,9)end
+ elseif node:IsA('Frame')or node:IsA('ScrollingFrame')then
+  if node~=self.Menu and(node.BackgroundTransparency<1 or name:find('bar',1,true)or name:find('tab',1,true))then
+   self:Write(node,'BackgroundColor3',Color3.fromRGB(59,61,64));self:Write(node,'BackgroundTransparency',.3);self:Write(node,'BorderSizePixel',0);self:Round(node,12)
+  end
+  if node:IsA('ScrollingFrame')then self:Write(node,'ScrollBarThickness',3);self:Write(node,'ScrollBarImageColor3',Color3.fromRGB(225,225,225))end
+ end
+ -- The native inventory already owns its grid and category geometry. Preserve
+ -- that layout, including cell ordering and favorite hitboxes.
+end
+function Shop:Find()
+ if not self.Enabled or self.Closed then return end
+ local gui=self.Context.PlayerGui:FindFirstChild('MenuGui');local menu=gui and gui:FindFirstChild('Menu')
+ if not menu or not menu:IsA('GuiObject')then self.Status:SetText('Ожидание MenuGui / Menu.');return end
+ if self.Menu~=menu then
+  self:Restore();self.Menu=menu
+  self.MenuConnection=menu.DescendantAdded:Connect(function(v)self.Context.Defer(function()if v.Parent then self:Style(v)end end)end)
+ end
+ self:Style(menu);for _,v in ipairs(menu:GetDescendants())do self:Style(v)end
+ self.Status:SetText('Игровой магазин оформлен.')
+end
+function Shop:Restore()
+ if self.MenuConnection then self.MenuConnection:Disconnect();self.MenuConnection=nil end
+ for node,properties in pairs(self.Records)do if node.Parent then for key,r in pairs(properties)do if node[key]==r.Forced then node[key]=r.Original end end end end
+ for _,v in ipairs(self.Created)do v:Destroy()end
+ self.Records={};self.Created={};self.Menu=nil
+end
+function Shop:SetEnabled(value)
+ if self.Closed then return end
+ self.Enabled=value==true
+ if self.Enabled then
+  if self.Context.Before then self.Context.Before()end
+  if self.Status then self:Find()end
+ else self:Restore();if self.Status then self.Status:SetText('Оригинальное оформление магазина.')end end
+end
+function Shop:Sync()local t=self.Context.Library.Toggles.AstralGUIShopStyle;self:SetEnabled(t and t.Value)end
+function Shop:Dispose()
+ if self.Closed then return end;self.Closed=true;self.Enabled=false;self:Restore();for _,c in ipairs(self.Connections)do c:Disconnect()end
+end
+return Shop
 
 ]========]
 sources.Bootstrap = [========[
@@ -44360,9 +44823,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.81: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.82: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.81 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.82 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -48771,22 +49234,26 @@ function Menu:BuildRows()
     local scheme=self.Context.Library.Scheme
     for index,entry in ipairs(self.Entries)do
         local row=new("TextButton",self.List,{Name=entry.Name,LayoutOrder=index,Size=UDim2.new(1,-6,0,62),Text="",
-            AutoButtonColor=true,BackgroundColor3=scheme.MainColor,BorderSizePixel=0})
-        new("UICorner",row,{CornerRadius=UDim.new(0,14)})
+            AutoButtonColor=true,BackgroundColor3=scheme.MainColor,BackgroundTransparency=scheme.RowTransparency,BorderSizePixel=0})
+        new("UICorner",row,{CornerRadius=UDim.new(0,8)});new("UIStroke",row,{Color=scheme.OutlineColor,Transparency=.25})
         if entry.Image then
             new("ImageLabel",row,{Position=UDim2.fromOffset(4,4),Size=UDim2.fromOffset(68,54),BackgroundTransparency=1,Image=entry.Image,ScaleType=Enum.ScaleType.Fit})
         elseif not self:Preview(row,entry)then
             new("TextLabel",row,{Position=UDim2.fromOffset(4,4),Size=UDim2.fromOffset(68,54),BackgroundTransparency=1,
-                Text="No preview",TextSize=10,TextColor3=scheme.FontColor,Font=Enum.Font.Code})
+                Text="No preview",TextSize=10,TextColor3=scheme.FontColor,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold)})
         end
         new("TextLabel",row,{Position=UDim2.fromOffset(80,4),Size=UDim2.new(1,-88,1,-8),BackgroundTransparency=1,Text=entry.Name,
-            TextColor3=scheme.FontColor,TextSize=13,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd})
+            TextColor3=scheme.FontColor,TextSize=13,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd})
         self.RowConnections[#self.RowConnections+1]=row.MouseButton1Click:Connect(function()
             if self:Select(entry.Location)then self:TeleportSelected()end
         end)
         self.Rows[#self.Rows+1]=row
     end
-    if self.Frame and self.Context.Library.StyleFloatingPanel then self.Context.Library:StyleFloatingPanel(self.Frame)end
+    if self.Frame and self.Context.Library.StyleFloatingPanel then
+        self.Context.Library:StyleFloatingPanel(self.Frame)
+        local artwork=self.Context.Library.AppearanceController
+        if artwork then artwork:ApplySurfaces()end
+    end
     self:Filter(self.Search.Text)
 end
 function Menu:Filter(text)
@@ -48799,17 +49266,21 @@ function Menu:BuildView()
     local width=math.max(180,math.min(320,viewport.X-24));local height=math.max(180,math.min(440,viewport.Y-24))
     self.Frame=new("Frame",library.ScreenGui,{Name="AstralTeleportMenu",Size=UDim2.fromOffset(width,height),Position=UDim2.fromOffset(20,110),
         BackgroundColor3=scheme.BackgroundColor,BorderSizePixel=0,Visible=false,ZIndex=20})
-    new("UICorner",self.Frame,{CornerRadius=UDim.new(0,24)});new("UIStroke",self.Frame,{Color=scheme.OutlineColor})
+    new("UICorner",self.Frame,{CornerRadius=UDim.new(0,library.CornerRadius)});new("UIStroke",self.Frame,{Color=scheme.OutlineColor})
     local header=new("TextLabel",self.Frame,{Size=UDim2.new(1,-36,0,34),Position=UDim2.fromOffset(10,0),Text="Teleports",TextColor3=scheme.FontColor,
-        TextSize=14,Font=Enum.Font.Code,BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left})
+        TextSize=14,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),BackgroundTransparency=1,TextXAlignment=Enum.TextXAlignment.Left})
     local close=new("TextButton",self.Frame,{Size=UDim2.fromOffset(30,30),Position=UDim2.new(1,-32,0,2),Text="×",TextColor3=scheme.FontColor,
-        TextSize=20,Font=Enum.Font.Code,BackgroundTransparency=1})
+        TextSize=20,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),BackgroundTransparency=1})
     self.Search=new("TextBox",self.Frame,{Position=UDim2.fromOffset(8,38),Size=UDim2.new(1,-16,0,26),Text="",PlaceholderText="Search places...",
-        TextColor3=scheme.FontColor,PlaceholderColor3=scheme.FontColor,BackgroundColor3=scheme.MainColor,BorderSizePixel=0,TextSize=12,Font=Enum.Font.Code,ClearTextOnFocus=false})
+        TextColor3=scheme.FontColor,PlaceholderColor3=scheme.FontColor,BackgroundColor3=scheme.MainColor,BackgroundTransparency=scheme.RowTransparency,BorderSizePixel=0,TextSize=12,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),ClearTextOnFocus=false})
     self.List=new("ScrollingFrame",self.Frame,{Position=UDim2.fromOffset(8,72),Size=UDim2.new(1,-16,1,-80),BackgroundTransparency=1,BorderSizePixel=0,
         CanvasSize=UDim2.fromOffset(0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=3,ScrollBarImageColor3=scheme.OutlineColor})
     new("UIListLayout",self.List,{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,5)})
     if library.StyleFloatingPanel then library:StyleFloatingPanel(self.Frame)end
+    local artwork=library.AppearanceController
+    if not (artwork and artwork.Config.Floating and artwork.Background.Visible)then self.Frame.BackgroundTransparency=scheme.GlassTransparency end
+    new("UICorner",self.Search,{CornerRadius=UDim.new(0,8)})
+    new("UIStroke",self.Search,{Color=scheme.OutlineColor,Transparency=.2})
     library:MakeDraggable(self.Frame,header,true)
     table.insert(library.DraggableElements,self.Frame)
     self.Connections[#self.Connections+1]=close.MouseButton1Click:Connect(function()self:SetVisible(false)end)
@@ -91085,7 +91556,7 @@ function UI:_AddControl(kind, id, info)
     end
     local definition = bridge:PrepareInfo(id, info, kind)
     local unifiedDefense=id=="DefAntiBanana"or id=="DefAntiExplosion"
-    local suppressed = self._tabName == "Pose" or self._tabName == "Whitelist" or self._tabName == "Target" or self._tabName == "Blobman" or unifiedDefense or sourceKickOnly[id] or tostring(id):match("^TLMethod_")
+    local suppressed = self._tabName == "Pose" or self._tabName == "Whitelist" or self._tabName == "Target" or self._tabName == "Blobman" or unifiedDefense or id=="LiquidGlassMenuToggle" or sourceKickOnly[id] or tostring(id):match("^TLMethod_")
     if unifiedDefense then definition.Callback=function()end;definition.ChangedCallback=function()end end
     if suppressed then
         definition.Visible = false
