@@ -20,6 +20,7 @@ function Instance.new(class,parent)
 end
 signals.DescendantRemoving=true
 signals.Activated=true
+signals.MouseMoved=true
 function Node:SetAttribute(name,value)self._attributes=self._attributes or{};self._attributes[name]=value end
 function Node:GetAttribute(name)return self._attributes and self._attributes[name]end
 function Node:ClearAllChildren()for _,child in ipairs(self:GetChildren())do child:Destroy()end end

@@ -3563,6 +3563,7 @@ function Library:AddContextMenu(
             Parent = ParentGui,
         })
     end
+    Library:StylePopupSurface(Menu)
     table.insert(
         Library.Scales,
         New("UIScale", {
@@ -4111,6 +4112,7 @@ function Library:AttachSettings(owner, controls)
         local frame=New("Frame",{Name="ControlSettings",BackgroundColor3="BackgroundColor",BackgroundTransparency=.04,Active=true,
             BorderSizePixel=0,Size=UDim2.fromOffset(300,100),Visible=false,ZIndex=30,Parent=Floats})
         New("UICorner",{CornerRadius=UDim.new(0,12),Parent=frame});Library:AddOutline(frame)
+        Library:StylePopupSurface(frame)
         local title=New("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(12,0),
             Size=UDim2.new(1,-44,0,34),Text=owner.Text,TextXAlignment=Enum.TextXAlignment.Left,
             TextSize=14,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),Parent=frame})
@@ -15004,9 +15006,21 @@ function Library:FunctionIcon() end
 
 function Library:BeginStartup() self.Starting=true end
 function Library:FinishStartup() self.Starting=false end
+-- Match the window's white-base charcoal gradient; opaque popup surfaces
+-- cover the controls behind them without changing the main glass window.
+function Library:StylePopupSurface(frame)
+    FillInstance({BackgroundColor3="WhiteColor",BackgroundTransparency=0,Active=true},frame)
+    local gradient=frame:FindFirstChild("AstralPopupGradient")
+    if not gradient then
+        New("UIGradient",{Name="AstralPopupGradient",Rotation=90,Color=function()
+            return ColorSequence.new(Library.Scheme.BodyTopColor,Library.Scheme.BodyBottomColor)
+        end,Parent=frame})
+    end
+end
 function Library:StyleFloatingPanel(frame)
     if not frame then return end
-    FillInstance({BackgroundColor3="BackgroundColor",BackgroundTransparency=.04,BorderSizePixel=0},frame)
+    self:StylePopupSurface(frame)
+    frame.BorderSizePixel=0
     local corner=frame:FindFirstChildOfClass("UICorner") or New("UICorner",{Parent=frame})
     corner.CornerRadius=UDim.new(0,self.CornerRadius)
     local stroke=frame:FindFirstChildOfClass("UIStroke")

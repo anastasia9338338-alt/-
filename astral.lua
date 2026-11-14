@@ -1,4 +1,4 @@
--- Astral v4.79 | Blobman, defensive movement, supplied underfoot magnet, avatar PCLD and shop ESP fixes.
+-- Astral v4.80 | Rebuilt hit recovery, native-sized self/avatar PCLD, gray settings and Main/Character layout.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -2130,7 +2130,7 @@ function Rig:ApplyRecord(v,record)
     end
     local value=false
     if record.Kind=="Motor"then
-        if ragged(self.Humanoid)then record.RecoveredRagdoll=true end
+        if ragged(self.Humanoid)or self.Context.RecoverDisabledMotors then record.RecoveredRagdoll=true end
         value=record.Original or record.CapturedRagdoll or record.RecoveredRagdoll==true
     end
     if v[record.Property]~=value then
@@ -2204,6 +2204,8 @@ function Rig:Step(c,r,h,enabled,held,now)
     if attacking then self.Until=now+.2 end
     if not attacking and now>=(self.Until or 0)then self:Restore();return end
     self.Active=true
+    -- Replication may parent a joint before its Part0/Part1 references arrive.
+    for _,v in ipairs(c:GetDescendants())do self:Record(v)end
     for state in pairs(self.States)do
         if h:GetStateEnabled(state)then h:SetStateEnabled(state,false)end
     end
@@ -7011,6 +7013,7 @@ function Library:AddContextMenu(
             Parent = ParentGui,
         })
     end
+    Library:StylePopupSurface(Menu)
     table.insert(
         Library.Scales,
         New("UIScale", {
@@ -7559,6 +7562,7 @@ function Library:AttachSettings(owner, controls)
         local frame=New("Frame",{Name="ControlSettings",BackgroundColor3="BackgroundColor",BackgroundTransparency=.04,Active=true,
             BorderSizePixel=0,Size=UDim2.fromOffset(300,100),Visible=false,ZIndex=30,Parent=Floats})
         New("UICorner",{CornerRadius=UDim.new(0,12),Parent=frame});Library:AddOutline(frame)
+        Library:StylePopupSurface(frame)
         local title=New("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(12,0),
             Size=UDim2.new(1,-44,0,34),Text=owner.Text,TextXAlignment=Enum.TextXAlignment.Left,
             TextSize=14,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),Parent=frame})
@@ -18452,9 +18456,21 @@ function Library:FunctionIcon() end
 
 function Library:BeginStartup() self.Starting=true end
 function Library:FinishStartup() self.Starting=false end
+-- Match the window's white-base charcoal gradient; opaque popup surfaces
+-- cover the controls behind them without changing the main glass window.
+function Library:StylePopupSurface(frame)
+    FillInstance({BackgroundColor3="WhiteColor",BackgroundTransparency=0,Active=true},frame)
+    local gradient=frame:FindFirstChild("AstralPopupGradient")
+    if not gradient then
+        New("UIGradient",{Name="AstralPopupGradient",Rotation=90,Color=function()
+            return ColorSequence.new(Library.Scheme.BodyTopColor,Library.Scheme.BodyBottomColor)
+        end,Parent=frame})
+    end
+end
 function Library:StyleFloatingPanel(frame)
     if not frame then return end
-    FillInstance({BackgroundColor3="BackgroundColor",BackgroundTransparency=.04,BorderSizePixel=0},frame)
+    self:StylePopupSurface(frame)
+    frame.BorderSizePixel=0
     local corner=frame:FindFirstChildOfClass("UICorner") or New("UICorner",{Parent=frame})
     corner.CornerRadius=UDim.new(0,self.CornerRadius)
     local stroke=frame:FindFirstChildOfClass("UIStroke")
@@ -20854,7 +20870,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.79 | FTAP")
+                                warn("Astral v4.80 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -21070,7 +21086,6 @@ do
 							AntiPaint = false,
 							AntiBlobman = false,
 							AntiBlobmanAura = false,
-                            BlobmanRemoveArms = false,
                             BananaAuraBlobman = false,
 							AutoAntiLag = false,
 							AntiInputLag = false,
@@ -27106,7 +27121,7 @@ end
 							v23.Box.Transparency = server.OutlineTransparency
 							v23.Box.SurfaceTransparency = server.FillTransparency
 							v23.Box.LineThickness = server.OutlineThickness
-							v23.Box.Visible = tbl8.PCLDESP and not v24 and not(tbl12.PCLDAvatars and tbl12.PCLDAvatars.Mode=="Avatar")
+							v23.Box.Visible = tbl8.PCLDESP and not v24 and not(tbl12.PCLDAvatars and tbl12.PCLDAvatars:Has(arg))
 							local player = tbl7.PCLDTracker.PartStates[arg]
 							player = player and player.Player
 							local value = player and select(2, tbl12.Char(player))
@@ -27230,6 +27245,7 @@ end
 								end
 
 								tbl12.UpdatePCLDESP(arg)
+                                if tbl12.PCLDAvatars then tbl12.PCLDAvatars:Render()end
 							end)
 
 							tbl18.Connections[2] = arg.AncestryChanged:Connect(function(child, parent2)
@@ -27570,6 +27586,7 @@ end
                                 else tbl17[k]=nil end
                             end
                             if not next(tbl17)then tbl12.SetSmoothPCLDConnection()end
+                            if tbl12.PCLDAvatars then tbl12.PCLDAvatars:Render()end
                         end
 
 						tbl12.SetSmoothPCLDConnection = function()
@@ -35740,16 +35757,7 @@ Escape Timer: %*]]
 		lib:GiveSignal(isHeld:GetPropertyChangedSignal("Value"):Connect(tbl12.AntiGrab))
 
         tbl12.BlobmanAura=requireModule("BlobmanAura").Install({RunService=RunService,Clock=os.clock,LocalPlayer=localPlayer,
-            Enabled=function()return not flag11 and(tbl8.AntiBlobman or tbl8.AntiBlobmanAura or tbl8.BlobmanRemoveArms)end,Character=tbl12.Char,
-            Detector=function(model,side)
-                if not tbl12.BlobmanDefense then return end
-                for object,saved in pairs(tbl12.BlobmanDefense.Hidden)do
-                    if saved.Model==model then
-                        if object.Name==side.."Detector"then return object end
-                        local detector=object:FindFirstChild(side.."Detector",true);if detector then return detector end
-                    end
-                end
-            end,
+            Enabled=function()return not flag11 and(tbl8.AntiBlobman or tbl8.AntiBlobmanAura)end,Character=tbl12.Char,
             Models=function()
                 local models={}
                 for _,folder in ipairs(workspace:GetChildren())do
@@ -35784,11 +35792,22 @@ Escape Timer: %*]]
             Destroy=function(model)if model and model.Parent==v17 then tbl12.DestroyToy(model)end end,
         })
         tbl12.AntiExplore=requireModule("AntiExplore").Install({RunService=RunService,Workspace=workspace,Clock=os.clock,
-            Character=tbl12.Char,Blocked=function()return flag11 or tbl8.GucciAntiGrab end,
+            Character=tbl12.Char,
+            Blocked=function()return flag11 or tbl8.GucciAntiGrab or tbl8.Flight or tbl8.ControllingSomeone
+                or tbl12.SlideTeleport and tbl12.SlideTeleport:IsMoving()
+                or tbl12.PalletMagnet and tbl12.PalletMagnet.Enabled
+                or tbl12.CharacterTools and tbl12.CharacterTools.Locked end,
             Held=function()return isHeld.Value==true end,
             WalkingGuard=function()return tbl8.AntiGrab or tbl8.GucciAntiGrab end,
-            Ignore=function(part)return v17 and part:IsDescendantOf(v17)end,
-            Recover=function(root)if tbl11.RagdollRemote and tbl11.RagdollRemote.Parent then tbl11.RagdollRemote:FireServer(root,0)end end,
+            Ignore=function(part)
+                local model=part
+                while model and model.Parent~=v17 do model=model.Parent end
+                return model and tbl7.ToyAuraReserved[model]==true
+            end,
+            UnblockJump=function()ContextActionService:UnbindAction("Astral/JumpRemover")end,
+            Recover=function(root,duration)
+                if tbl11.RagdollRemote and tbl11.RagdollRemote.Parent then tbl11.RagdollRemote:FireServer(root,duration)end
+            end,
         })
         lib:OnUnload(function()tbl12.BlobmanDefense:Dispose();tbl12.AntiExplore:Dispose()end)
 
@@ -37771,18 +37790,24 @@ Escape Timer: %*]]
         }))
 
         do
-            local box=tbl15.Home:AddRightGroupbox("Welcome","chess-queen")
+            local box=tbl15.Home:AddLeftGroupbox("Welcome","chess-queen")
+            box.BoxHolder.LayoutOrder=-20
+            local avatar=box:AddImage("AstralHomeAvatar",{Image="rbxthumb://type=Avatar&id="..tostring(localPlayer.UserId).."&w=420&h=420",Height=150,ScaleType=Enum.ScaleType.Fit,BackgroundTransparency=1})
+            task.spawn(function()
+                local ok,url=pcall(Players.GetUserThumbnailAsync,Players,localPlayer.UserId,Enum.ThumbnailType.Avatar,Enum.ThumbnailSize.Size420x420)
+                if ok and not flag11 and not avatar.Destroyed then avatar:SetImage(url)end
+            end)
             box:AddLabel(("Привет, %s!"):format(localPlayer.DisplayName),true)
             box:AddDivider()
             box:AddLabel("Рады видеть тебя в Astral.",true)
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.79",true)
+            box:AddLabel("Astral v4.80",true)
         end
 
         do
-            local box=tbl15.Home:AddLeftGroupbox("Desync Menu","radio")
+            local box=tbl15.Home:AddRightGroupbox("Desync Menu","radio")
             box:AddToggle("AstralDesyncMenu",{Text="Desync Menu",Default=false})
             local settings=box:AddDependencyBox()
             settings:SetupDependencies({{toggles.AstralDesyncMenu,true}})
@@ -37809,6 +37834,7 @@ Escape Timer: %*]]
 
 		do
 			local Values = tbl15.Player:AddLeftGroupbox("Values", "user")
+            Values:SetVisible(false)
 
 			Values:AddSlider("WalkspeedS", {
 				Text = "Walk Speed",
@@ -37852,7 +37878,9 @@ Escape Timer: %*]]
 		end
 
 		do
-			local Character = tbl15.Player:AddLeftGroupbox("Character", "badge")
+			local Character = tbl15.Player:AddLeftGroupbox("Movement", "footprints")
+            local Utility=tbl15.Player:AddRightGroupbox("Character","badge")
+            Utility.BoxHolder.LayoutOrder=-20
 
 			Character:AddToggle("FlyT", {
 				Text = "Flight",
@@ -37966,16 +37994,16 @@ Escape Timer: %*]]
                 Callback=function(value)tbl12.SlideTeleport.Duration=value end})
             Character:AddDropdown("AstralSlideTPStyle",{Text="Slide TP Style",Values={"Smooth","Linear","Ease Out"},Default="Smooth",AllowNull=false,
                 Callback=function(value)tbl12.SlideTeleport.Style=value end})
-            Character:AddToggle("AstralLockPosition",{
+            Utility:AddToggle("AstralLockPosition",{
                 Text="Lock Position",Default=false,
                 Tooltip="Holds your current position; rotation stays free. Recaptures after respawn.",
                 Callback=function(value) tbl12.CharacterTools:SetLocked(value) end,
             }):AddKeyPicker("AstralLockPositionKey",{Text="Lock Position",Mode="Toggle",NoUI=false,SyncToggleState=true})
-            Character:AddToggle("AstralAntiAFK",{
+            Utility:AddToggle("AstralAntiAFK",{
                 Text="Anti AFK",Default=false,
                 Callback=function(value) tbl12.CharacterTools:SetAntiAFK(value) end,
             })
-            Character:AddButton({
+            Utility:AddButton({
                 Text="Respawn (Kill)",
                 Tooltip="Resets your own character once. Respawn timing is controlled by the game.",
                 Func=function() tbl12.CharacterTools:Respawn() end,
@@ -38010,7 +38038,7 @@ Escape Timer: %*]]
 				end,
 			}):AddKeyPicker("IJKey", { Text = "Inf Jump", Mode = "Toggle", NoUI = true, SyncToggleState = true })
 
-			Character:AddToggle("JerkOffT", {
+			Utility:AddToggle("JerkOffT", {
 				Text = "Jerk Off",
 				Default = false,
 				Callback = function(jerkOff)
@@ -38053,6 +38081,14 @@ Escape Timer: %*]]
 		end
 
         do
+            for toggle,ids in pairs({FlyT={"FlightSpeedS"},WalkspeedT={"WalkspeedS"},JumpPowerT={"JumpPowerS"},SpinT={"SpinS"},
+                AstralWallClimb={"AstralClimbSpeed"},AstralSlideTP={"AstralSlideTPDuration","AstralSlideTPStyle"}})do
+                local controls={};for _,id in ipairs(ids)do controls[#controls+1]=options[id]end
+                lib:AttachSettings(toggles[toggle],controls)
+            end
+        end
+
+        do
             local teleports=requireModule("TeleportMenu").Install({Library=lib,RunService=RunService,Player=localPlayer,Workspace=workspace,
                 Locations=function()return tbl7.TeleportLocations end,VoidPlatform=part3,Character=function()return tbl12.Char()end,
                 Teleport=function(root,frame)
@@ -38062,7 +38098,8 @@ Escape Timer: %*]]
                 end,
                 OnSelected=function(location)tbl9.TeleportLocation=location end,
                 OnVisible=function(value)if toggles.AstralTeleportMenuVisible and toggles.AstralTeleportMenuVisible.Value~=value then toggles.AstralTeleportMenuVisible:SetValue(value)end end})
-            local launcher=tbl15.Home:AddLeftGroupbox("Teleport Menu","map-pin")
+            local launcher=tbl15.Home:AddRightGroupbox("Teleport Menu","map-pin")
+            launcher.BoxHolder.LayoutOrder=-20
             launcher:AddToggle("AstralTeleportMenuVisible",{Text="Open Teleport Menu",Default=false,Callback=function(value)teleports:SetVisible(value)end})
                 :AddKeyPicker("AstralTeleportMenuKey",{Text="Teleport Menu",Mode="Toggle",NoUI=false,SyncToggleState=true})
             launcher:AddLabel("Teleport To Cursor"):AddKeyPicker("AstralTeleportCursorKey",{Text="Teleport To Cursor",Default="Z",Mode="Press",NoUI=false,Callback=function()
@@ -38135,6 +38172,7 @@ Escape Timer: %*]]
 
 		do
 			local Animations = tbl15.Player:AddRightGroupbox("Animations", "audio-lines")
+            Animations.BoxHolder.LayoutOrder=10
 
 			local tbl16 = {
 				Struggle = "rbxassetid://7047322890",
@@ -38654,9 +38692,6 @@ Escape Timer: %*]]
             Callback=function(value)
                 tbl12.SetRuntimeToggle("AntiBlobmanAura",value);tbl12.BlobmanDefense:SetMode("Aura",value)
             end})
-        BlobDefense:AddToggle("BlobmanRemoveArms",{Text="Remove Blobman Arms",Default=false,
-            Tooltip="Hides nearby Blobman arms and releases grabs of your character. Restores them when disabled.",
-            Callback=function(value)tbl8.BlobmanRemoveArms=value;tbl12.BlobmanDefense:SetMode("RemoveArms",value)end})
         BlobDefense:AddToggle("BananaAuraBlobman",{Text="Banana Aura Blobman",Default=false,
             Tooltip="Eats a real banana, then spins its owned peel inside a nearby ridden Blobman. Fling strength depends on game physics.",
             Callback=function(value)tbl8.BananaAuraBlobman=value;tbl12.BlobmanDefense:SetMode("Banana",value)end})
@@ -38690,7 +38725,7 @@ Escape Timer: %*]]
 		})
 
         Antis:AddToggle("AntiExplore",{Text="Anti Explore",Default=false,
-            Tooltip="Combined Banana, Snowball and Explosion protection without deleting legs or controlling your rig while another player grabs you.",
+            Tooltip="Banana, snowball, rocket and dark matter protection. Keeps your legs intact and yields during grabs or vehicle movement.",
             Callback=function(value)tbl8.AntiExplore=value;tbl12.AntiExplore:SetEnabled(value)end})
 
 		Antis:AddToggle("AntiBurn", {
@@ -39806,7 +39841,7 @@ Escape Timer: %*]]
 	end
 
 	do
-		local Barrier = tbl15.Home:AddRightGroupbox("Barrier", "circle-slash")
+		local Barrier = tbl15.Home:AddLeftGroupbox("Barrier", "circle-slash")
 		local flag12 = false
 		local flag13 = false
 
@@ -41549,7 +41584,8 @@ Escape Timer: %*]]
 	end
 
 	do
-		local Camera = tbl15.Player:AddRightGroupbox("Camera", "camera")
+		local Camera = tbl15.Player:AddLeftGroupbox("Camera", "camera")
+        Camera.BoxHolder.LayoutOrder=10
 
 		Camera:AddToggle("DisableBlurT", {
 			Text = "Disable Ragdoll Blur",
@@ -43870,20 +43906,50 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 end
 ]========]
 sources.PCLDAvatarESP = [========[
--- Local avatar silhouettes at the real replicated PCLD frame. No live
--- character/detector transform, ownership, velocity or joint writes.
+-- Cosmetic, anchored avatar silhouettes on the same frame as native box PCLD.
+-- The visual uses the rig's rest joints, never live ragdoll/desync limb offsets.
 local Avatars={};Avatars.__index=Avatars
+local V=Vector3.new
+local bodyNames={Head=true,Torso=true,UpperTorso=true,LowerTorso=true,['Left Arm']=true,['Right Arm']=true,['Left Leg']=true,['Right Leg']=true,
+ LeftUpperArm=true,LeftLowerArm=true,LeftHand=true,RightUpperArm=true,RightLowerArm=true,RightHand=true,
+ LeftUpperLeg=true,LeftLowerLeg=true,LeftFoot=true,RightUpperLeg=true,RightLowerLeg=true,RightFoot=true}
 local function alive(v)return v and v.Parent~=nil end
 local function finite(v)return v and v.X==v.X and v.Y==v.Y and v.Z==v.Z and v.Magnitude<1e7 end
+local function cosmetic(v,c,root)
+ if v==root then return true end
+ if v.Parent==c then return bodyNames[v.Name]==true end
+ local parent=v.Parent
+ while parent and parent~=c do
+  if parent:IsA('Tool')then return false end
+  if parent:IsA('Accessory')and parent.Parent==c then return true end
+  parent=parent.Parent
+ end
+ return false
+end
 local function destructive(v)
- return v:IsA('LuaSourceContainer')or v:IsA('RemoteEvent')or v:IsA('RemoteFunction')
-  or v:IsA('BindableEvent')or v:IsA('BindableFunction')or v:IsA('Tool')
-  or v:IsA('JointInstance')or v:IsA('Constraint')or v:IsA('BodyMover')
-  or v:IsA('Animator')or v:IsA('AnimationController')or v:IsA('IKControl')
-  or v:IsA('Sound')or v:IsA('BillboardGui')or v:IsA('SurfaceGui')or v:IsA('Highlight')
+ return v:IsA('LuaSourceContainer')or v:IsA('RemoteEvent')or v:IsA('RemoteFunction')or v:IsA('BindableEvent')or v:IsA('BindableFunction')
+  or v:IsA('Tool')or v:IsA('JointInstance')or v:IsA('Constraint')or v:IsA('BodyMover')or v:IsA('Animator')
+  or v:IsA('AnimationController')or v:IsA('IKControl')or v:IsA('Sound')or v:IsA('BillboardGui')or v:IsA('SurfaceGui')or v:IsA('Highlight')
+end
+local function restFrames(character,root)
+ local frames={[root]=CFrame.new()};local joints={}
+ for _,v in ipairs(character:GetDescendants())do
+  if v:IsA('JointInstance')and v.Part0 and v.Part1 and cosmetic(v.Part0,character,root)and cosmetic(v.Part1,character,root)then joints[#joints+1]=v end
+ end
+ for _=1,20 do
+  local changed=false
+  for _,j in ipairs(joints)do
+   if frames[j.Part0]and not frames[j.Part1]then frames[j.Part1]=frames[j.Part0]*j.C0*j.C1:Inverse();changed=true
+   elseif frames[j.Part1]and not frames[j.Part0]then frames[j.Part0]=frames[j.Part1]*j.C1*j.C0:Inverse();changed=true end
+  end
+  if not changed then break end
+ end
+ local inverse=root.CFrame:Inverse()
+ for _,v in ipairs(character:GetDescendants())do if v:IsA('BasePart')and cosmetic(v,character,root)and not frames[v]then frames[v]=inverse*v.CFrame end end
+ return frames
 end
 function Avatars.Install(ctx)
- local self=setmetatable({Context=ctx,Mode='Box',Records={},Elapsed=0,Limit=32,Status='Box'},Avatars)
+ local self=setmetatable({Context=ctx,Mode='Box',Records={},Elapsed=0,Limit=150,Status='Box'},Avatars)
  self.Container=Instance.new('Folder');self.Container.Name='AstralPCLDAvatars';self.Container.Parent=ctx.Workspace
  self.Connection=ctx.RunService.Heartbeat:Connect(function(dt)
   if self.Closed then return end
@@ -43894,11 +43960,14 @@ function Avatars.Install(ctx)
  return self
 end
 function Avatars:Active()return not self.Closed and self.Mode=='Avatar'and self.Context.Enabled()end
+function Avatars:Has(detector)
+ if not self:Active()then return false end
+ for _,r in pairs(self.Records)do if r.Detector==detector and alive(r.Model)and not r.Dirty then return true end end
+ return false
+end
 function Avatars:Remove(player)
- local r=self.Records[player];if not r then return end
- self.Records[player]=nil
- for _,c in ipairs(r.Connections)do c:Disconnect()end
- r.Model:Destroy()
+ local r=self.Records[player];if not r then return end;self.Records[player]=nil
+ for _,c in ipairs(r.Connections)do c:Disconnect()end;r.Model:Destroy()
 end
 function Avatars:Clear()
  local list={};for p in pairs(self.Records)do list[#list+1]=p end
@@ -43908,116 +43977,119 @@ end
 function Avatars:SetMode(value)
  if value~='Box'and value~='Avatar'then return false end
  self.Mode=value;self.Status=value
- if not self:Active()then self:Clear()else self:Refresh()end
- return true
+ if not self:Active()then self:Clear()else self:Refresh()end;return true
 end
-function Avatars:Build(player,character,root)
+function Avatars:Build(player,character,root,detector)
  local saved=character.Archivable;local model
- local ok,why=pcall(function()character.Archivable=true;model=character:Clone()end)
- character.Archivable=saved
- if not ok or not model then self.LastError=tostring(why or 'Character clone unavailable');return end
- local pairsOfParts={}
- local function pair(source,copy)
-  local grouped={}
-  for _,child in ipairs(copy:GetChildren())do
-   local key=child.Name..'\0'..child.ClassName;grouped[key]=grouped[key]or{};table.insert(grouped[key],child)
+ local ok,why=pcall(function()character.Archivable=true;model=character:Clone()end);character.Archivable=saved
+ if not ok or not model then self.LastError=tostring(why or'Character clone unavailable');return end
+ local result
+ local prepared,prepareWhy=pcall(function()
+  local humanoid=character:FindFirstChildOfClass('Humanoid')
+  local rigRoot=humanoid and humanoid.RootPart or character:FindFirstChild('HumanoidRootPart')or root
+  if not rigRoot:IsDescendantOf(character)then rigRoot=root end
+  local frames=restFrames(character,rigRoot);local pairsOfParts={};local allowed={}
+  local function pair(source,copy)
+   local grouped={}
+   for _,child in ipairs(copy:GetChildren())do local key=child.Name..'\0'..child.ClassName;grouped[key]=grouped[key]or{};table.insert(grouped[key],child)end
+   for _,child in ipairs(source:GetChildren())do if child.Archivable~=false then
+    local list=grouped[child.Name..'\0'..child.ClassName];local twin=list and table.remove(list,1)
+    if twin then
+     if child:IsA('BasePart')and cosmetic(child,character,rigRoot)then pairsOfParts[#pairsOfParts+1]={Source=child,Part=twin,Frame=frames[child]};allowed[twin]=child end
+     pair(child,twin)
+    end
+   end end
   end
-  for _,child in ipairs(source:GetChildren())do if child.Archivable~=false then
-   local key=child.Name..'\0'..child.ClassName;local list=grouped[key];local twin=list and table.remove(list,1)
-   if twin then
-    if child:IsA('BasePart')then pairsOfParts[#pairsOfParts+1]={Source=child,Part=twin}end
-    pair(child,twin)
-   end
-  end end
- end
- pair(character,model)
- local okPrepare,prepareWhy=pcall(function()
+  pair(character,model)
   for _,v in ipairs(model:GetDescendants())do
    if destructive(v)then v:Destroy()
    elseif v:IsA('BasePart')then
-    if v.Name=='PlayerCharacterLocationDetector'or v.Name=='SmoothPCLD'or v.Name=='RagdollLimbPart'then v:Destroy()
+    if not allowed[v]then v:Destroy()
     else
-     v.Anchored=true;v.CanCollide=false;v.CanTouch=false;v.CanQuery=false;v.CastShadow=false
-     v.LocalTransparencyModifier=0
+     v.Anchored=true;v.CanCollide=false;v.CanTouch=false;v.CanQuery=false;v.CastShadow=false;v.LocalTransparencyModifier=0
+     if allowed[v]==rigRoot then v.Transparency=1 end
     end
    elseif v:IsA('Humanoid')then
-    v.RequiresNeck=false;v.BreakJointsOnDeath=false
-    v.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
-    v.HealthDisplayType=Enum.HumanoidHealthDisplayType.AlwaysOff
+    v.RequiresNeck=false;v.BreakJointsOnDeath=false;v.AutomaticScalingEnabled=false
+    v.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None;v.HealthDisplayType=Enum.HumanoidHealthDisplayType.AlwaysOff
    elseif v:IsA('ParticleEmitter')or v:IsA('Trail')or v:IsA('Beam')then v.Enabled=false end
   end
+  local lo=V(math.huge,math.huge,math.huge);local hi=V(-math.huge,-math.huge,-math.huge);local parts={}
+  for _,p in ipairs(pairsOfParts)do if p.Part:IsDescendantOf(model)and p.Frame then
+   parts[#parts+1]=p
+   if p.Source.Parent==character and p.Source~=rigRoot and bodyNames[p.Source.Name]then
+    local half=p.Source.Size*.5
+    for _,x in ipairs({-1,1})do for _,y in ipairs({-1,1})do for _,z in ipairs({-1,1})do
+     local point=p.Frame*V(half.X*x,half.Y*y,half.Z*z)
+     lo=V(math.min(lo.X,point.X),math.min(lo.Y,point.Y),math.min(lo.Z,point.Z));hi=V(math.max(hi.X,point.X),math.max(hi.Y,point.Y),math.max(hi.Z,point.Z))
+    end end end
+   end
+  end end
+  if #parts==0 or #parts>320 or not finite(lo)or not finite(hi)or hi.Y-lo.Y<.1 then return end
+  local center=(lo+hi)*.5
+  for _,p in ipairs(parts)do p.Offset=(CFrame.new(-center)*p.Frame)end
+  model.Name='AstralPCLD/'..player.Name
+  local highlight=Instance.new('Highlight');highlight.Name='PCLDColors';highlight.Adornee=model;highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;highlight.Parent=model
+  local record={Player=player,Character=character,Root=root,Model=model,Parts=parts,Highlight=highlight,Connections={},Detector=detector,
+   BodyHeight=hi.Y-lo.Y,OriginalScale=model:GetScale()}
+  local function dirty(v)
+   if v:IsA('BasePart')or v:IsA('Accessory')or v:IsA('Shirt')or v:IsA('Pants')or v:IsA('BodyColors')then record.Dirty=true end
+  end
+  if character.DescendantAdded then record.Connections[#record.Connections+1]=character.DescendantAdded:Connect(dirty)end
+  if character.DescendantRemoving then record.Connections[#record.Connections+1]=character.DescendantRemoving:Connect(dirty)end
+  for _,p in ipairs(parts)do
+   for _,property in ipairs({'Size','Color'})do
+    record.Connections[#record.Connections+1]=p.Source:GetPropertyChangedSignal(property):Connect(function()record.Dirty=true end)
+   end
+  end
+  self.Records[player]=record;model.Parent=self.Container;result=record
  end)
- if not okPrepare then model:Destroy();self.LastError=tostring(prepareWhy);return end
- local parts={}
- for _,record in ipairs(pairsOfParts)do
-  if record.Part:IsDescendantOf(model)and record.Source:IsDescendantOf(character)then parts[#parts+1]=record end
- end
- if #parts==0 or #parts>320 then model:Destroy();return end
- model.Name='AstralPCLD/'..player.Name
- local highlight=Instance.new('Highlight');highlight.Name='PCLDColors';highlight.Adornee=model
- highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;highlight.Parent=model
- local record={Player=player,Character=character,Root=root,Model=model,Parts=parts,Highlight=highlight,Connections={}}
- self.Records[player]=record
- model.Parent=self.Container
- local function changed(object)
-  if object:IsA('BasePart')or object:IsA('Accessory')or object:IsA('Shirt')or object:IsA('Pants')then record.Dirty=true end
- end
- if character.DescendantAdded then record.Connections[#record.Connections+1]=character.DescendantAdded:Connect(changed)end
- if character.DescendantRemoving then record.Connections[#record.Connections+1]=character.DescendantRemoving:Connect(changed)end
- return record
+ if not prepared or not result then model:Destroy();self.LastError=not prepared and tostring(prepareWhy)or self.LastError end
+ return result
 end
 function Avatars:Refresh()
  if not self:Active()then self:Clear();return end
  local keep={};local built=0;local count=0
- for _,player in ipairs(self.Context.Players:GetPlayers())do if player~=self.Context.Player then
-  local character,root,h=self.Context.Character(player)
-  local detector=self.Context.Detector(player)
+ -- LocalPlayer is deliberately included, just like the native detector boxes.
+ for _,player in ipairs(self.Context.Players:GetPlayers())do
+  local character,root,h=self.Context.Character(player);local detector=self.Context.Detector(player)
   if character and root and root.Parent and h and h.Health>0 and alive(detector)and not self.Context.Waiting(detector)then
    count+=1
    if count<=self.Limit then
     local r=self.Records[player]
     if r and(r.Character~=character or r.Root~=root or not alive(r.Model)or r.Dirty)then self:Remove(player);r=nil end
-    if not r and built<3 then built+=1;r=self:Build(player,character,root)end
+    if not r and built<3 then built+=1;r=self:Build(player,character,root,detector)end
     if r then r.Detector=detector;keep[player]=true end
    end
   end
- end end
+ end
  local remove={};for player in pairs(self.Records)do if not keep[player]then remove[#remove+1]=player end end
  for _,player in ipairs(remove)do self:Remove(player)end
  if next(self.Records)and not self.RenderConnection then
-  self.RenderConnection=self.Context.RunService.RenderStepped:Connect(function()
-   local ok,why=pcall(self.Render,self)
-   if not ok then self.LastError=tostring(why);self:Clear();self.Status='Avatar PCLD: '..self.LastError end
-  end)
+  self.RenderConnection=self.Context.RunService.RenderStepped:Connect(function()self:Render()end)
  end
- self.Status='Avatar PCLD: '..tostring(count)
+ self:Render();self.Status='Avatar PCLD: '..tostring(count)
 end
 function Avatars:Render()
  if not self:Active()then self:Clear();return end
  local conf=self.Context.Config()
  for player,r in pairs(self.Records)do
   local character,root,h=self.Context.Character(player)
-  if character~=r.Character or root~=r.Root or not h or h.Health<=0 or not alive(r.Detector)or self.Context.Waiting(r.Detector)then
-   self:Remove(player)
+  if character~=r.Character or root~=r.Root or not h or h.Health<=0 or not alive(r.Detector)or self.Context.Waiting(r.Detector)then self:Remove(player)
   else
-   local frame=self.Context.Frame(r.Detector)
-   if frame and finite(frame.Position)then
-    local inverse=root.CFrame:Inverse()
-    for _,part in ipairs(r.Parts)do
-     if part.Source:IsDescendantOf(character)and part.Part:IsDescendantOf(r.Model)then
-      part.Part.CFrame=frame*inverse*part.Source.CFrame
-     end
-    end
+   local frame=self.Context.Frame(r.Detector);local height=r.Detector.Size.Y
+   if frame and finite(frame.Position)and height==height and height>.1 and height<1000 then
+    local scale=math.clamp(height/r.BodyHeight,.02,20)
+    if r.Scale~=scale then r.Model:ScaleTo(r.OriginalScale*scale);r.Scale=scale end
+    for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then p.Part.CFrame=frame*CFrame.new(p.Offset.Position*scale)*p.Offset.Rotation end end
     r.Highlight.FillColor=conf.FillColor;r.Highlight.OutlineColor=conf.OutlineColor
-    r.Highlight.FillTransparency=conf.FillTransparency;r.Highlight.OutlineTransparency=conf.OutlineTransparency
-    r.Highlight.Enabled=true
+    r.Highlight.FillTransparency=conf.FillTransparency;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
    else r.Highlight.Enabled=false end
   end
  end
 end
 function Avatars:Dispose()
- if self.Closed then return end
- self.Closed=true;self:Clear();self.Connection:Disconnect();self.Container:Destroy()
+ if self.Closed then return end;self.Closed=true;self:Clear();self.Connection:Disconnect();self.Container:Destroy()
 end
 return Avatars
 
@@ -44051,9 +44123,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.79: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.80: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.79 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.80 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -90863,11 +90935,26 @@ end
 function UI:_Group(side, name, icon, visible, collapsed, disableCollapsing)
     local bridge = self._bridge
     local title = plain(name) .. " [astral]"
+    local order
+    if self._tabName == "Player" then
+        -- Keep every merged feature while grouping related Character sections.
+        local layout={
+            Values={"Movement Settings","Left",20},
+            Character={"Character Extras","Left",30},
+            Animations={"Animation Presets","Left",40},
+            Teleporting={"Teleport","Right",20},
+            Players={"Players Extras","Right",30},
+            ["Coin Farm"]={"Coin Farm","Right",40},
+        }
+        local placement=layout[plain(name)]
+        if placement then title,side,order=placement[1],placement[2],placement[3]end
+    end
     if self._tabName == "ESP" or self._tabName == "Aim" or self._tabName == "AimTrainer" then
         title = self._tabName .. ": " .. title
     end
     local method = side == "Left" and "AddLeftGroupbox" or "AddRightGroupbox"
     local group = self._object[method](self._object, title, icon, visible, collapsed, disableCollapsing)
+    if order then group.BoxHolder.LayoutOrder=order end
     table.insert(bridge.Groupboxes, group)
     return bridge:Wrap(group, "Groupbox", self._tabName)
 end
@@ -93043,125 +93130,183 @@ return Native
 
 ]========]
 sources.AntiExplore = [========[
-local Guard = {}; Guard.__index = Guard
-
-local function alive(object) return object and object.Parent ~= nil end
-local function hazard(part, workspace)
-    local object = part
-    local kind
-    while object and object ~= workspace do
-        -- A player's name/accessory can contain "banana". Never suppress
-        -- another avatar's body parts as if they were a spawned food toy.
-        if object:IsA("Model") and object:FindFirstChildOfClass("Humanoid") then return end
-        local name = object.Name:lower()
-        if name:find("banana", 1, true) or name:find("snowball", 1, true) then kind="Toy" end
-        object = object.Parent
-    end
-    if kind then return kind end
-    -- The original explosion observer watches a new root-level Part. That
-    -- name alone is not permission to disable map/platform collisions.
-    if part.Parent == workspace and part.Name == "Part" then return "ExplosionCandidate" end
+-- Local hit recovery: keep the intact walking rig, thaw snowball locks, and
+-- absorb hazard impulses. No limb deletion, persistent position/height locks,
+-- avatar ownership requests or per-frame movement-speed overrides.
+local requireModule=...
+local WalkingRig=requireModule('WalkingRig')
+local Guard={};Guard.__index=Guard
+local V=Vector3.new
+local function alive(v)return v and v.Parent~=nil end
+local function finite(v)return v and v.X==v.X and v.Y==v.Y and v.Z==v.Z and v.Magnitude<1e8 end
+local function hazard(part,world)
+ local node=part;local kind
+ while node and node~=world do
+  if node:IsA('Model')and node:FindFirstChildOfClass('Humanoid')then return end
+  local name=node.Name:lower()
+  if name:find('banana',1,true)then kind='Banana'
+  elseif name:find('snowball',1,true)then kind='Snowball'
+  elseif name:find('darkmatter',1,true)or name:find('blackhole',1,true)or name=='stayedbh'then kind='Matter'
+  elseif name:find('missile',1,true)or name:find('rocket',1,true)or name:find('explosion',1,true)or name=='explosion'then kind='Explosion'end
+  node=node.Parent
+ end
+ if kind then return kind end
+ if part.Parent==world and part.Name=='Part'then return 'Effect'end
 end
-
+local function forceProperty(v)
+ if v:IsA('BodyVelocity')or v:IsA('BodyPosition')then return 'MaxForce',V(0,0,0)
+ elseif v:IsA('BodyAngularVelocity')or v:IsA('BodyGyro')then return 'MaxTorque',V(0,0,0)
+ elseif v:IsA('BodyForce')or v:IsA('VectorForce')then return 'Force',V(0,0,0)
+ elseif v:IsA('LinearVelocity')or v:IsA('AngularVelocity')or v:IsA('AlignPosition')or v:IsA('AlignOrientation')then return 'Enabled',false end
+end
 function Guard.Install(ctx)
-    local self = setmetatable({Context=ctx, Enabled=false, Parts={}, Candidates=setmetatable({}, {__mode="k"}), NextScan=0, Status="Disabled"}, Guard)
-    self.Connection = ctx.RunService.PreSimulation:Connect(function()
-        if not self.Enabled or self.Closed then return end
-        local ok, why = pcall(self.Step, self)
-        if not ok then self.LastError=tostring(why); self:SetEnabled(false); self.Status="Anti Explore: "..self.LastError end
-    end)
-    return self
+ local self=setmetatable({Context=ctx,Enabled=false,Parts={},Effects=setmetatable({},{__mode='k'}),Forces={},Connections={},Status='Disabled'},Guard)
+ self.Rig=WalkingRig.new({RecoverDisabledMotors=true})
+ return self
 end
-
-function Guard:RestorePart(part, record)
-    for _, constraint in pairs(record.Links) do constraint:Destroy() end
-    if alive(part) and part.CanTouch == false then part.CanTouch = record.Touch end
+function Guard:RestorePart(part,record)
+ for _,link in pairs(record.Links)do link:Destroy()end
+ if alive(part)and part.CanTouch==false then part.CanTouch=record.Touch end
 end
-
+function Guard:RestoreForces()
+ for object,record in pairs(self.Forces)do
+  if alive(object)and object[record.Key]==record.Forced then object[record.Key]=record.Value end
+ end
+ table.clear(self.Forces)
+end
 function Guard:Clear()
-    for part, record in pairs(self.Parts) do self:RestorePart(part, record) end
-    table.clear(self.Parts)
-    table.clear(self.Candidates)
-    self.Character=nil; self.Root=nil; self.NearUntil=nil; self.Trip=nil; self.WasTripped=nil
+ self.Rig:Unbind();self:RestoreForces()
+ for part,record in pairs(self.Parts)do self:RestorePart(part,record)end;table.clear(self.Parts)
+ local h=self.Humanoid
+ if h and h.Parent==self.Character and self.JumpOriginal~=nil and h:GetStateEnabled(Enum.HumanoidStateType.Jumping)==true then
+  local rag=h:FindFirstChild('Ragdolled')
+  h:SetStateEnabled(Enum.HumanoidStateType.Jumping,self.JumpOriginal or(self.BoundRagdoll==true and not(rag and rag.Value)))
+ end
+ self.Character=nil;self.Root=nil;self.Humanoid=nil;self.Trip=nil;self.WasTripped=nil;self.ExposedUntil=nil;self.SafeVelocity=nil;self.JumpOriginal=nil
 end
-
 function Guard:SetEnabled(value)
-    self.Enabled=value == true and not self.Closed
-    if not self.Enabled then self:Clear(); self.Status="Disabled"
-    else self.NextScan=0; self.Status="Banana / Snowball / Explosion protection" end
+ value=value==true and not self.Closed
+ if value==self.Enabled then return end
+ self.Enabled=value
+ if not value then
+  for _,c in ipairs(self.Connections)do c:Disconnect()end;table.clear(self.Connections)
+  self:Clear();table.clear(self.Effects);self.Status='Disabled';return
+ end
+ self.NextScan=0;self.Status='Banana / Snowball / Rocket / Matter'
+ self.Connections[#self.Connections+1]=self.Context.Workspace.DescendantAdded:Connect(function(v)
+  if not self.Enabled or not v:IsA('BasePart')then return end
+  if hazard(v,self.Context.Workspace)=='Effect'then self.Effects[v]=self.Context.Clock()+.7 end
+ end)
+ self.Connection=self.Context.RunService.PreSimulation:Connect(function()
+  local ok,why=pcall(self.Step,self)
+  if not ok then self.LastError=tostring(why);self:SetEnabled(false);self.Status='Anti Explore: '..self.LastError end
+ end);self.Connections[#self.Connections+1]=self.Connection
+ self:Step()
 end
-
-function Guard:Scan(c, r, now)
-    local query = OverlapParams.new()
-    query.FilterType=Enum.RaycastFilterType.Exclude
-    query.FilterDescendantsInstances={c}
-    query.RespectCanCollide=false
-    local nearby={}
-    for _, part in ipairs(self.Context.Workspace:GetPartBoundsInRadius(r.Position, 40, query)) do
-        local ignored=self.Context.Ignore and self.Context.Ignore(part)
-        local kind=not ignored and part:IsA("BasePart") and hazard(part, self.Context.Workspace)
-        if kind=="ExplosionCandidate" then
-            local untilTime=self.Candidates[part]
-            if not untilTime then untilTime=now+.35; self.Candidates[part]=untilTime end
-            if now<untilTime and (part.Position-r.Position).Magnitude<18 then self.NearUntil=math.max(self.NearUntil or 0,untilTime) end
-        elseif kind=="Toy" then
-            nearby[part]=true
-            local record=self.Parts[part]
-            if not record then record={Touch=part.CanTouch, Links={}}; self.Parts[part]=record end
-            part.CanTouch=false
-            for _, body in ipairs(c:GetDescendants()) do
-                if body:IsA("BasePart") and not record.Links[body] then
-                    local link=Instance.new("NoCollisionConstraint")
-                    link.Name="AstralAntiExplore"; link.Part0=body; link.Part1=part; link.Parent=r
-                    record.Links[body]=link
-                end
-            end
-            if (part.Position-r.Position).Magnitude < 18 then self.NearUntil=now+.3 end
-        end
-    end
-    for part, record in pairs(self.Parts) do
-        if not nearby[part] then self:RestorePart(part, record); self.Parts[part]=nil end
-    end
+function Guard:Scan(c,r,now)
+ local query=OverlapParams.new();query.FilterType=Enum.RaycastFilterType.Exclude;query.FilterDescendantsInstances={c};query.RespectCanCollide=false
+ local keep={};local bodyHitbox=r:FindFirstChild('RagdollTouchedHitbox')or c:FindFirstChild('RagdollTouchedHitbox',true)
+ if bodyHitbox and bodyHitbox:IsA('BasePart')then keep[bodyHitbox]=true end
+ for _,p in ipairs(self.Context.Workspace:GetPartBoundsInRadius(r.Position,60,query))do
+  if not p:IsA('BasePart')or(self.Context.Ignore and self.Context.Ignore(p))then continue end
+  local kind=hazard(p,self.Context.Workspace)
+  if kind=='Effect'then
+   if now<(self.Effects[p]or 0)and(p.Position-r.Position).Magnitude<=22 then self.ExposedUntil=now+.65 end
+  elseif kind then
+   self.ExposedUntil=now+.65;self.LastHazard=kind;keep[p]=kind=='Banana'or kind=='Snowball'
+  end
+ end
+ for p,near in pairs(keep)do if near then
+  local record=self.Parts[p]
+  if not record then record={Touch=p.CanTouch,Links={}};self.Parts[p]=record end
+  p.CanTouch=false
+  if p~=bodyHitbox then for _,body in ipairs(c:GetDescendants())do
+   if body:IsA('BasePart')and not record.Links[body]then
+    local link=Instance.new('NoCollisionConstraint');link.Name='AstralAntiExplore';link.Part0=body;link.Part1=p;link.Parent=r;record.Links[body]=link
+   end
+  end end
+ end end
+ for p,record in pairs(self.Parts)do if not keep[p]then self:RestorePart(p,record);self.Parts[p]=nil end end
 end
-
+function Guard:SuppressForces(c)
+ local keep={}
+ for _,v in ipairs(c:GetDescendants())do
+  -- Astral's deliberate movement controllers own their own forces. Recovery
+  -- yields entirely to flight, teleport, seats and external grabs below.
+  if v.Name:sub(1,6)=='Astral'then continue end
+  local key,forced=forceProperty(v)
+  if key then
+   keep[v]=true;local record=self.Forces[v]
+   if not record then record={Key=key,Value=v[key],Forced=forced};self.Forces[v]=record end
+   v[key]=forced
+  end
+ end
+ for v,record in pairs(self.Forces)do if not keep[v]then
+  if alive(v)and v[record.Key]==record.Forced then v[record.Key]=record.Value end
+  self.Forces[v]=nil
+ end end
+end
+function Guard:AbsorbImpulse(r,h,exposed)
+ local velocity=r.AssemblyLinearVelocity;local angular=r.AssemblyAngularVelocity
+ if not finite(velocity)or not finite(angular)then return end
+ local walk=math.max(16,tonumber(h.WalkSpeed)or 16);local horizontal=V(velocity.X,0,velocity.Z)
+ local limit=self.LastHazard=='Matter'and math.max(24,walk*1.5)or math.max(48,walk*2.5)
+ local verticalSpike=velocity.Y>90 or velocity.Y< -140 and math.abs(velocity.Y-(self.SafeVelocity and self.SafeVelocity.Y or 0))>100
+ if exposed and(horizontal.Magnitude>limit or verticalSpike or angular.Magnitude>35)then
+  local safe=self.SafeVelocity or V(0,0,0);local direction=h.MoveDirection
+  local planar=direction and finite(direction)and direction*math.min(walk,1000)or V(safe.X,0,safe.Z)
+  local y=velocity.Y
+  if verticalSpike then y=math.clamp(safe.Y,-60,60)end
+  if horizontal.Magnitude>limit then velocity=V(planar.X,y,planar.Z)elseif y~=velocity.Y then velocity=V(velocity.X,y,velocity.Z)end
+  r.AssemblyLinearVelocity=velocity
+  if angular.Magnitude>35 then r.AssemblyAngularVelocity=V(0,0,0)end
+  self.Status='Recovered '..(self.LastHazard or 'hazard')..' hit'
+ elseif not exposed then self.SafeVelocity=velocity end
+end
 function Guard:Step()
-    local ctx=self.Context
-    local c, r, h=ctx.Character()
-    if not c or not r or not h or h.Health <= 0 or (ctx.Blocked and ctx.Blocked()) then self:Clear(); return end
-    if c ~= self.Character or r ~= self.Root then self:Clear(); self.Character=c; self.Root=r; self.NextScan=0 end
-    local now=ctx.Clock()
-    if now >= self.NextScan then self.NextScan=now+.08; self:Scan(c, r, now) end
-    local state=h:GetState()
-    local ragdoll=h:FindFirstChild("Ragdolled")
-    local weld=r:FindFirstChild("WeldHRP")
-    local tripped=ragdoll and ragdoll:IsA("BoolValue") and ragdoll.Value
-        or state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.FallingDown
-        or weld and weld.Enabled
-    tripped=tripped==true
-    local externalGrab=ctx.Held and ctx.Held()==true
-    local walkingGuard=ctx.WalkingGuard and ctx.WalkingGuard()==true
-    if h.SeatPart or externalGrab or walkingGuard or r.Anchored then
-        -- Anti Grab / the real vehicle owns recovery. Do not fight its rig,
-        -- zero its movement, or replay a pending hazard recovery after release.
-        self.Trip=nil; self.WasTripped=tripped; return
-    end
-    if not tripped then self.Trip=nil
-    elseif not self.WasTripped and now < (self.NearUntil or 0) then
-        self.Trip={Until=now+.45,Next=now,Attempts=0}
-    end
-    self.WasTripped=tripped
-    local trip=self.Trip
-    if trip and tripped and now<=trip.Until and trip.Attempts<3 and now>=trip.Next then
-        trip.Next=now+.15; trip.Attempts+=1
-        -- This callback uses the existing source-native zero-duration clear.
-        -- No duplicate WalkingRig, limb/velocity/height/walk-speed writes.
-        if ctx.Recover then ctx.Recover(r) end
-    end
+ if not self.Enabled or self.Closed then return end
+ local ctx=self.Context;local c,r,h=ctx.Character()
+ local held=ctx.Held and ctx.Held()==true
+ local otherRig=ctx.WalkingGuard and ctx.WalkingGuard()==true
+ if not c or not r or not h or not r.Parent or h.Health<=0 or r.Anchored or h.SeatPart or held or otherRig or(ctx.Blocked and ctx.Blocked())then
+  self:Clear();self.WasTripped=true;self.Status=(held or otherRig)and'Paused for grab protection'or'Waiting for character';return
+ end
+ if self.Character~=c or self.Root~=r or self.Humanoid~=h then
+  self:Clear();self.Character=c;self.Root=r;self.Humanoid=h;self.NextScan=0
+  self.JumpOriginal=h:GetStateEnabled(Enum.HumanoidStateType.Jumping)
+  local rag=h:FindFirstChild('Ragdolled');self.BoundRagdoll=rag and rag.Value==true
+  self.SafeVelocity=r.AssemblyLinearVelocity
+ end
+ local now=ctx.Clock()
+ if now>=(self.NextScan or 0)then self.NextScan=now+.06;self:Scan(c,r,now)end
+ local rag=h:FindFirstChild('Ragdolled');local weld=r:FindFirstChild('WeldHRP');local state=h:GetState()
+ local frozen=weld and weld.Enabled==true
+ local tripped=(rag and rag.Value==true)or frozen or state==Enum.HumanoidStateType.Ragdoll
+  or state==Enum.HumanoidStateType.FallingDown or state==Enum.HumanoidStateType.Physics or state==Enum.HumanoidStateType.PlatformStanding or h.PlatformStand==true
+ if tripped then self.ExposedUntil=math.max(self.ExposedUntil or 0,now+.7)end
+ local exposed=tripped or now<(self.ExposedUntil or 0)
+ -- Recovery is driven by actual local ragdoll/freeze too, even if a projectile
+ -- was streamed out/destroyed before the next proximity query.
+ self.Rig:Step(c,r,h,true,tripped,now)
+ if tripped then
+  h:SetStateEnabled(Enum.HumanoidStateType.Jumping,true)
+  if ctx.UnblockJump then ctx.UnblockJump()end
+  if not self.Trip or not self.WasTripped then self.Trip={Next=now,Attempts=0,Until=now+1.2,Thaw=frozen}end
+ else self.Trip=nil end
+ self.WasTripped=tripped
+ local trip=self.Trip
+ if trip and now<=trip.Until and trip.Attempts<5 and now>=trip.Next then
+  local duration=trip.Thaw and trip.Attempts==0 and .5 or 0
+  trip.Attempts+=1;trip.Next=now+(duration>0 and .04 or .2)
+  if ctx.Recover then ctx.Recover(r,duration)end
+ end
+ if exposed then self:SuppressForces(c)else self:RestoreForces()end
+ self:AbsorbImpulse(r,h,exposed)
+ if not exposed then self.Status='Banana / Snowball / Rocket / Matter'end
 end
-
 function Guard:Dispose()
-    if self.Closed then return end
-    self:SetEnabled(false); self.Closed=true; self.Connection:Disconnect()
+ if self.Closed then return end
+ self:SetEnabled(false);self.Rig:Dispose();self.Closed=true
 end
 return Guard
 
@@ -93174,18 +93319,8 @@ local Defense={};Defense.__index=Defense
 local V=Vector3.new
 local function alive(v)return v and v.Parent~=nil end
 local function disconnect(list)for _,c in ipairs(list)do c:Disconnect()end end
-local function visibleArm(object,model)
- if not object:IsA('BasePart')then return false end
- local p=object
- while p and p~=model do
-  local name=p.Name:lower()
-  if name:find('arm',1,true)or name:find('hand',1,true)or name:find('detector',1,true)then return true end
-  p=p.Parent
- end
- return false
-end
 function Defense.Install(ctx)
- local self=setmetatable({Context=ctx,Aura=false,RemoveArms=false,Banana=false,Radius=55,Spin=2400,Duration=1.2,Cooldown=2,Generation=0,Records={},Hidden={},NextScan=0,Status='Disabled'},Defense)
+ local self=setmetatable({Context=ctx,Aura=false,Banana=false,Radius=55,Spin=2400,Duration=1.2,Cooldown=2,Generation=0,Records={},NextScan=0,Status='Disabled'},Defense)
  self.Connection=ctx.RunService.PreSimulation:Connect(function()
   if self.Closed then return end
   local ok,why=pcall(self.Step,self)
@@ -93195,12 +93330,11 @@ function Defense.Install(ctx)
 end
 function Defense:ActivePeel()return self.Aura or self.Banana end
 function Defense:SetMode(mode,value)
- if mode~='Aura'and mode~='RemoveArms'and mode~='Banana'then return end
+ if mode~='Aura'and mode~='Banana'then return end
  self[mode]=value==true and not self.Closed;self.NextScan=0
- if mode=='RemoveArms'and not self.RemoveArms then self:RestoreArms()end
  if mode=='Banana'and not self.Banana and self.Session and self.Session.Purpose=='Banana'then self:StopSpin()end
  if not self:ActivePeel()then self.Generation+=1;self:StopSpin();self:ForgetBanana()end
- self.Status=(self:ActivePeel()or self.RemoveArms)and'Waiting for a nearby Blobman rider'or'Disabled'
+ self.Status=self:ActivePeel()and'Waiting for a nearby Blobman rider'or'Disabled'
 end
 function Defense:Nearby(record)
  local c,r,h=self.Context.Character();local seat=record.Seat
@@ -93233,28 +93367,7 @@ function Defense:RefreshModels()
    end
   end
  end end
- for model,record in pairs(self.Records)do if not found[model]then disconnect(record.Connections);self.Records[model]=nil;self:RestoreArms(model)end end
-end
-function Defense:HideArms(record)
- if not self.RemoveArms or not self:Nearby(record)then self:RestoreArms(record.Model);return end
- local rider=record.Seat.Occupant
- local player=rider and self.Context.PlayerForCharacter(rider.Parent)
- if player and self.Context.Protected(player)then self:RestoreArms(record.Model);return end
- -- Keep native detectors/welds parented: unparenting them broke the live grab
- -- observer. Hide only geometry, preserving instance identity and replication.
- for _,part in ipairs(record.Model:GetDescendants())do if visibleArm(part,record.Model)then
-  if not self.Hidden[part]then self.Hidden[part]={Model=record.Model,Parent=part.Parent,Transparency=part.LocalTransparencyModifier,Collide=part.CanCollide}end
-  part.LocalTransparencyModifier=1;part.CanCollide=false
- end end
-end
-function Defense:RestoreArms(model)
- for part,saved in pairs(self.Hidden)do if not model or model==saved.Model then
-  if alive(part)then
-   if part.LocalTransparencyModifier==1 then part.LocalTransparencyModifier=saved.Transparency or 0 end
-   if not part.CanCollide then part.CanCollide=saved.Collide end
-  end
-  self.Hidden[part]=nil
- end end
+ for model,record in pairs(self.Records)do if not found[model]then disconnect(record.Connections);self.Records[model]=nil end end
 end
 function Defense:DestroyPeel(model)
  if not model then return end
@@ -93404,7 +93517,7 @@ function Defense:Act(record)
  self:StartSpin(record,player,h,self.Banana and'Banana'or'Aura')
 end
 function Defense:Step()
- if not self.Aura and not self.RemoveArms and not self.Banana then
+ if not self.Aura and not self.Banana then
   for model,record in pairs(self.Records)do disconnect(record.Connections);self.Records[model]=nil end
   return
  end
@@ -93413,7 +93526,7 @@ function Defense:Step()
   local c=self.Context.Character()
   if c~=self.PendingCharacter then self:ForgetBanana();self.PendingCharacter=nil end
  end
- if now>=self.NextScan then self.NextScan=now+.25;self:RefreshModels();for _,record in pairs(self.Records)do self:HideArms(record)end end
+ if now>=self.NextScan then self.NextScan=now+.25;self:RefreshModels() end
  if self.Prepared then
   local b=self.Prepared;local c,r,h=self.Context.Character()
   if c~=b.Character or r~=b.Avatar or h~=b.Humanoid or h.Health<=0 or not alive(b.Root)then self:StopSpin();self:ForgetBanana()end
@@ -93423,8 +93536,8 @@ function Defense:Step()
 end
 function Defense:Dispose()
  if self.Closed then return end
- self.Closed=true;self.Generation+=1;self.Aura=false;self.Banana=false;self.RemoveArms=false
- self.Connection:Disconnect();self:StopSpin();self:ForgetBanana();self:RestoreArms()
+ self.Closed=true;self.Generation+=1;self.Aura=false;self.Banana=false
+ self.Connection:Disconnect();self:StopSpin();self:ForgetBanana()
  for _,r in pairs(self.Records)do disconnect(r.Connections)end
  table.clear(self.Records)
 end

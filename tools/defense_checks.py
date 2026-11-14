@@ -4,7 +4,7 @@ import subprocess
 
 def run_defense_checks(modules, runner, folder):
     support=Path(__file__).resolve().parent/'feature_tests'
-    for scenario in ('blobman_defense479','anti_explore479','blobman_kick479'):
+    for scenario in ('blobman_defense479','anti_explore480','blobman_kick479'):
         program=(support/'defense477_prefix.luau').read_text()
         for name in ('WalkingRig','BlobmanCadence','AntiExplore','BlobmanDefense','BlobmanKick','BlobmanAura'):
             program+='\nmodules.'+name+'=(function(...)\n'+modules[name]+'\nend)(requireModule)\n'

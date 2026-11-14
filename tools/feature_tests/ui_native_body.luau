@@ -191,12 +191,12 @@ local choices=group:AddDropdown("ReadabilityChoices",{Text="Gucci Type",Values={
 local previousParent=choices.Holder.Parent
 local config=Library:AttachSettings(action,{choices})
 config.Gear.Activated:Fire()
-check(config.Frame.Visible and config.Frame.Active and config.Frame.BackgroundTransparency<=.08,"Settings still blend with the window or click through")
-check(config.Frame.BackgroundColor3==Library.Scheme.BackgroundColor,"Popup introduced another palette")
+check(config.Frame.Visible and config.Frame.Active and config.Frame.BackgroundTransparency==0,"Settings still blend with the window or click through")
+check(config.Frame.BackgroundColor3==Library.Scheme.WhiteColor and config.Frame:FindFirstChild("AstralPopupGradient")~=nil,"Popup introduced another palette")
 check(window.MainFrame.BackgroundTransparency==.55,"Popup styling changed the main glass window")
 check(Library.Scheme.HeaderTransparency==.45 and Library.Scheme.RowTransparency==.92,"Popup styling changed the watermark or normal rows")
 choices.Menu:Open()
-check(choices.Menu.Active and choices.Menu.Menu.Active and choices.Menu.Menu.BackgroundTransparency<=.08,"Dropdown menu still blends with settings")
+check(choices.Menu.Active and choices.Menu.Menu.Active and choices.Menu.Menu.BackgroundTransparency==0,"Dropdown menu still blends with settings")
 local marks=0;local names={}
 for _,row in ipairs(choices.Menu.Menu:GetChildren())do
  if row.Name=="DropdownOption"and row.Visible then
@@ -233,10 +233,44 @@ check(line.ButtonHolder.BackgroundTransparency==1 and hole.ButtonHolder.Backgrou
 
 local floating=Instance.new("Frame",Library.Floats)
 Library:StyleFloatingPanel(floating)
-check(floating.BackgroundTransparency<=.08 and floating.BackgroundColor3==Library.Scheme.BackgroundColor,"Teleport/floating controls remain unreadably transparent")
+check(floating.BackgroundTransparency<=.08 and floating.BackgroundColor3==Library.Scheme.WhiteColor and floating:FindFirstChild("AstralPopupGradient")~=nil,"Teleport/floating controls remain unreadably transparent")
 floating:Destroy()
 print('PASS: settings, dropdown selection/lifecycle, Game Tweaks consistency and resize visibility')
 
+if BuildHomeProfile then
+ local home=window:AddTab("Main layout test","house")
+ Library:BeginStartup()
+ local profile=BuildHomeProfile({Home=home},{DisplayName="TestPlayer",UserId=123},{GetUserThumbnailAsync=function()return "rbxassetid://123456"end})
+ Library:FinishStartup()
+ local image=Library.Options.AstralHomeAvatar
+ check(image and image.Type=="Image" and image.Height==150 and image.Holder.Parent==profile.Container,"Main avatar missing or outside profile")
+ check(profile.BoxHolder.LayoutOrder==-20,"Profile is not first in Main")
+ local character=window:AddTab("Character layout test","user")
+ Library:BeginStartup();BuildCharacterLayout({Player=character});Library:FinishStartup()
+ local movement=character.Groupboxes.Movement;local utility=character.Groupboxes.Character
+ check(movement and utility and utility.BoxHolder.LayoutOrder==-20,"Character sections not balanced")
+ check(not character.Groupboxes.Values.Visible and not character.Groupboxes.Values.BoxHolder.Visible,"Old standalone values section still occupies space")
+ for toggle,id in pairs({FlyT="FlightSpeedS",WalkspeedT="WalkspeedS",JumpPowerT="JumpPowerS",SpinT="SpinS",AstralWallClimb="AstralClimbSpeed",AstralSlideTP="AstralSlideTPDuration"})do
+  local owner=Library.Toggles[toggle];local setting=Library.Options[id]
+  check(owner.SettingsPanel and setting.Holder.Parent==owner.SettingsPanel.Body,"Movement setting is not attached to its feature: "..toggle)
+ end
+ check(Library.Toggles.AstralAntiAFK.Holder.Parent==utility.Container and Library.Toggles.FlyT.Holder.Parent==movement.Container,"Movement and utility rows mixed together")
+ local popup=Library.Toggles.FlyT.SettingsPanel
+ popup.Gear.Activated:Fire()
+ local grad=popup.Frame:FindFirstChild("AstralPopupGradient")
+ check(popup.Frame.BackgroundTransparency==0 and popup.Frame.BackgroundColor3==Library.Scheme.WhiteColor,"Settings do not cover controls behind them")
+ check(grad and grad.Color.Keypoints[1].Value:ToHex()==Library.Scheme.BodyTopColor:ToHex()and grad.Color.Keypoints[2].Value:ToHex()==Library.Scheme.BodyBottomColor:ToHex(),"Settings use a different palette from main GUI")
+ popup.Frame.Visible=false
+end
+if BuildMergedCharacterGroups then
+ local tab=window:AddTab("Merged Character layout","user")
+ local left=tab:AddLeftGroupbox("Left reference").BoxHolder.Parent;local right=tab:AddRightGroupbox("Right reference").BoxHolder.Parent
+ local groups=BuildMergedCharacterGroups(tab)
+ check(#groups==6,"Merged Character layout lost sections")
+ check(tab.Groupboxes["Movement Settings"].BoxHolder.Parent==left and tab.Groupboxes["Character Extras"].BoxHolder.Parent==left and tab.Groupboxes["Animation Presets"].BoxHolder.Parent==left,"Merged movement/appearance sections mixed into right column")
+ check(tab.Groupboxes.Teleport.BoxHolder.Parent==right and tab.Groupboxes["Players Extras"].BoxHolder.Parent==right and tab.Groupboxes["Coin Farm"].BoxHolder.Parent==right,"Merged player/action sections mixed into left column")
+ check(tab.Groupboxes["Movement Settings"].BoxHolder.LayoutOrder<tab.Groupboxes["Animation Presets"].BoxHolder.LayoutOrder,"Merged section order is unstable")
+end
 local signalsBefore=table.clone(Library.Signals)
 local actionListeners=table.clone(UIS.InputBegan.Connections)
 local releaseListeners=table.clone(UIS.InputEnded.Connections)

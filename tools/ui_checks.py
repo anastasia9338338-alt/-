@@ -104,6 +104,14 @@ end)
         s+='local function BuildExtraPCLDRow(v89)\n'+extra[a:b]+'\nend\n'
         a=extra.index('options.NewESP_PCLD_ChamsColor:OnChanged(function()');b=extra.index('\nend)',a)+len('\nend)')
         s+='local function BindExtraPCLDColor(options,onColor)\nlocal color2,color3\nlocal fn74=function()onColor(color2,color3)end\n'+extra[a:b]+'\nend\n'
+    if 'AstralHomeAvatar'in main:
+        a=main.index('local box=tbl15.Home:AddLeftGroupbox("Welcome"');b=main.index('\n        end\n\n        do',a)
+        s+='local function BuildHomeProfile(tbl15,localPlayer,Players)\nlocal flag11=false\n'+main[a:b]+'\nreturn box\nend\n'
+        a=main.index('local Values = tbl15.Player:AddLeftGroupbox');b=main.index('\n        do\n            local teleports=requireModule("TeleportMenu")',a)
+        s+='local function BuildCharacterLayout(tbl15)\nlocal lib,options,toggles=Library,Library.Options,Library.Toggles\nlocal tbl8,tbl9,tbl12={},{},{}\nlocal tbl7={RegisteredKeybinds={},KeybindNames={}}\nlocal flag11=false\ndo\n'+main[a:b]+'\nend\n'
+    if 'Character Extras'in modules.get('ExtraFeatures',''):
+        extra=modules['ExtraFeatures'];a=extra.index('function UI:_Group(');b=extra.index('\nfunction UI:AddLeftGroupbox',a)
+        s+='local function BuildMergedCharacterGroups(tab)\nlocal UI={}\nlocal function plain(value)return tostring(value):gsub("<[^>]*>","")end\n'+extra[a:b]+"\nlocal bridge={Groupboxes={},Wrap=function(_,object)return object end}\nlocal wrapper=setmetatable({_object=tab,_tabName='Player',_bridge=bridge},{__index=UI})\nfor _,name in ipairs({'Values','Teleporting','Character','Players','Coin Farm','Animations'})do wrapper:_Group('Left',name,'user')end\nreturn bridge.Groupboxes\nend\n"
     s+=startup_program(modules.get('Main'))
     return s+(support/'ui_native_body.luau').read_text()
 

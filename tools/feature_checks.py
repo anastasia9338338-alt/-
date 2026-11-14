@@ -48,6 +48,9 @@ def run_feature_checks(modules,runner,folder):
         tweaks=main[main.index('local v20 = tbl15.Visual:AddLeftTabbox("Game Tweaks")'):main.index('local Sky = tbl15.Visual:AddLeftGroupbox',main.index('local v20 = tbl15.Visual:AddLeftTabbox("Game Tweaks")'))]
         assert tweaks.count('v20:AddTab(')==2 and 'volume-2'not in tweaks and '"crosshair"'not in tweaks
         assert 'boolValue.Name = "RootAttachment"'not in main
+        assert 'BlobmanRemoveArms'not in main and 'Remove Blobman Arms'not in main
+        assert 'tbl12.PCLDAvatars:Has(arg)'in main and main.count('tbl12.PCLDAvatars:Render()')>=2
+        assert 'tbl15.Player:AddLeftGroupbox("Camera", "camera")'in main
         assert 'Enabled=function()return not flag11 and not tbl8.GucciAntiGrab and tbl8.AntiGrab end'in main
         for token in ('JumpRequest=UserInputService.JumpRequest','tbl12.BlobmanRide:Dismount()','tbl12.PCLDAvatars:SetMode(value)','CatalogRoots=function()','Vector3.new(0,-20,0)'):
             assert token in main,('missing native integration',token)
