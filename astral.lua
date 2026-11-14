@@ -1,4 +1,4 @@
--- Astral v4.83 | Scoped native toy inventory layout, portable PNG/JPEG frame rendering and clipped Keybinds HUD.
+-- Astral v4.84 | Reference-measured native inventory skin; 1:1 nonphysical avatar PCLD with native detector motion.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -20897,7 +20897,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.83 | FTAP")
+                                warn("Astral v4.84 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -27272,7 +27272,7 @@ end
 								end
 
 								tbl12.UpdatePCLDESP(arg)
-                                if tbl12.PCLDAvatars then tbl12.PCLDAvatars:Render()end
+                                if tbl12.PCLDAvatars and (v23 or not tbl8.SmoothPCLD)then tbl12.PCLDAvatars:Render(arg)end
 							end)
 
 							tbl18.Connections[2] = arg.AncestryChanged:Connect(function(child, parent2)
@@ -27305,6 +27305,7 @@ end
 
 							table.clear(tbl17)
 							tbl12.SetSmoothPCLDConnection()
+                            if tbl12.PCLDAvatars then tbl12.PCLDAvatars:Render()end
 						end
 
 						fn24 = function(arg, arg2)
@@ -37863,7 +37864,7 @@ Escape Timer: %*]]
             lib:OnUnload(function()tbl12.GUIStyle:Dispose()end)
             local playerUI=localPlayer:FindFirstChild("PlayerGui")
             if playerUI then
-                tbl12.GameShopStyle=requireModule("GameShopStyle").Install({Library=lib,Tab=tbl15.GUI,PlayerGui=playerUI,Defer=task.defer,Workspace=workspace})
+                tbl12.GameShopStyle=requireModule("GameShopStyle").Install({Library=lib,Tab=tbl15.GUI,PlayerGui=playerUI,Defer=task.defer,Workspace=workspace,RunService=RunService})
                 lib:OnUnload(function()tbl12.GameShopStyle:Dispose()end)
             end
         end
@@ -37889,7 +37890,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.83",true)
+            box:AddLabel("Astral v4.84",true)
         end
 
         do
@@ -41063,7 +41064,7 @@ Escape Timer: %*]]
 
 	do
 		local espConfig = tbl7.ESPConfig
-        tbl12.PCLDAvatars=requireModule("PCLDAvatarESP").Install({Workspace=workspace,RunService=RunService,Players=Players,Player=localPlayer,
+        tbl12.PCLDAvatars=requireModule("PCLDAvatarESP").Install({Workspace=workspace,RunService=RunService,Players=Players,Player=localPlayer,ExternalRender=true,
             Enabled=function()return not flag11 and tbl8.PCLDESP end,
             Character=function(player)return tbl12.Char(player)end,
             Detector=tbl12.DetectPCLD,Waiting=tbl12.IsWaitingPCLD,
@@ -43997,8 +43998,8 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 end
 ]========]
 sources.PCLDAvatarESP = [========[
--- Cosmetic, anchored avatar silhouettes on the same frame as native box PCLD.
--- The visual uses the rig's rest joints, never live ragdoll/desync limb offsets.
+-- A visual-only avatar at the exact native Box PCLD frame. Source body sizes
+-- are copied 1:1; Humanoid simulation and every contact/query are disabled.
 local Avatars={};Avatars.__index=Avatars
 local V=Vector3.new
 local bodyNames={Head=true,Torso=true,UpperTorso=true,LowerTorso=true,['Left Arm']=true,['Right Arm']=true,['Left Leg']=true,['Right Leg']=true,
@@ -44020,7 +44021,17 @@ end
 local function destructive(v)
  return v:IsA('LuaSourceContainer')or v:IsA('RemoteEvent')or v:IsA('RemoteFunction')or v:IsA('BindableEvent')or v:IsA('BindableFunction')
   or v:IsA('Tool')or v:IsA('JointInstance')or v:IsA('Constraint')or v:IsA('BodyMover')or v:IsA('Animator')
-  or v:IsA('AnimationController')or v:IsA('IKControl')or v:IsA('Sound')or v:IsA('BillboardGui')or v:IsA('SurfaceGui')or v:IsA('Highlight')
+  or v:IsA('AnimationController')or v:IsA('ControllerManager')or v:IsA('ControllerBase')or v:IsA('SensorBase')or v:IsA('ProximityPrompt')or v:IsA('ClickDetector')or v:IsA('IKControl')or v:IsA('Sound')or v:IsA('BillboardGui')or v:IsA('SurfaceGui')or v:IsA('Highlight')
+end
+local function skeletonRoot(character,humanoid,fallback)
+ -- Desync helpers may replace Humanoid.RootPart. The actual root joint still
+ -- identifies the body skeleton; its rest transforms do not use helper CFrames.
+ for _,j in ipairs(character:GetDescendants())do
+  if j:IsA('Motor6D')and j.Part0 and j.Part1 and j.Part0.Parent==character and j.Part1.Parent==character
+   and(j.Part1.Name=='Torso'or j.Part1.Name=='LowerTorso')and not bodyNames[j.Part0.Name]then return j.Part0 end
+ end
+ local root=humanoid and humanoid.RootPart or character:FindFirstChild('HumanoidRootPart')or fallback
+ return root and root:IsDescendantOf(character)and root or fallback
 end
 local function restFrames(character,root)
  local frames={[root]=CFrame.new()};local joints={}
@@ -44077,8 +44088,7 @@ function Avatars:Build(player,character,root,detector)
  local result
  local prepared,prepareWhy=pcall(function()
   local humanoid=character:FindFirstChildOfClass('Humanoid')
-  local rigRoot=humanoid and humanoid.RootPart or character:FindFirstChild('HumanoidRootPart')or root
-  if not rigRoot:IsDescendantOf(character)then rigRoot=root end
+  local rigRoot=skeletonRoot(character,humanoid,root)
   local frames=restFrames(character,rigRoot);local pairsOfParts={};local allowed={}
   local function pair(source,copy)
    local grouped={}
@@ -44097,12 +44107,18 @@ function Avatars:Build(player,character,root,detector)
    elseif v:IsA('BasePart')then
     if not allowed[v]then v:Destroy()
     else
-     v.Anchored=true;v.CanCollide=false;v.CanTouch=false;v.CanQuery=false;v.CastShadow=false;v.LocalTransparencyModifier=0
+     v.Anchored=true;v.Massless=true;v.CanCollide=false;v.CanTouch=false;v.CanQuery=false;v.CastShadow=false;v.LocalTransparencyModifier=0
      if allowed[v]==rigRoot then v.Transparency=1 end
     end
    elseif v:IsA('Humanoid')then
+    -- EvaluateStateMachine=false preserves clothing rendering, without
+    -- humanoid forces, collision re-enabling, auto-scaling or locomotion.
+    local inert=pcall(function()v.EvaluateStateMachine=false end)
+    if not inert then v:Destroy()else
     v.RequiresNeck=false;v.BreakJointsOnDeath=false;v.AutomaticScalingEnabled=false
+    v.AutoRotate=false;v.PlatformStand=true;v.AutoJumpEnabled=false
     v.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None;v.HealthDisplayType=Enum.HumanoidHealthDisplayType.AlwaysOff
+    end
    elseif v:IsA('ParticleEmitter')or v:IsA('Trail')or v:IsA('Beam')then v.Enabled=false end
   end
   local lo=V(math.huge,math.huge,math.huge);local hi=V(-math.huge,-math.huge,-math.huge);local parts={}
@@ -44122,7 +44138,7 @@ function Avatars:Build(player,character,root,detector)
   model.Name='AstralPCLD/'..player.Name
   local highlight=Instance.new('Highlight');highlight.Name='PCLDColors';highlight.Adornee=model;highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;highlight.Parent=model
   local record={Player=player,Character=character,Root=root,Model=model,Parts=parts,Highlight=highlight,Connections={},Detector=detector,
-   BodyHeight=hi.Y-lo.Y,OriginalScale=model:GetScale()}
+   BodyHeight=hi.Y-lo.Y,Scale=1}
   local function dirty(v)
    if v:IsA('BasePart')or v:IsA('Accessory')or v:IsA('Shirt')or v:IsA('Pants')or v:IsA('BodyColors')then record.Dirty=true end
   end
@@ -44133,6 +44149,18 @@ function Avatars:Build(player,character,root,detector)
     record.Connections[#record.Connections+1]=p.Source:GetPropertyChangedSignal(property):Connect(function()record.Dirty=true end)
    end
   end
+  local function guard(instance,property,value)
+   record.Connections[#record.Connections+1]=instance:GetPropertyChangedSignal(property):Connect(function()
+    if instance.Parent and instance[property]~=value then instance[property]=value end
+   end)
+  end
+  for _,p in ipairs(parts)do
+   if p.Part:IsDescendantOf(model)then
+    for _,property in ipairs({'CanCollide','CanTouch','CanQuery'})do guard(p.Part,property,false)end
+    guard(p.Part,'Anchored',true);guard(p.Part,'Massless',true)
+   end
+  end
+  for _,v in ipairs(model:GetDescendants())do if v:IsA('Humanoid')then guard(v,'EvaluateStateMachine',false);guard(v,'AutomaticScalingEnabled',false)end end
   self.Records[player]=record;model.Parent=self.Container;result=record
  end)
  if not prepared or not result then model:Destroy();self.LastError=not prepared and tostring(prepareWhy)or self.LastError end
@@ -44156,28 +44184,27 @@ function Avatars:Refresh()
  end
  local remove={};for player in pairs(self.Records)do if not keep[player]then remove[#remove+1]=player end end
  for _,player in ipairs(remove)do self:Remove(player)end
- if next(self.Records)and not self.RenderConnection then
+ if next(self.Records)and not self.Context.ExternalRender and not self.RenderConnection then
   self.RenderConnection=self.Context.RunService.RenderStepped:Connect(function()self:Render()end)
  end
  self:Render();self.Status='Avatar PCLD: '..tostring(count)
 end
-function Avatars:Render()
+function Avatars:Render(detector)
  if not self:Active()then self:Clear();return end
  local conf=self.Context.Config()
- for player,r in pairs(self.Records)do
+ for player,r in pairs(self.Records)do if not detector or detector==r.Detector then
   local character,root,h=self.Context.Character(player)
   if character~=r.Character or root~=r.Root or not h or h.Health<=0 or not alive(r.Detector)or self.Context.Waiting(r.Detector)then self:Remove(player)
   else
-   local frame=self.Context.Frame(r.Detector);local height=r.Detector.Size.Y
-   if frame and finite(frame.Position)and height==height and height>.1 and height<1000 then
-    local scale=math.clamp(height/r.BodyHeight,.02,20)
-    if r.Scale~=scale then r.Model:ScaleTo(r.OriginalScale*scale);r.Scale=scale end
-    for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then p.Part.CFrame=frame*CFrame.new(p.Offset.Position*scale)*p.Offset.Rotation end end
+   local frame=self.Context.Frame(r.Detector)
+   if frame and finite(frame.Position)then
+    -- No fit-to-box scale and no second interpolation/prediction pass.
+    for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then p.Part.CFrame=frame*p.Offset end end
     r.Highlight.FillColor=conf.FillColor;r.Highlight.OutlineColor=conf.OutlineColor
     r.Highlight.FillTransparency=conf.FillTransparency;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
    else r.Highlight.Enabled=false end
   end
- end
+ end end
 end
 function Avatars:Dispose()
  if self.Closed then return end;self.Closed=true;self:Clear();self.Connection:Disconnect();self.Container:Destroy()
@@ -44754,231 +44781,395 @@ return Style
 
 ]========]
 sources.GameShopStyle = [========[
--- Layout the game's existing inventory. Do not style Settings, its HSV controls,
--- purchase dialogs, HUD or unrelated pages. Every native button keeps its path.
+-- The real game controls keep their paths and native callbacks. Decorations are
+-- siblings of Menu, never extra children of the game's Contents item collection.
+local requireModule=...
+local Layout=requireModule('ShopLayout')
 local Shop={};Shop.__index=Shop
 local C=Color3.fromRGB
-local function isGui(v)return v and v:IsA('GuiObject')end
+local function fold(text)
+ local result={}
+ for _,code in utf8.codes(tostring(text):lower())do
+  if code>=0x410 and code<=0x42F then code+=32 elseif code==0x401 then code=0x451 end
+  result[#result+1]=utf8.char(code)
+ end
+ return table.concat(result)
+end
+local function gui(v)return v and v:IsA('GuiObject')end
+local function under(v,parent)return v==parent or v and v:IsDescendantOf(parent)end
+local function children(v)return v and v:GetChildren()or{}end
 local function descendants(v)return v and v:GetDescendants()or{}end
-local function named(v,names)
- for _,name in ipairs(names)do local found=v:FindFirstChild(name);if found then return found end end
+local function find(v,names)
+ for _,name in ipairs(names)do local x=v:FindFirstChild(name);if x then return x end end
  return nil
 end
-local function corner(node)return node:FindFirstChildOfClass('UICorner')end
-function Shop.Install(ctx)
- local self=setmetatable({Context=ctx,Records={},Created={},Connections={},MenuConnections={},Pages={},Enabled=false},Shop)
- local box=ctx.Tab:AddRightGroupbox('Игровой магазин','shopping-bag')
- box:AddToggle('AstralGUIShopStyle',{Text='Компактный магазин',Default=true,Callback=function(v)self:SetEnabled(v)end})
- box:AddLabel('Сетка игрушек, верхние категории и боковые иконки — как на образце.',true)
- self.Status=box:AddLabel('Открой игровой магазин.',true)
- self.Connections[#self.Connections+1]=ctx.PlayerGui.DescendantAdded:Connect(function(v)
-  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu'or v.Name=='TabContents')then self:Queue()end
- end)
- if ctx.Library.ScreenGui then
-  self.Connections[#self.Connections+1]=ctx.Library.ScreenGui:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()self:Queue()end)
+local function live(v)return v and v.Parent end
+local function parentGui(v)
+ local p=v and v.Parent
+ while p and not gui(p)do p=p.Parent end
+ return p
+end
+local function visible(v,stop)
+ while v do
+  if gui(v)and not v.Visible then return false end
+  if v==stop then return true end;v=v.Parent
  end
+ return false
+end
+function Shop.Install(ctx)
+ local self=setmetatable({Context=ctx,Records={},Connections={},Bound={},Watches={},Pages={},Created={},Enabled=false},Shop)
+ local box=ctx.Tab:AddRightGroupbox('Игровой магазин','shopping-bag')
+ box:AddToggle('AstralGUIShopStyle',{Text='Магазин по референсу',Default=true,Callback=function(v)self:SetEnabled(v)end})
+ self.Status=box:AddLabel('Открой Your Toys в игровом меню.',true)
+ self.Connections[#self.Connections+1]=ctx.PlayerGui.DescendantAdded:Connect(function(v)
+  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu'or v.Name=='TabContents'or self.Menu and under(v,self.Menu))then self:Queue()end
+ end)
+ if ctx.Library.ScreenGui then self.Connections[#self.Connections+1]=ctx.Library.ScreenGui:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()self:Queue()end)end
  return self
 end
 function Shop:Queue()
- if self.Closed or self.Queued then return end;self.Queued=true
+ if self.Closed or not self.Enabled or self.Queued then return end;self.Queued=true
  self.Context.Defer(function()self.Queued=false;if not self.Closed and self.Enabled then self:Find()end end)
 end
-function Shop:Write(node,key,value,scope)
- local r=self.Records[node]
- if not r then r={Properties={},Scope=scope or'page'};self.Records[node]=r end
- local property=r.Properties[key]
- if not property then property={Original=node[key]};r.Properties[key]=property end
- node[key]=value;property.Forced=value
+function Shop:Watch(node,property)
+ local map=self.Watches[node];if not map then map={};self.Watches[node]=map end
+ if map[property]then return end
+ map[property]=node:GetPropertyChangedSignal(property):Connect(function()
+  if self.Closed or self.Applying or not self.Enabled then return end
+  self:Queue()
+ end)
 end
-function Shop:Round(node,radius,scope)
- local c=corner(node)
- if c then self:Write(c,'CornerRadius',UDim.new(0,radius),scope)
- else
-  c=Instance.new('UICorner');c.Name='AstralShopCorner';c.CornerRadius=UDim.new(0,radius);c.Parent=node
-  self.Created[#self.Created+1]={Node=c,Scope=scope or'page'}
- end
+function Shop:Write(node,key,value,scope,maintain)
+ local r=self.Records[node]
+ if not r then r={Scope=scope or'page',Properties={}};self.Records[node]=r end
+ local p=r.Properties[key];if not p then p={Original=node[key]};r.Properties[key]=p end
+ if node[key]~=value then node[key]=value end;p.Forced=value
+ if maintain then self:Watch(node,key)end
 end
 function Shop:Restore(scope)
  for node,r in pairs(self.Records)do if not scope or r.Scope==scope then
-  if node.Parent then for key,value in pairs(r.Properties)do if node[key]==value.Forced then node[key]=value.Original end end end
+  if node.Parent then for key,p in pairs(r.Properties)do if node[key]==p.Forced then node[key]=p.Original end end end
   self.Records[node]=nil
  end end
- for i=#self.Created,1,-1 do local r=self.Created[i];if not scope or r.Scope==scope then r.Node:Destroy();table.remove(self.Created,i)end end
 end
-function Shop:Detach()
- for _,c in ipairs(self.MenuConnections)do c:Disconnect()end;self.MenuConnections={}
- for _,page in ipairs(self.Pages)do if page.Connection then page.Connection:Disconnect()end end
- self:Restore();self.Pages={};self.Menu=nil;self.Contents=nil;self.Sidebar=nil
+function Shop:Rect(node,r,scope)
+ if not gui(node)then return end
+ self:Write(node,'AnchorPoint',Vector2.zero,scope,true)
+ self:Write(node,'AutomaticSize',Enum.AutomaticSize.None,scope,true)
+ local parent=parentGui(node);local automatic=parent and(parent:FindFirstChildOfClass('UIListLayout')or parent:FindFirstChildOfClass('UIGridLayout'))
+ self:Write(node,'Position',UDim2.fromOffset(r.X,r.Y),scope,not automatic)
+ self:Write(node,'Size',UDim2.fromOffset(r.W,r.H),scope,true)
+ local aspect=node:FindFirstChildOfClass('UIAspectRatioConstraint')
+ if aspect then self:Write(aspect,'AspectRatio',r.W/math.max(r.H,.001),scope,true)end
+ local limit=node:FindFirstChildOfClass('UISizeConstraint')
+ if limit then self:Write(limit,'MinSize',Vector2.zero,scope,true);self:Write(limit,'MaxSize',Vector2.new(1e6,1e6),scope,true)end
+end
+function Shop:Text(node,size,scope)
+ self:Write(node,'TextScaled',false,scope,true);self:Write(node,'TextWrapped',false,scope,true)
+ self:Write(node,'FontFace',Font.fromEnum(Enum.Font.GothamBold),scope)
+ self:Write(node,'TextSize',size,scope,true);self:Write(node,'TextColor3',C(247,247,247),scope)
+ self:Write(node,'TextXAlignment',Enum.TextXAlignment.Left,scope)
+end
+function Shop:Normalize(node,scope)
+ -- Folders are valid game containers, but do not expose GuiObject properties.
+ -- All GUI ancestors are made a full-window coordinate space during this page.
+ local p=node and node.Parent
+ while p and p~=self.Menu.Parent do
+  if gui(p)and p~=self.Menu then
+   self:Rect(p,{X=0,Y=0,W=self.Plan.Width,H=self.Plan.Height},scope)
+   self:Write(p,'BackgroundTransparency',1,scope,true);self:Write(p,'ClipsDescendants',false,scope)
+   local stroke=p:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,scope)end
+  end
+  for _,scale in ipairs(children(p))do if scale:IsA('UIScale')then self:Write(scale,'Scale',1,scope,true)end end
+  if p==self.Menu then break end;p=p.Parent
+ end
+end
+function Shop:Surface()
+ if live(self.Layer)then return end
+ local parent=self.Menu.Parent
+ while parent and not parent:IsA('ScreenGui')do parent=parent.Parent end
+ parent=parent or self.Menu.Parent
+ local layer=Instance.new('Frame');layer.Name='AstralGameShopSkin';layer.BackgroundTransparency=1;layer.BorderSizePixel=0;layer.Active=false;layer.Visible=false;layer.Parent=parent
+ self.Layer=layer;self.Panels={};self.IconCopies={};self.IconMeta={};self.TextCopies={}
+ for _,name in ipairs({'Sidebar','Title','Categories','Favorite','Body','Limit'})do
+  local panel=Instance.new('Frame');panel.Name=name;panel.BorderSizePixel=0;panel.Active=false;panel.BackgroundColor3=C(51,53,55);panel.BackgroundTransparency=name=='Body'and .4 or .24;panel.Parent=layer
+  local corner=Instance.new('UICorner');corner.Parent=panel;self.Panels[name]={Node=panel,Corner=corner}
+ end
+end
+function Shop:Draw()
+ self:Surface()
+ local ok,origin=pcall(function()return self.Layer.Parent.AbsolutePosition end)
+ if not ok or not origin then origin=Vector2.zero end
+ local position=self.Menu.AbsolutePosition
+ self.Layer.Position=UDim2.fromOffset(position.X-origin.X,position.Y-origin.Y)
+ self.Layer.Size=UDim2.fromOffset(self.Plan.Width,self.Plan.Height);self.Layer.ZIndex=self.Menu.ZIndex-1;self.Layer.Visible=true
+ for name,panel in pairs(self.Panels)do
+  local r=self.Plan[name];panel.Node.Position=UDim2.fromOffset(r.X,r.Y);panel.Node.Size=UDim2.fromOffset(r.W,r.H)
+  panel.Corner.CornerRadius=UDim.new(0,r.Radius);panel.Node.ZIndex=self.Menu.ZIndex-1
+  panel.Node.Visible=name~='Favorite'or self.HasFavorite
+ end
 end
 function Shop:Bind(menu,contents)
  self:Detach();self.Menu=menu;self.Contents=contents
- self.Sidebar=named(menu,{'Tabs','TabButtons','Navigation','Sidebar'})
- if not isGui(self.Sidebar)then
-  for _,child in ipairs(menu:GetChildren())do if child~=contents and(child:IsA('Frame')or child:IsA('ScrollingFrame'))then
-   local count=0;for _,v in ipairs(child:GetDescendants())do if v:IsA('ImageButton')then count+=1 end end
-   if count>=4 and count<=12 then self.Sidebar=child;break end
-  end end
- end
- self.MenuConnections[#self.MenuConnections+1]=menu.DescendantAdded:Connect(function(v)
-  if v.Name~='AstralShopCorner'then self:Queue()end
+ self.Bound[#self.Bound+1]=menu.DescendantAdded:Connect(function()self:Queue()end)
+ self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
+ self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()if self.Active and self.Plan and live(self.Layer)then self:Draw()end end)
+ self.Bound[#self.Bound+1]=menu.Destroying:Connect(function()
+  self.Active=false;if self.Layer then self.Layer:Destroy();self.Layer=nil end;self:Queue()
  end)
- self.MenuConnections[#self.MenuConnections+1]=menu:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
- self.MenuConnections[#self.MenuConnections+1]=contents:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
+ self:Watch(menu,'Size')
 end
 function Shop:Discover()
- local seen={};for _,record in ipairs(self.Pages)do seen[record.Node]=true end
- for _,page in ipairs(self.Contents:GetChildren())do
-  -- Actual game path: MenuGui.Menu.TabContents.Toys.Contents.
+ local seen={};for _,r in ipairs(self.Pages)do seen[r.Node]=true end
+ local list=children(self.Contents);for _,v in ipairs(descendants(self.Contents))do if v.Parent~=self.Contents then list[#list+1]=v end end
+ for _,page in ipairs(list)do
   local name=page.Name:lower()
-  if isGui(page)and(name=='toys'or name=='toyshop'or name=='shop'or name=='toystore')and not seen[page]then
-   local list=page:FindFirstChild('Contents',true)
-   if list and(list:IsA('ScrollingFrame')or list:IsA('Frame'))then
-    local record={Node=page,List=list};self.Pages[#self.Pages+1]=record
-    record.Connection=page:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
+  if(name=='toys'or name=='toyshop'or name=='toystore'or name=='shop')and not seen[page]then
+   local items=page:FindFirstChild('Contents',true)
+   if items then
+    local view=gui(items)and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)
+    if view then
+     self.Pages[#self.Pages+1]={Node=page,List=view,Items=items}
+     local p=view;while p and p~=self.Menu.Parent do if gui(p)then self:Watch(p,'Visible')end;if p==self.Menu then break end;p=p.Parent end
+    end
    end
   end
  end
 end
-function Shop:Window()
- local camera=self.Context.Workspace and self.Context.Workspace.CurrentCamera
- local viewport=camera and camera.ViewportSize or self.Context.Library.ScreenGui and self.Context.Library.ScreenGui.AbsoluteSize or Vector2.new(1024,768)
- local width=math.max(160,math.min(720,viewport.X-32,(viewport.Y-54)*720/530))
- local height=width*530/720
- local scale=self.Menu:FindFirstChildOfClass('UIScale');local dpi=math.max(.1,scale and scale.Scale or 1)
- self.Width=width/dpi;self.Height=height/dpi
- self:Write(self.Menu,'Size',UDim2.fromOffset(self.Width,self.Height),'shared')
- self:Write(self.Menu,'AnchorPoint',Vector2.new(.5,.5),'shared')
- self:Write(self.Menu,'Position',UDim2.fromScale(.5,.5),'shared')
- self:Write(self.Menu,'BackgroundTransparency',1,'shared')
- self:Write(self.Menu,'BorderSizePixel',0,'shared')
- local aspect=self.Menu:FindFirstChildOfClass('UIAspectRatioConstraint')
- if aspect then self:Write(aspect,'AspectRatio',720/530,'shared')end
- self:Write(self.Contents,'AnchorPoint',Vector2.zero,'shared');self:Write(self.Contents,'Position',UDim2.fromOffset(76,0),'shared')
- self:Write(self.Contents,'Size',UDim2.new(1,-76,1,0),'shared')
- self:Write(self.Contents,'BackgroundTransparency',1,'shared')
- if isGui(self.Sidebar)then
-  local top=self.Height>=360 and 80 or 38
-  self:Write(self.Sidebar,'AnchorPoint',Vector2.zero,'shared');self:Write(self.Sidebar,'Position',UDim2.fromOffset(0,top),'shared')
-  self:Write(self.Sidebar,'Size',UDim2.new(0,64,1,-top),'shared')
-  self:Write(self.Sidebar,'BackgroundColor3',C(54,56,59),'shared')
-  self:Write(self.Sidebar,'BackgroundTransparency',.3,'shared')
-  self:Write(self.Sidebar,'BorderSizePixel',0,'shared');self:Round(self.Sidebar,18,'shared')
-  if self.Sidebar:IsA('ScrollingFrame')then self:Write(self.Sidebar,'ScrollBarThickness',0,'shared')end
-  local buttons={};for _,v in ipairs(self.Sidebar:GetChildren())do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end
-  local layout=self.Sidebar:FindFirstChildOfClass('UIListLayout')
-  local rowHeight=math.min(58,(self.Height-top)/math.max(#buttons,1))
-  for index,v in ipairs(buttons)do
-   self:Write(v,'BackgroundTransparency',1,'shared');self:Write(v,'BorderSizePixel',0,'shared')
-   self:Write(v,'Size',UDim2.new(1,0,0,height))
-   if v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit,'shared')end
-   if not layout then self:Write(v,'AnchorPoint',Vector2.zero,'shared');self:Write(v,'Position',UDim2.fromOffset(0,(index-1)*rowHeight),'shared')end
+function Shop:Controls(record)
+ local title,categories,favorite,limit,sidebar
+ local buttons={}
+ for _,node in ipairs(descendants(self.Menu))do
+  if gui(node)and not under(node,record.Items)then
+   local inPage=under(node,record.Node)
+   local shared=not under(node,self.Contents)
+   local name=node.Name:lower()
+   if inPage or shared then
+    if node:IsA('TextLabel')then
+     local text=fold(node.Text)
+     if text:find('your toys',1,true)or text:find('ваши игруш',1,true)or name=='title'or name=='heading'then title=title or node
+     elseif text:find('лимит игруш',1,true)or text:find('toy limit',1,true)or name:find('toylimit',1,true)then limit=limit or node end
+    end
+    if(node:IsA('Frame')or node:IsA('ScrollingFrame')or node:IsA('Folder'))and(name:find('categor',1,true)or name=='filters')then categories=categories or node end
+    if node:IsA('ImageButton')or node:IsA('TextButton')then
+     if inPage and(name:find('favorite',1,true)or name:find('favourite',1,true)or name=='star'or name=='starbutton'or name=='stars')then favorite=favorite or node end
+    end
+   end
   end
  end
- local close=named(self.Menu,{'Close','CloseButton','Exit','X'})
- if isGui(close)then
-  self:Write(close,'AnchorPoint',Vector2.new(1,0),'shared');self:Write(close,'Position',UDim2.new(1,-2,0,-28),'shared')
-  self:Write(close,'Size',UDim2.fromOffset(24,24),'shared')
+ -- Locate category buttons from a named group, or from the horizontal strip.
+ if categories then for _,v in ipairs(descendants(categories))do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end end
+ if #buttons==0 then
+  local groups={}
+  for _,v in ipairs(descendants(record.Node))do if not under(v,record.Items)and(v:IsA('ImageButton')or v:IsA('TextButton'))and v~=favorite then
+   local p=v.Parent;groups[p]=groups[p]or{};groups[p][#groups[p]+1]=v
+  end end
+  for p,group in pairs(groups)do if #group>=4 and #group<=12 then categories=p;buttons=group;break end end
+ end
+ -- Sidebar may be a Folder, a Frame, or a set of direct native buttons.
+ local nav=find(self.Menu,{'Tabs','TabButtons','Navigation','Sidebar'})
+ if nav then for _,v in ipairs(descendants(nav))do if v:IsA('ImageButton')or v:IsA('TextButton')then sidebar=sidebar or{};sidebar[#sidebar+1]=v end end end
+ if not sidebar then
+  local groups={}
+  for _,v in ipairs(descendants(self.Menu))do if not under(v,self.Contents)and(v:IsA('ImageButton')or v:IsA('TextButton'))then
+   local p=v.Parent;groups[p]=groups[p]or{};groups[p][#groups[p]+1]=v
+  end end
+  for _,group in pairs(groups)do if #group>=4 and #group<=8 then sidebar=group;break end end
+ end
+ return{Title=title,Categories=categories,CategoryButtons=buttons,Favorite=favorite,Limit=limit,Sidebar=sidebar or{},Nav=nav}
+end
+function Shop:Icon(node,r,scope)
+ local visual=node
+ if node:IsA('ImageButton')and(node.Image==nil or node.Image=='')then visual=node:FindFirstChildWhichIsA('ImageLabel',true)or node end
+ if not(visual:IsA('ImageButton')or visual:IsA('ImageLabel'))or not visual.Image or visual.Image==''then return end
+ self:Surface()
+ local image=self.IconCopies[visual]
+ if not image then image=Instance.new('ImageLabel');image.Name='NativeShopIcon';image.BackgroundTransparency=1;image.BorderSizePixel=0;image.Active=false;image.Parent=self.Layer;self.IconCopies[visual]=image end
+ image.Position=UDim2.fromOffset(r.X,r.Y);image.Size=UDim2.fromOffset(r.W,r.H);image.Image=visual.Image
+ image.ImageRectOffset=visual.ImageRectOffset;image.ImageRectSize=visual.ImageRectSize;image.ScaleType=Enum.ScaleType.Fit
+ image.ImageColor3=C(245,245,245);image.ImageTransparency=0;image.ZIndex=self.Menu.ZIndex-1;image.Visible=true
+ self.IconMeta[visual]={Button=node,Desired=r}
+ self:Write(visual,'ImageTransparency',1,scope,true);self:Watch(visual,'Image');self:Watch(visual,'ImageRectOffset');self:Watch(visual,'ImageRectSize')
+end
+function Shop:RefreshIcons()
+ if not self.Active or not live(self.Layer)or not live(self.Menu)then return end
+ local origin=self.Menu.AbsolutePosition
+ for visual,image in pairs(self.IconCopies)do
+  local meta=self.IconMeta[visual]
+  image.Visible=meta~=nil and live(visual)~=nil and visible(visual,self.Menu)
+  if image.Visible then
+   local button=meta.Button;local pos=button.AbsolutePosition-origin;local size=button.AbsoluteSize;local desired=meta.Desired
+   local cx,cy=desired.X+desired.W*.5,desired.Y+desired.H*.5
+   -- Follow native automatic layouts when their true hit rectangle differs.
+   -- The displayed icon always stays inside the original clickable control.
+   if cx<pos.X or cx>pos.X+size.X or cy<pos.Y or cy>pos.Y+size.Y then
+    image.Position=UDim2.fromOffset(pos.X,pos.Y);image.Size=UDim2.fromOffset(size.X,size.Y)
+   else image.Position=UDim2.fromOffset(desired.X,desired.Y);image.Size=UDim2.fromOffset(desired.W,desired.H)end
+  end
  end
 end
-function Shop:Header(record)
- local page,list=record.Node,record.List;local categories,title,search
- for _,v in ipairs(descendants(page))do if not v:IsDescendantOf(list)and v~=list then
-  local name=v.Name:lower()
-  if(v:IsA('Frame')or v:IsA('ScrollingFrame'))and(name:find('categor',1,true)or name=='filters')then categories=categories or v end
-  if v:IsA('TextBox')then search=search or v end
-  if v:IsA('TextLabel')and(name:find('title',1,true)or name=='heading'or v.Text:lower():find('toys',1,true)or v.Text:lower():find('игруш',1,true))then title=title or v end
- end end
- local function normalizeParents(node)
-  local parent=node and node.Parent
-  while parent and parent~=page do
-   if isGui(parent)then
-    self:Write(parent,'AnchorPoint',Vector2.zero);self:Write(parent,'Position',UDim2.fromOffset(0,0));self:Write(parent,'Size',UDim2.new(1,0,0,34))
-    self:Write(parent,'BackgroundTransparency',1);self:Write(parent,'ClipsDescendants',false)
-   end
-   parent=parent.Parent
-  end
+function Shop:StartIcons()
+ if self.IconConnection or not self.Context.RunService then return end
+ self.IconConnection=self.Context.RunService.RenderStepped:Connect(function()self:RefreshIcons()end)
+end
+function Shop:Label(key,text,r,size,right)
+ self:Surface()
+ local label=self.TextCopies[key]
+ if not label then label=Instance.new('TextLabel');label.Name=key;label.BackgroundTransparency=1;label.BorderSizePixel=0;label.Active=false;label.Parent=self.Layer;self.TextCopies[key]=label end
+ label.Position=UDim2.fromOffset(r.X,r.Y);label.Size=UDim2.fromOffset(r.W,r.H)
+ label.Text=text;label.TextSize=size;label.TextScaled=false;label.TextWrapped=false;label.AutoLocalize=false
+ label.FontFace=Font.fromEnum(Enum.Font.GothamBold);label.TextColor3=C(248,248,248)
+ label.TextXAlignment=right and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left;label.ZIndex=self.Menu.ZIndex-1;label.Visible=true
+end
+function Shop:Button(node,r,scope)
+ self:Rect(node,r,scope);self:Write(node,'BackgroundTransparency',1,scope,true);self:Write(node,'BorderSizePixel',0,scope)
+ if node:IsA('ImageButton')then self:Write(node,'ScaleType',Enum.ScaleType.Fit,scope)end
+end
+function Shop:Group(nodes,container,rect,direction,scope,page)
+ if #nodes==0 then return end
+ local root=gui(container)and container or parentGui(nodes[1])
+ local dedicated=root and root~=self.Menu and root~=page and not under(self.Contents,root)
+ if dedicated then
+  self:Normalize(root,scope);self:Rect(root,rect,scope);self:Write(root,'BackgroundTransparency',1,scope,true);self:Write(root,'ClipsDescendants',false,scope)
+  local layout=root:FindFirstChildOfClass('UIListLayout')
+  if layout then self:Write(layout,'FillDirection',direction=='row'and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical,scope,true);self:Write(layout,'Padding',UDim.new(0,0),scope,true)end
+  local padding=root:FindFirstChildOfClass('UIPadding')
+  if padding then for _,key in ipairs({'PaddingTop','PaddingBottom','PaddingLeft','PaddingRight'})do self:Write(padding,key,UDim.new(0,0),scope,true)end end
  end
- normalizeParents(title);normalizeParents(search);normalizeParents(categories)
- if title then
-  self:Write(title,'TextColor3',C(245,245,245));self:Write(title,'FontFace',Font.fromEnum(Enum.Font.BuilderSansBold))
-  self:Write(title,'TextSize',18);self:Write(title,'TextXAlignment',Enum.TextXAlignment.Left)
-  if title.Parent then
-   self:Write(title,'AnchorPoint',Vector2.zero);self:Write(title,'Position',UDim2.fromOffset(10,0));self:Write(title,'Size',UDim2.new(search and .26 or .53,-14,0,34))
-  end
- end
- if search and search.Parent then
-  self:Write(search,'AnchorPoint',Vector2.zero);self:Write(search,'Position',UDim2.new(.28,0,0,4));self:Write(search,'Size',UDim2.new(.26,-4,0,26))
-  self:Write(search,'BackgroundTransparency',1);self:Write(search,'TextSize',12);self:Write(search,'TextColor3',C(230,230,230))
- end
- if categories and categories.Parent then
-  self:Write(categories,'AnchorPoint',Vector2.zero);self:Write(categories,'Position',UDim2.new(.56,3,0,0));self:Write(categories,'Size',UDim2.new(.44,-3,0,34))
-  self:Write(categories,'BackgroundColor3',C(54,56,59));self:Write(categories,'BackgroundTransparency',.18)
-  self:Write(categories,'BorderSizePixel',0);self:Round(categories,15)
-  if categories:IsA('ScrollingFrame')then self:Write(categories,'ScrollBarThickness',0)end
-  local buttons={};for _,v in ipairs(categories:GetChildren())do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end
-  local layout=categories:FindFirstChildOfClass('UIListLayout')
-  if layout then self:Write(layout,'FillDirection',Enum.FillDirection.Horizontal);self:Write(layout,'Padding',UDim.new(0,1))end
-  for index,v in ipairs(buttons)do
-   self:Write(v,'BackgroundTransparency',1);self:Write(v,'BorderSizePixel',0)
-   if v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit)end
-   self:Write(v,'Size',UDim2.new(1/math.max(#buttons,1),-1,1,0))
-   if not layout then self:Write(v,'AnchorPoint',Vector2.zero);self:Write(v,'Position',UDim2.fromScale((index-1)/math.max(#buttons,1),0))end
-  end
+ for i,node in ipairs(nodes)do
+  local w=direction=='row'and rect.W/#nodes or rect.W;local h=direction=='row'and rect.H or rect.H/#nodes
+  local x=direction=='row'and(i-1)*w or 0;local y=direction=='row'and 0 or(i-1)*h
+  local global={X=rect.X+x,Y=rect.Y+y,W=w,H=h}
+  if dedicated then
+   local slot=node
+   while slot.Parent and slot.Parent~=root do slot=slot.Parent end
+   if gui(slot)then self:Rect(slot,{X=x,Y=y,W=w,H=h},scope);self:Write(slot,'BackgroundTransparency',1,scope,true)end
+   if slot~=node then self:Button(node,{X=0,Y=0,W=w,H=h},scope)else self:Button(node,{X=x,Y=y,W=w,H=h},scope)end
+  else self:Normalize(node,scope);self:Button(node,global,scope)end
+  self:Icon(node,global,scope)
  end
 end
 function Shop:Page(record)
- local page,list=record.Node,record.List
- self:Write(page,'AnchorPoint',Vector2.zero);self:Write(page,'Position',UDim2.fromOffset(0,0));self:Write(page,'Size',UDim2.fromScale(1,1))
- self:Write(page,'BackgroundColor3',C(48,50,53));self:Write(page,'BackgroundTransparency',.28)
- self:Write(page,'BorderSizePixel',0);self:Write(page,'ClipsDescendants',true);self:Round(page,18)
- self:Write(list,'AnchorPoint',Vector2.zero);self:Write(list,'Position',UDim2.fromOffset(7,38));self:Write(list,'Size',UDim2.new(1,-14,1,-44))
- self:Write(list,'BackgroundTransparency',1);self:Write(list,'BorderSizePixel',0);self:Write(list,'ClipsDescendants',true)
- local available=math.max(20,self.Width-90);local columns=math.clamp(math.floor((available+4)/34),4,10)
- local cell=math.max(12,math.floor((available-(columns-1)*4)/columns))
- local grid=list:FindFirstChildOfClass('UIGridLayout')
+ local plan=self.Plan;local list=record.List;self:Surface()
+ for _,image in pairs(self.IconCopies)do image.Visible=false end
+ for _,label in pairs(self.TextCopies)do label.Visible=false end
+ self:Normalize(list,'shared');self:Rect(list,plan.Body)
+ self:Write(list,'BackgroundTransparency',1,nil,true);self:Write(list,'BorderSizePixel',0);self:Write(list,'ClipsDescendants',true)
+ if list:IsA('ScrollingFrame')then self:Write(list,'ScrollBarThickness',0);self:Write(list,'ScrollingDirection',Enum.ScrollingDirection.Y);self:Write(list,'AutomaticCanvasSize',Enum.AutomaticSize.Y)end
+ local grid=list:FindFirstChildOfClass('UIGridLayout')or record.Items:FindFirstChildOfClass('UIGridLayout')
  if grid then
-  self:Write(grid,'CellSize',UDim2.fromOffset(cell,cell));self:Write(grid,'CellPadding',UDim2.fromOffset(4,4))
-  self:Write(grid,'FillDirection',Enum.FillDirection.Horizontal);self:Write(grid,'FillDirectionMaxCells',columns)
+  self:Write(grid,'CellSize',UDim2.fromOffset(plan.Cell,plan.Cell),nil,true);self:Write(grid,'CellPadding',UDim2.fromOffset(plan.Gap,plan.Gap),nil,true)
+  self:Write(grid,'FillDirection',Enum.FillDirection.Horizontal,nil,true);self:Write(grid,'FillDirectionMaxCells',10,nil,true)
  end
- if list:IsA('ScrollingFrame')then
-  self:Write(list,'ScrollBarThickness',0);self:Write(list,'ScrollingDirection',Enum.ScrollingDirection.Y)
-  self:Write(list,'AutomaticCanvasSize',Enum.AutomaticSize.Y)
- end
- for _,v in ipairs(descendants(list))do
-  if isGui(v)then
-   self:Write(v,'BackgroundTransparency',1);self:Write(v,'BorderSizePixel',0)
-   if v:IsA('ImageLabel')or v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit)end
-   if v:IsA('TextLabel')then self:Write(v,'TextColor3',C(245,245,245));self:Write(v,'FontFace',Font.fromEnum(Enum.Font.BuilderSansBold))end
+ local padding=list:FindFirstChildOfClass('UIPadding')
+ if padding then for _,key in ipairs({'PaddingTop','PaddingBottom','PaddingLeft','PaddingRight'})do self:Write(padding,key,UDim.new(0,2*plan.Scale),nil,true)end end
+ for _,v in ipairs(descendants(record.Items))do if gui(v)then
+  self:Write(v,'BackgroundTransparency',1,nil,true);self:Write(v,'BorderSizePixel',0)
+  if v:IsA('ImageLabel')or v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit)end
+  if v.Parent==record.Items then
+   self:Write(v,'AutomaticSize',Enum.AutomaticSize.None,nil,true)
+   local bound=v:FindFirstChildOfClass('UISizeConstraint');if bound then self:Write(bound,'MinSize',Vector2.zero,nil,true);self:Write(bound,'MaxSize',Vector2.new(plan.Cell,plan.Cell),nil,true)end
   end
+  local name=v.Name:lower()
+  if v.Parent~=record.Items and(name:find('favorite',1,true)or name:find('favourite',1,true)or name=='star'or name=='starbutton')and(v:IsA('ImageButton')or v:IsA('TextButton'))then
+   self:Write(v,'Visible',true,nil,true);self:Write(v,'AnchorPoint',Vector2.new(1,1));self:Write(v,'Position',UDim2.new(1,-1,1,-1));self:Write(v,'Size',UDim2.fromOffset(11*plan.Scale,11*plan.Scale))
+  end
+ end end
+ local controls=self:Controls(record)
+ if controls.Title then
+  self:Normalize(controls.Title,'shared');self:Write(controls.Title,'TextTransparency',1,'shared',true);self:Write(controls.Title,'BackgroundTransparency',1,'shared',true)
  end
- self:Header(record)
+ self:Label('YourToysTitle',record.Node.Name:lower()=='toys'and'Your Toys'or'Toy Shop',plan.TitleText,plan.TitleSize)
+
+ self.HasFavorite=controls.Favorite~=nil
+ local categoryButtons={};for _,v in ipairs(controls.CategoryButtons)do if v~=controls.Favorite then categoryButtons[#categoryButtons+1]=v end end
+ self:Group(categoryButtons,controls.Categories,plan.Categories,'row',nil,record.Node)
+ if controls.Favorite then
+  local parent=parentGui(controls.Favorite)
+  local categoryRoot=gui(controls.Categories)and controls.Categories or parentGui(categoryButtons[1])
+  if parent==categoryRoot and parent and parent~=record.Node and parent~=self.Menu then
+   local gap=plan.Favorite.X-(plan.Categories.X+plan.Categories.W)
+   self:Write(parent,'Size',UDim2.fromOffset(plan.Categories.W+gap+plan.Favorite.W,plan.Categories.H),nil,true)
+   self:Button(controls.Favorite,{X=plan.Favorite.X-plan.Categories.X,Y=0,W=plan.Favorite.W+gap,H=plan.Favorite.H})
+  else self:Normalize(controls.Favorite);self:Button(controls.Favorite,plan.Favorite)end
+  self:Icon(controls.Favorite,plan.Favorite)
+ end
+ self:Group(controls.Sidebar,controls.Nav,plan.Sidebar,'column','shared',record.Node)
+ self:Label('ToyLimitLabel','Toy Limit',plan.LimitText,math.max(6,6*plan.Scale))
+ local count=''
+ if controls.Limit then
+  local caption=controls.Limit;local root=caption.Parent
+  while root and root~=record.Node and root~=self.Menu and not under(record.List,root)do
+   local parent=root.Parent
+   if not parent or parent==record.Node or parent==self.Menu or under(record.List,parent)then break end
+   root=parent
+  end
+  local dedicated=root and gui(root)and root~=record.Node and root~=self.Menu and not under(record.List,root)
+  if dedicated then
+   for _,v in ipairs(descendants(root))do if v:IsA('ImageButton')or v:IsA('TextButton')or v:IsA('TextBox')then dedicated=false;break end end
+  end
+  if dedicated then self:Normalize(root,'shared');self:Rect(root,plan.Limit,'shared')end
+  self:Write(caption,'TextTransparency',1,'shared',true);self:Write(caption,'BackgroundTransparency',1,'shared')
+  for _,v in ipairs(descendants(root or record.Node))do
+   if v~=caption and v:IsA('TextLabel')and v.Text:match('%d+%s*/%s*%d+')then
+    count=v.Text;self:Watch(v,'Text');self:Write(v,'TextTransparency',1,'shared',true)
+   end
+   if dedicated and gui(v)then
+    self:Write(v,'BackgroundTransparency',1,'shared')
+    if v:IsA('ImageLabel')then self:Write(v,'ImageTransparency',1,'shared')end
+   end
+  end
+  if dedicated then self:Write(root,'BackgroundTransparency',1,'shared')end
+ end
+
+ self:Label('ToyLimitCount',count,{X=plan.Limit.X+plan.Limit.W-47*plan.Scale,Y=plan.Limit.Y+2*plan.Scale,W=42*plan.Scale,H=12*plan.Scale},math.max(6,6*plan.Scale),true)
+
+ local close=find(self.Menu,{'Close','CloseButton','Exit','X'})
+ if gui(close)then self:Rect(close,{X=344*plan.Scale,Y=0,W=18*plan.Scale,H=18*plan.Scale},'shared');if close:IsA('TextButton')then self:Text(close,14*plan.Scale,'shared')end end
+
+ self:Draw();self:RefreshIcons();self:StartIcons()
 end
 function Shop:Find()
- if not self.Enabled or self.Closed or self.Updating then return end;self.Updating=true
- local gui=self.Context.PlayerGui:FindFirstChild('MenuGui');local menu=gui and gui:FindFirstChild('Menu')
- local contents=menu and menu:FindFirstChild('TabContents')
- if not isGui(menu)or not isGui(contents)then
-  if self.Menu then self:Detach()end;self.Status:SetText('Открой игровой магазин.');self.Updating=false;return
- end
- if self.Menu~=menu or self.Contents~=contents then self:Bind(menu,contents)end
- self:Discover()
- local active=false
- for _,r in ipairs(self.Pages)do if r.Node.Parent and r.Node.Visible then active=true;break end end
- if active and contents.Visible and menu.Visible then
-  self:Window();for _,r in ipairs(self.Pages)do if r.Node.Parent and r.Node.Visible then self:Page(r)end end
-  self.Status:SetText('Игровой магазин: компактная сетка включена.')
- else self:Restore('shared');self.Status:SetText('Оформление включится на вкладке игрушек.')end
- self.Updating=false
+ if self.Closed or not self.Enabled or self.Applying then return end
+ self.Applying=true
+ local ok,why=pcall(function()
+  local guiRoot=self.Context.PlayerGui:FindFirstChild('MenuGui');local menu=guiRoot and guiRoot:FindFirstChild('Menu')
+  local contents=menu and menu:FindFirstChild('TabContents')
+  if not gui(menu)or not contents then if self.Menu then self:Detach()end;self.Status:SetText('Ожидание игрового меню.');return end
+  if self.Menu~=menu or self.Contents~=contents then self:Bind(menu,contents)end
+  self:Discover();local active
+  for _,r in ipairs(self.Pages)do if live(r.List)and visible(r.List,self.Menu)then active=r;break end end
+  if not active then self.Active=false;if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end;if self.Layer then self.Layer.Visible=false end;self:Restore('shared');self.Status:SetText('Открой Your Toys в игровом меню.');return end
+  self.Active=true
+  local camera=self.Context.Workspace and self.Context.Workspace.CurrentCamera
+  local viewport=camera and camera.ViewportSize or Vector2.new(900,585)
+  self.Plan=Layout.Build(viewport.X,viewport.Y)
+  for _,scale in ipairs(children(menu))do if scale:IsA('UIScale')then self:Write(scale,'Scale',1,'shared',true)end end
+  self:Write(menu,'AnchorPoint',Vector2.new(.5,.5),'shared',true);self:Write(menu,'Position',UDim2.fromScale(.5,.5),'shared',true)
+  self:Write(menu,'AutomaticSize',Enum.AutomaticSize.None,'shared',true);self:Write(menu,'Size',UDim2.fromOffset(self.Plan.Width,self.Plan.Height),'shared',true);self:Write(menu,'BackgroundTransparency',1,'shared',true)
+  self:Write(menu,'BorderSizePixel',0,'shared')
+  local stroke=menu:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,'shared')end
+  local aspect=menu:FindFirstChildOfClass('UIAspectRatioConstraint');if aspect then self:Write(aspect,'AspectRatio',364/272,'shared',true)end
+  self:Page(active);self.Status:SetText('Your Toys: оформление по референсу включено.')
+ end)
+ self.Applying=false
+ if not ok then self.LastError=tostring(why);self.Status:SetText('Магазин: '..self.LastError)end
+end
+function Shop:Detach()
+ local applying=self.Applying;self.Applying=true
+ if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
+ for _,c in ipairs(self.Bound)do c:Disconnect()end;self.Bound={}
+ for _,map in pairs(self.Watches)do for _,c in pairs(map)do c:Disconnect()end end;self.Watches={}
+ self:Restore();if self.Layer then self.Layer:Destroy();self.Layer=nil end
+ self.Pages={};self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
 end
 function Shop:SetEnabled(value)
  if self.Closed then return end;self.Enabled=value==true
- if self.Enabled then if self.Status then self:Find()end
- else self:Detach();if self.Status then self.Status:SetText('Оригинальное оформление магазина.')end end
+ if self.Enabled then if self.Status then self:Find()end else self:Detach();if self.Status then self.Status:SetText('Оригинальный магазин.')end end
 end
 function Shop:Sync()local t=self.Context.Library.Toggles.AstralGUIShopStyle;self:SetEnabled(t and t.Value)end
 function Shop:Dispose()
- if self.Closed then return end;self.Closed=true;self.Enabled=false;self:Detach()
- for _,c in ipairs(self.Connections)do c:Disconnect()end
+ if self.Closed then return end;self.Closed=true;self.Enabled=false;self:Detach();for _,c in ipairs(self.Connections)do c:Disconnect()end
 end
 return Shop
 
@@ -46993,6 +47184,24 @@ export type Chunk = CriticalChunk | AncillaryChunk
 return {}
 
 ]========]
+sources.ShopLayout = [========[
+-- Coordinates measured from the user's compact 364 x 272 reference.
+-- Both runtime layout and the inspection preview consume this same plan.
+local Layout={Width=364,Height=272}
+function Layout.Build(viewWidth,viewHeight)
+ local scale=math.min(viewWidth/900,viewHeight/585,2)
+ scale=math.max(.45,math.min(scale,(viewWidth-24)/364,(viewHeight-32)/272))
+ local function rect(x,y,w,h,r)return{X=x*scale,Y=y*scale,W=w*scale,H=h*scale,Radius=(r or 0)*scale}end
+ return{Scale=scale,Width=364*scale,Height=272*scale,Columns=10,
+  Sidebar=rect(12,70,30,181,11),Title=rect(44,25,177,19,9),Categories=rect(224,25,113,19,9),Favorite=rect(340,25,22,19,9),
+  Body=rect(44,47,318,204,9),Grid=rect(47,49,312,200),Limit=rect(80,254,241,16,7),
+  TitleText=rect(49,27,166,15),LimitText=rect(85,256,229,11),
+  Cell=(312-9)/10*scale,Gap=scale,TitleSize=math.max(8,8*scale),SmallSize=math.max(7,6*scale),IconSize=18*scale,
+ }
+end
+return Layout
+
+]========]
 sources.Bootstrap = [========[
 local sources = ...
 local env = getgenv and getgenv() or _G
@@ -47022,9 +47231,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.83: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.84: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.83 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.84 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")

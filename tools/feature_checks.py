@@ -44,7 +44,10 @@ def run_feature_checks(modules,runner,folder):
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
     if 'GameShopStyle'in modules:
-        run('game_shop483',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Shop=(function()\n'+modules['GameShopStyle']+'\nend)()\n'+read('game_shop483_body.luau'))
+        run('game_shop484',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Layout=(function()\n'+modules['ShopLayout']+'\nend)()\nlocal Shop=(function(...)\n'+modules['GameShopStyle']+'\nend)(function(name)assert(name=="ShopLayout");return Layout end)\n'+read('game_shop484_body.luau'))
+    if 'ShopLayout'in modules:
+        frame_case=read('game_shop484_body.luau').replace("local pages=Instance.new('Folder',menu)","local pages=Instance.new('Frame',menu)")
+        run('game_shop484_frame',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Layout=(function()\n'+modules['ShopLayout']+'\nend)()\nlocal Shop=(function(...)\n'+modules['GameShopStyle']+'\nend)(function(name)assert(name=="ShopLayout");return Layout end)\n'+frame_case)
     if 'FrameArtwork'in modules:
         run('frame_artwork',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Art=(function()\n'+modules['FrameArtwork']+'\nend)()\n'+read('gui_extensions_body.luau'))
     if 'FrameImageFiles'in modules:
@@ -68,7 +71,10 @@ def run_feature_checks(modules,runner,folder):
         for token in ('JumpRequest=UserInputService.JumpRequest','tbl12.BlobmanRide:Dismount()','tbl12.PCLDAvatars:SetMode(value)','CatalogRoots=function()','Vector3.new(0,-20,0)'):
             assert token in main,('missing native integration',token)
     if 'PCLDAvatarESP'in modules:
-        run('pcld_avatar',read('model_mock.luau')+'\nlocal Avatars=(function()\n'+modules['PCLDAvatarESP']+'\nend)()\n'+read('pcld_avatar_body.luau'))
+        main=modules['Main'];a=main.index('tbl12.UpdateSmoothPCLD = function(dt)');b=main.index('tbl12.SetSmoothPCLDConnection = function()',a)
+        actual_update=main[a:b]
+        native='\nlocal Motion=(function()\n'+modules['ESPMotion']+'\nend)()\nlocal function AttachNativeMotion(tbl12,tbl17,tick)\n'+actual_update+'\nend\n'
+        run('pcld_avatar',read('model_mock.luau')+'\nlocal Avatars=(function()\n'+modules['PCLDAvatarESP']+'\nend)()\n'+native+read('pcld_avatar_body.luau'))
     if 'Discover'in modules.get('AssetCatalog',''):
         program=read('model_mock.luau')+'\nlocal Catalog=(function()\n'+modules['AssetCatalog']+'\nend)()\n'
         program+='local ObjectESP=(function(...)\n'+modules['ObjectESP']+'\nend)(function()return Catalog end)\n'+read('catalog479_body.luau')

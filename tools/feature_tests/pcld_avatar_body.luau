@@ -3,7 +3,7 @@ local oldIsA=Proxy.IsA
 function Proxy:IsA(class)
  local c=self.ClassName
  return oldIsA(self,class)or class=='LuaSourceContainer'and(c=='LocalScript'or c=='Script'or c=='ModuleScript')
-  or class=='JointInstance'and(c=='Motor6D'or c=='Weld')or class=='Constraint'and c=='AlignPosition'or class=='BodyMover'and c=='BodyVelocity'
+  or class=='JointInstance'and(c=='Motor6D'or c=='Weld')or class=='Constraint'and c=='AlignPosition'or class=='BodyMover'and c=='BodyVelocity'or class=='ControllerBase'and c=='GroundController'
 end
 function Proxy:Clone()
  if self.Archivable==false then return end
@@ -27,12 +27,13 @@ local function avatar(world,name,x)
  local t=add(c,'Part','Torso');t.Size=Vector3.new(2,2,1);t.CFrame=r.CFrame;joint(c,r,t)
  local head=add(c,'MeshPart','Head');head.Size=Vector3.new(2,1,1);head.CFrame=r.CFrame*CFrame.new(0,1.5,0);head.Color=Color3.fromRGB(220,130,70)
  joint(c,t,head,CFrame.new(0,1,0),CFrame.new(0,-.5,0))
+ for _,side in ipairs({-1,1})do local arm=add(c,'Part',side<0 and'Left Arm'or'Right Arm');arm.Size=Vector3.new(1,2,1);joint(c,t,arm,CFrame.new(side*1.5,0,0))end
  for _,side in ipairs({-1,1})do local leg=add(c,'Part',side<0 and'Left Leg'or'Right Leg');leg.Size=Vector3.new(1,2,1);leg.CFrame=r.CFrame*CFrame.new(side*.5,-2,0);joint(c,t,leg,CFrame.new(side*.5,-1,0),CFrame.new(0,1,0))end
  local h=add(c,'Humanoid');h.Health=100;h.RootPart=r
  add(c,'Shirt').ShirtTemplate='rbxassetid://original-clothing'
  local hat=add(c,'Accessory','Hat');local handle=add(hat,'Part','Handle');handle.CFrame=r.CFrame*CFrame.new(0,3,0);local mesh=add(handle,'SpecialMesh');mesh.MeshId='rbxassetid://original-mesh'
  local j=add(c,'Weld');j.Part0=head;j.Part1=handle;j.C0=CFrame.new(0,1.5,0);j.C1=CFrame.new()
- for _,kind in ipairs({'LocalScript','Script','ModuleScript','AlignPosition','BodyVelocity','RemoteEvent','Sound','Animator'})do add(c,kind)end
+ for _,kind in ipairs({'LocalScript','Script','ModuleScript','AlignPosition','BodyVelocity','RemoteEvent','Sound','Animator','ControllerManager','GroundController','ProximityPrompt'})do add(c,kind)end
  add(add(c,'Tool'),'Part','ToolHandle');local helper=add(c,'Part','AstralHelper');helper.Size=Vector3.new(100,100,100)
  local detector=add(world,'Part','PlayerCharacterLocationDetector');detector.CFrame=CFrame.new(x+100,8,-20)*CFrame.Angles(0,-.4,0);detector.Size=Vector3.new(2,10,2)
  return {Name=name,Character=c,Root=r,Humanoid=h,Detector=detector},head
@@ -41,7 +42,7 @@ local function fixture()
  local world=newNode('Folder','Workspace');local me=avatar(world,'Local',0);local other,head=avatar(world,'Other',10)
  local d={Enabled=true,Waiting=false,Players={me,other}};local beat,render=signal(),signal()
  local conf={FillColor=Color3.fromRGB(80,20,100),OutlineColor=Color3.fromRGB(230,50,130),FillTransparency=.6,OutlineTransparency=.1}
- local a=Avatars.Install({Workspace=world,RunService={Heartbeat=beat,RenderStepped=render},Player=me,
+ local a=Avatars.Install({Workspace=world,RunService={Heartbeat=beat,RenderStepped=render},Player=me,ExternalRender=true,
   Players={GetPlayers=function()return d.Players end},Enabled=function()return d.Enabled end,
   Character=function(p)return p.Character,p.Character and p.Root,p.Character and p.Humanoid end,
   Detector=function(p)return p.Detector end,Waiting=function()return d.Waiting end,Frame=function(p)return d.Frame or p.CFrame end,Config=function()return conf end})
@@ -51,24 +52,31 @@ do
  local a,d,w,me,other,head,beat,render,conf=fixture();check(next(a.Records)==nil,'Box mode creates avatars');a:SetMode('Avatar')
  local r=a.Records[other];check(r and a.Records[me]and a:Has(me.Detector),'Local player omitted')
  check(me.Character.Archivable==false and other.Character.Archivable==false,'Archivable changed')
+ for _,part in ipairs(r.Parts)do check(part.Part.Size==part.Source.Size,'A skin part/accessory differs from its source size')end
  local clone=r.Model;check(clone.Shirt.ShirtTemplate=='rbxassetid://original-clothing'and clone.Head.Color==head.Color,'Skin appearance lost')
  check(clone.Hat.Handle.SpecialMesh.MeshId=='rbxassetid://original-mesh','Accessory skin lost')
  check(not clone:FindFirstChild('AstralHelper'),'Helper geometry distorts silhouette size')
- check(math.abs(r.Scale-2)<1e-6 and clone.Head.Size==head.Size*2,'Detector height does not normalize actual avatar size')
- -- R6 rest extent [-3,2] is centered before matching the detector's height.
- local expected=other.Detector.CFrame*CFrame.new(0,4,0)
+ check(r.Scale==1 and clone.Head.Size==head.Size,'Avatar was stretched to detector height')
+ -- R6 body remains five studs tall, even with a ten-stud detector.
+ local expected=other.Detector.CFrame*CFrame.new(0,2,0)
  check((clone.Head.Position-expected.Position).Magnitude<1e-6,'Avatar center/feet do not match box center and height')
  for _,v in ipairs(clone:GetDescendants())do
-  check(not v:IsA('LuaSourceContainer')and not v:IsA('JointInstance')and not v:IsA('Constraint')and not v:IsA('BodyMover')and not v:IsA('Tool')and not v:IsA('RemoteEvent'),'Cloned behavior remains')
+  check(not v:IsA('LuaSourceContainer')and not v:IsA('JointInstance')and not v:IsA('Constraint')and not v:IsA('BodyMover')and not v:IsA('Tool')and not v:IsA('RemoteEvent')and not v:IsA('ControllerManager')and not v:IsA('ControllerBase')and not v:IsA('ProximityPrompt'),'Cloned behavior remains')
   if v:IsA('BasePart')then check(v.Anchored and not v.CanCollide and not v.CanTouch and not v.CanQuery,'Clone affects physics')end
  end
+ check(not a.RenderConnection and #render.Connections==0,'Avatar adds a second render-step/filter loop')
+ check(clone.Humanoid.EvaluateStateMachine==false and clone.Humanoid.AutomaticScalingEnabled==false,'Cloned humanoid can simulate or resize the rig')
+ for _,property in ipairs({'CanCollide','CanTouch','CanQuery'})do clone.Torso[property]=true;check(clone.Torso[property]==false,'Engine can re-enable '..property)end
+ clone.Torso.Anchored=false;clone.Torso.Massless=false
+ check(clone.Torso.Anchored and clone.Torso.Massless,'Visual copy acquires physical mass or becomes unanchored')
+ clone.Humanoid.EvaluateStateMachine=true;check(clone.Humanoid.EvaluateStateMachine==false,'Humanoid collision/force controller re-enabled')
  check(r.Highlight.FillColor==conf.FillColor and r.Highlight.OutlineColor==conf.OutlineColor,'Silhouette colors ignored')
  local pos=clone.Head.CFrame;local realRoot=other.Root.CFrame;local sensorFrame=other.Detector.CFrame
- head.CFrame=CFrame.new(900,900,900);other.Root.CFrame=CFrame.new(-300,-300,-300);render:Fire(1/60)
+ head.CFrame=CFrame.new(900,900,900);other.Root.CFrame=CFrame.new(-300,-300,-300);render:Fire(1/60);a:Render()
  check((clone.Head.Position-pos.Position).Magnitude<1e-6,'Live ragdoll/desync pose moves stationary server PCLD')
  check(other.Detector.CFrame==sensorFrame and other.Root.Position==Vector3.new(-300,-300,-300),'Renderer moved live detector/avatar')
  other.Root.CFrame=realRoot;d.Frame=CFrame.new(-50,7,11);a:Render()
- check((clone.Head.Position-(d.Frame*CFrame.new(0,4,0)).Position).Magnitude<1e-6,'Native smoothed frame not used in the same update')
+ check((clone.Head.Position-(d.Frame*CFrame.new(0,2,0)).Position).Magnitude<1e-6,'Native smoothed frame not used in the same update')
  other.Detector.Size=Vector3.new(2,5,1);a:Render();check(math.abs(r.Scale-1)<1e-6 and clone.Head.Size==head.Size,'Detector size change compounds scale or is ignored')
  local hat=add(other.Character,'Accessory','NewHat');add(hat,'Part','Handle');beat:Fire(.2)
  check(a.Records[other].Model~=clone and not clone.Parent,'Appearance refresh leaks old clone')
@@ -93,11 +101,29 @@ do
  local lower=add(other.Character,'MeshPart','LowerTorso');lower.Size=Vector3.new(2,1,1);joint(other.Character,other.Humanoid.RootPart,lower,CFrame.new(0,-1.5,0))
  other.Character['Left Leg'].Name='LeftLowerLeg';other.Character['Right Leg'].Name='RightLowerLeg'
  -- A desync control can return a helper actor instead of the skeleton root.
- me.Root=me.Character.AstralHelper;me.Root.CFrame=CFrame.new(700,300,-800)*CFrame.Angles(0,2,0)
+ me.Root=me.Character.AstralHelper;me.Humanoid.RootPart=me.Root;me.Root.CFrame=CFrame.new(700,300,-800)*CFrame.Angles(0,2,0)
  a:SetMode('Avatar');local selfCopy=a.Records[me];local r15=a.Records[other]
- check(selfCopy and selfCopy.Scale==2 and not selfCopy.Model:FindFirstChild('AstralHelper'),'Helper actor corrupts own PCLD geometry')
+ check(selfCopy and selfCopy.Scale==1 and not selfCopy.Model:FindFirstChild('AstralHelper'),'Helper actor corrupts own PCLD geometry')
  check(r15 and r15.Model:FindFirstChild('UpperTorso')and r15.Model:FindFirstChild('LeftLowerLeg'),'R15 skin not rendered')
- check((selfCopy.Model.Head.Position-(me.Detector.CFrame*CFrame.new(0,4,0)).Position).Magnitude<1e-6,'Helper actor changes native PCLD orientation or position')
+ check((selfCopy.Model.Head.Position-(me.Detector.CFrame*CFrame.new(0,2,0)).Position).Magnitude<1e-6,'Helper actor changes native PCLD orientation or position')
  a:Dispose()
 end
-print('PASS: '..checks..' native PCLD size, rest pose, self/all players, skin and lifecycle checks (mocked)')
+do
+ local a,d,w,me,other,head,beat,render=fixture();a:SetMode('Avatar')
+ local visual=a.Records[other];local box=add(w,'Part','SmoothPCLD');box.CFrame=other.Detector.CFrame
+ a.Context.Frame=function(part)return part==other.Detector and box.CFrame or part.CFrame end
+ local now=0;local pending={};local record={Part=other.Detector,Clone=box,Moving=true,Motion=Motion.New(box.CFrame,now)}
+ pending[record]=true;other.Detector.CFrame=box.CFrame*CFrame.new(10,0,0);now=.05;Motion.Sample(record.Motion,other.Detector.CFrame,now)
+ local api={ESPMotion=Motion,PCLDAvatars=a,SetSmoothPCLDConnection=function()end}
+ AttachNativeMotion(api,pending,function()return now end)
+ for _=1,20 do
+  now+=1/60;api.UpdateSmoothPCLD(1/60)
+  local expected=box.CFrame*CFrame.new(0,2,0)
+  check((visual.Model.Head.Position-expected.Position).Magnitude<1e-6,'Avatar uses another motion sample/filter than native Box PCLD')
+  check((visual.Model.Head.CFrame.LookVector-expected.LookVector).Magnitude<1e-6,'Avatar orientation differs from the native PCLD frame')
+ end
+ local fixed=visual.Model.Head.Position;render:Fire(1/60)
+ check((visual.Model.Head.Position-fixed).Magnitude==0,'Independent render callback moves avatar outside native PCLD update')
+ a:Dispose()
+end
+print('PASS: '..checks..' 1:1 PCLD size, inert humanoid/collision guards, same-frame native motion, skin and lifecycle checks (mocked)')

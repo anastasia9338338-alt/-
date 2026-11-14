@@ -1,9 +1,7 @@
-The standalone bundle is authoritative. These files mirror its UI/frame controllers and vendored codecs.
+The standalone bundle is authoritative. These files mirror its GUI, frame and avatar PCLD controllers.
 
-GameShopStyle lays out only native inventory pages. Shared menu geometry is restored when leaving the inventory; Settings/HSV descendants are never traversed. Native button paths, callbacks and image assets are retained.
+ShopLayout stores measurements from the compact 364x272 reference. GameShopStyle supports Folder/Frame page containers and streamed inventory controls, preserves the native collection and callbacks, and places decoration outside Contents. TextScaled and native layout overwrites cannot expand the compact header. White icon projections remain aligned with native button hit rectangles. Settings is outside the styled page. View replacement and unload remove decorations and observers.
 
-FrameImageFiles decodes local PNG/JPEG data, encodes a rounded RGBA frame as PNG, registers a normal custom asset and owns file lifetime. GUIAppearance accepts file URIs as well as native image content. Native EditableImage is only a fallback. PNGDecode/Inflate/CRC/Types are adapted Picguin sources with their full MIT notices. JPEGDecode retains the lua-img-ascii MIT notice and records Astral modifications.
+PCLDAvatarESP copies source sizes 1:1 without ScaleTo or a detector-height multiplier. The visual Humanoid has simulation/scaling disabled, all geometry has guarded non-collision properties, and active cloned controllers are removed. The Main integration renders from the same frame as Box PCLD; no extra avatar render-step/filter is installed. Tests feed the actual Main motion handler and cover fake roots, changing detector dimensions, collision re-enabling, appearance, respawn and unload.
 
-The integration harness denies EditableImage; Pillow independently checks decoded pixels and encoded PNG output. Native GUI/game-shop behavior is exercised in an engine mock, not a live Roblox renderer.
-
-Codec checks use the exact Bootstrap module loader, including its table-return contract. The PNG exports are wrapped as tables for this loader; decoding algorithms retain their upstream license notices.
+Frame codecs and controllers retain their v4.83 behavior. Codec tests use the exact Bootstrap table-return loader with EditableImage denied and independently compare PNG/JPEG data with Pillow. No live Roblox visual/physics validation is claimed.
