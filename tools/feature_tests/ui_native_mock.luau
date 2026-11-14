@@ -40,3 +40,9 @@ function Node:QueryDescendants(query)
     end
     return result
 end
+function Node:FindFirstChildWhichIsA(class,recursive)
+    for _,child in ipairs(self:GetChildren())do
+        if child:IsA(class)then return child end
+        if recursive then local found=child:FindFirstChildWhichIsA(class,true);if found then return found end end
+    end
+end

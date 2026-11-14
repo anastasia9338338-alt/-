@@ -43,6 +43,12 @@ def run_feature_checks(modules,runner,folder):
             ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
+    if 'GUIAppearance'in modules:
+        main=modules['Main']
+        assert main.index('GUI = v19:AddTab')>main.index('Settings = v19:AddTab')
+        assert main.count('GUI = v19:AddTab')==1
+        assert 'tbl12.GUIAppearance:Sync()'in main[main.index('lib:FinishStartup()'):]
+        assert 'tbl12.GUIAppearance:Dispose()'in main
     if 'PCLDAvatarESP'in modules:
         main=modules['Main']
         tweaks=main[main.index('local v20 = tbl15.Visual:AddLeftTabbox("Game Tweaks")'):main.index('local Sky = tbl15.Visual:AddLeftGroupbox',main.index('local v20 = tbl15.Visual:AddLeftTabbox("Game Tweaks")'))]

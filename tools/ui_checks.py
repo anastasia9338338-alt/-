@@ -112,8 +112,18 @@ end)
     if 'Character Extras'in modules.get('ExtraFeatures',''):
         extra=modules['ExtraFeatures'];a=extra.index('function UI:_Group(');b=extra.index('\nfunction UI:AddLeftGroupbox',a)
         s+='local function BuildMergedCharacterGroups(tab)\nlocal UI={}\nlocal function plain(value)return tostring(value):gsub("<[^>]*>","")end\n'+extra[a:b]+"\nlocal bridge={Groupboxes={},Wrap=function(_,object)return object end}\nlocal wrapper=setmetatable({_object=tab,_tabName='Player',_bridge=bridge},{__index=UI})\nfor _,name in ipairs({'Values','Teleporting','Character','Players','Coin Farm','Animations'})do wrapper:_Group('Left',name,'user')end\nreturn bridge.Groupboxes\nend\n"
+    if 'GUIAppearance'in modules:
+        s+='local SaveManager=(function(...)\n'+modules['SaveManager']+'\nend)(function()return Identity end)\n'
+        s+='local GUIAppearance=(function()\n'+modules['GUIAppearance']+'\nend)()\n'
+        a=main.index('tbl12.GUIAppearance=requireModule("GUIAppearance")');b=main.index('\n        end\n\n',a)
+        s+='local function BuildGUIAppearance(window,tab,resolve)\nlocal lib,v19,tbl15=Library,window,{GUI=tab}\nlocal tbl7={CustomAssets={Files={},Requests={}}}\nlocal tbl12={ResolveAssetInput=resolve}\nfunction tbl12.ClearCustomAsset(key)tbl7.CustomAssets.Files[key]=nil end\nlocal function requireModule(name)assert(name=="GUIAppearance");return GUIAppearance end\n'+main[a:b]+'\nreturn tbl12.GUIAppearance,tbl7.CustomAssets\nend\n'
+    if 'GUIAppearance'in modules:
+        a=main.index('tbl12.LoadCustomAsset = function');b=main.index('tbl12.ClearCustomAssets = function',a)
+        s+='local function ValidateGUIAssetLifetime()\nlocal tbl7={CustomAssets={Files={},Requests={}}}\nlocal tbl12={}\nlocal HttpService=game:GetService("HttpService")\nlocal game={HttpGet=function()return "PNG contents"end}\nlocal getcustomasset=function(name)return "rbxasset://custom/"..name end\n'+main[a:b]+"\nlocal _,kept=tbl12.LoadCustomAsset('https://images.example/frame.png','GUIRetained','.png',true)\nlocal _,ordinary=tbl12.LoadCustomAsset('https://images.example/other.png','LegacyImage','.png')\nadvance(3)\ncheck(isfile(kept)and not isfile(ordinary),'GUI artwork file deleted before the texture finished loading, or legacy cleanup changed')\ntbl12.ClearCustomAsset(kept)\ncheck(not isfile(kept),'Retained GUI image file survived explicit cleanup')\nend\n"
     s+=startup_program(modules.get('Main'))
-    return s+(support/'ui_native_body.luau').read_text()
+    body=(support/'ui_native_body.luau').read_text()
+    if 'GUIAppearance'in modules:body=body.replace('local signalsBefore=table.clone(Library.Signals)',(support/'gui_appearance_body.luau').read_text()+'\nlocal signalsBefore=table.clone(Library.Signals)')
+    return s+body
 
 if __name__=='__main__':
     args=argparse.ArgumentParser();args.add_argument('--luau',type=Path,required=True);args.add_argument('--bundle',type=Path);a=args.parse_args()
