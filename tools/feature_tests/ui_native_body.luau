@@ -271,6 +271,13 @@ if BuildMergedCharacterGroups then
  check(tab.Groupboxes.Teleport.BoxHolder.Parent==right and tab.Groupboxes["Players Extras"].BoxHolder.Parent==right and tab.Groupboxes["Coin Farm"].BoxHolder.Parent==right,"Merged player/action sections mixed into left column")
  check(tab.Groupboxes["Movement Settings"].BoxHolder.LayoutOrder<tab.Groupboxes["Animation Presets"].BoxHolder.LayoutOrder,"Merged section order is unstable")
 end
+do
+ local frame,body=Library.KeybindFrame,Library.KeybindContainer
+ check(frame.ClipsDescendants and body.ClipsDescendants and body.ScrollBarThickness==0 and body.ScrollBarImageTransparency==1,'Keybind scrollbar or content protrudes outside the HUD')
+ local position,size=body.Position,body.Size
+ check(position.X.Offset>=0 and position.Y.Offset>=0 and position.X.Offset+size.X.Offset<=0 and position.Y.Offset+size.Y.Offset<=0,'Keybind body extends outside its panel')
+ check(body.ScrollingDirection==Enum.ScrollingDirection.Y and body.AutomaticCanvasSize==Enum.AutomaticSize.Y,'Hiding the scrollbar disabled scrolling')
+end
 local signalsBefore=table.clone(Library.Signals)
 local actionListeners=table.clone(UIS.InputBegan.Connections)
 local releaseListeners=table.clone(UIS.InputEnded.Connections)

@@ -67,3 +67,9 @@ function services.AssetService:CreateEditableImageAsync()
  return editable(w,h,p)
 end
 function services.AssetService:CreateEditableImage(options)return editable(options.Size.X,options.Size.Y)end
+
+local nativeIsA=Node.IsA
+function Node:IsA(class)
+ if class=='GuiObject'and(self.ClassName=='UIGridLayout'or self.ClassName=='UIAspectRatioConstraint')then return false end
+ return nativeIsA(self,class)
+end

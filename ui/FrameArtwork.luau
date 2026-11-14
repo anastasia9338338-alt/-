@@ -13,34 +13,43 @@ function Art.Clean(p,w,h,enabled)
   local v=gray(p,(y*w+x)*4)
   if v then local bin=math.floor(v/4);histogram[bin]=(histogram[bin]or 0)+1;neutral+=1 end
  end end
- local a,ac,b,bc=nil,0,nil,0
- for k,n in pairs(histogram)do if n>ac then a,ac=k,n end end
- if a then for k,n in pairs(histogram)do if math.abs(k-a)>=3 and math.abs(k-a)<=22 and n>bc then b,bc=k,n end end end
- local tones=a and b and{a*4+2,b*4+2}or nil
- local regularRows,regularColumns=0,0
- if enabled and transparent<sampled*.05 and tones and ac+bc>neutral*.48 and bc>neutral*.1 then
-  for _,fraction in ipairs({.05,.25,.5,.75,.95})do
-   for axis=1,2 do
-    local limit=axis==1 and w or h;local fixed=math.floor((axis==1 and h-1 or w-1)*fraction)
-    local last,run,changes,runs=nil,0,0,{}
-    for k=0,limit-1 do
-     local i=axis==1 and(fixed*w+k)*4 or(k*w+fixed)*4;local v=gray(p,i)
-     local tag=v and math.min(math.abs(v-tones[1]),math.abs(v-tones[2]))<=8 and(math.abs(v-tones[1])<math.abs(v-tones[2])and 1 or 2)or nil
-     if tag and tag==last then run+=1 else
-      if tag and last and run>=3 and run<=80 then changes+=1;runs[#runs+1]=run end
-      last=tag;run=1
-     end
-    end
-    if changes>=5 then
-     table.sort(runs);local median=runs[math.ceil(#runs/2)];local count=0
-     for _,v in ipairs(runs)do if math.abs(v-median)<=math.max(2,median*.35)then count+=1 end end
-     if count>=#runs*.65 then if axis==1 then regularRows+=1 else regularColumns+=1 end end
+ local candidates={}
+ for bin,count in pairs(histogram)do candidates[#candidates+1]={Bin=bin,Count=count}end
+ table.sort(candidates,function(a,b)return a.Count>b.Count end)
+ local function regularGrid(tones)
+  local rows,columns=0,0
+  for _,fraction in ipairs({.05,.25,.5,.75,.95})do for axis=1,2 do
+   local limit=axis==1 and w or h;local fixed=math.floor((axis==1 and h-1 or w-1)*fraction)
+   local last,run,changes,runs=nil,0,0,{}
+   for k=0,limit-1 do
+    local i=axis==1 and(fixed*w+k)*4 or(k*w+fixed)*4;local v=gray(p,i)
+    local tag=v and math.min(math.abs(v-tones[1]),math.abs(v-tones[2]))<=8 and(math.abs(v-tones[1])<math.abs(v-tones[2])and 1 or 2)or nil
+    if tag and tag==last then run+=1 else
+     if tag and last and run>=3 and run<=80 then changes+=1;runs[#runs+1]=run end
+     last=tag;run=1
     end
    end
-  end
+   if changes>=5 then
+    table.sort(runs);local median=runs[math.ceil(#runs/2)];local count=0
+    for _,v in ipairs(runs)do if math.abs(v-median)<=math.max(2,median*.35)then count+=1 end end
+    if count>=#runs*.65 then if axis==1 then rows+=1 else columns+=1 end end
+   end
+  end end
+  return rows,columns
+ end
+ local tones,best=nil,-1
+ if enabled and transparent<sampled*.05 then
+  for i=1,math.min(#candidates,16)do for j=i+1,math.min(#candidates,16)do
+   local a,b=candidates[i],candidates[j];local diff=math.abs(a.Bin-b.Bin)
+   if diff>=3 and diff<=22 and a.Count+b.Count>neutral*.12 and math.min(a.Count,b.Count)>neutral*.025 then
+    local pair={a.Bin*4+2,b.Bin*4+2};local rows,columns=regularGrid(pair)
+    local score=rows+columns+(a.Count+b.Count)/math.max(neutral,1)
+    if rows>0 and columns>0 and score>best then best=score;tones=pair end
+   end
+  end end
  end
  local removed=0
- if enabled and tones and regularRows>0 and regularColumns>0 then
+ if enabled and tones then
   for i=0,w*h-1 do
    local v=gray(p,i*4)
    if v and math.min(math.abs(v-tones[1]),math.abs(v-tones[2]))<=9 then buffer.writeu8(out,i*4+3,0);removed+=1 end

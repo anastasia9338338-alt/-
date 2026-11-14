@@ -1,4 +1,4 @@
--- Astral v4.82 | GUI artwork cleanup, rounded external frames, floating backgrounds, full style controls and native toy-shop reskin.
+-- Astral v4.83 | Scoped native toy inventory layout, portable PNG/JPEG frame rendering and clipped Keybinds HUD.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -6760,6 +6760,7 @@ function Library:AddDraggableMenu(Name: string)
         BackgroundColor3 = "BackgroundColor",
         Position = UDim2.fromOffset(6, 6),
         Size = compact and UDim2.fromOffset(280, 64) or UDim2.fromOffset(0, 0),
+        ClipsDescendants = compact,
         ZIndex = 1,
         Parent = Floats,
     })
@@ -6818,18 +6819,25 @@ function Library:AddDraggableMenu(Name: string)
     if compact then
         Container.CanvasSize = UDim2.fromOffset(0,0)
         Container.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        Container.ScrollBarThickness = 3
+        Container.ScrollBarThickness = 0
+        Container.ScrollBarImageTransparency = 1
         Container.ScrollingDirection = Enum.ScrollingDirection.Y
         Container.BorderSizePixel = 0
+        Container.Position = UDim2.fromOffset(6,29)
+        Container.Size = UDim2.new(1,-12,1,-35)
         Container.ClipsDescendants = true
         local function resize()
             local camera = workspace.CurrentCamera
             local height = camera and camera.ViewportSize.Y / Library.DPIScale or 720
             local limit = math.max(28,math.min(300,height-65))
-            local content = List.AbsoluteContentSize.Y / Library.DPIScale + 14
-            Holder.Size = UDim2.fromOffset(280,29+math.clamp(content,28,limit))
+            local content = List.AbsoluteContentSize.Y / Library.DPIScale + 16
+            local width = camera and math.max(120,math.min(280,camera.ViewportSize.X / Library.DPIScale-12)) or 280
+            Holder.Size = UDim2.fromOffset(width,35+math.clamp(content,28,limit))
         end
         Library:GiveSignal(List:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize))
+        Library:GiveSignal(Holder:GetPropertyChangedSignal("Visible"):Connect(resize))
+        local camera=workspace.CurrentCamera
+        if camera and camera.GetPropertyChangedSignal then Library:GiveSignal(camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize))end
         resize()
     end
 
@@ -20889,7 +20897,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.82 | FTAP")
+                                warn("Astral v4.83 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -37803,22 +37811,40 @@ Escape Timer: %*]]
 		}
 
         do
+            tbl12.GUIFrameFiles=requireModule("FrameImageFiles").Install({
+                ReadAsset=function(asset)
+                    local filename=tbl7.CustomAssets.Files.GUIFrame
+                    if filename and readfile then return readfile(filename)end
+                    local id=tostring(asset):match("^rbxassetid://(%d+)$")
+                    if id then
+                        local result=HttpService:JSONDecode(game:HttpGet("https://thumbnails.roblox.com/v1/assets?assetIds="..id.."&returnPolicy=PlaceHolder&size=420x420&format=Png&isCircular=false"))
+                        local thumbnail=result.data and result.data[1]
+                        if thumbnail and thumbnail.state=="Completed"then return game:HttpGet(thumbnail.imageUrl)end
+                    end
+                    error("Не удалось прочитать файл картинки")
+                end,
+                Write=writefile,Register=getcustomasset,Remove=delfile,
+                Name=function(serial)return "Astral_Frame_"..HttpService:GenerateGUID(false):gsub("%-","").."_"..serial..".png"end,
+                NativeDecode=function(asset)return requireModule("FrameArtwork").Decode(asset,game:GetService("AssetService"))end,
+                NativeTexture=function(p,w,h)return requireModule("FrameArtwork").Texture(p,w,h,game:GetService("AssetService"))end,
+            })
             tbl12.GUIAppearance=requireModule("GUIAppearance").Install({Library=lib,Window=v19,Tab=tbl15.GUI,Delay=task.delay,RunService=RunService,
                 PrepareFrame=function(asset,removeGrid,valid,done)
                     task.spawn(function()
+                        if not valid()then return end
                         local ok,data=pcall(function()
                             local art=requireModule("FrameArtwork")
-                            local decoded=art.Decode(asset,game:GetService("AssetService"))
+                            local decoded=tbl12.GUIFrameFiles:Decode(asset)
                             if not valid()then return end
                             return art.Clean(decoded.Pixels,decoded.Width,decoded.Height,removeGrid)
                         end)
-                        if valid()then done(ok and data or nil,not ok and("EditableImage: "..tostring(data))or nil)end
+                        if valid()then done(ok and data or nil,not ok and("Рамка: "..tostring(data))or nil)end
                     end)
                 end,
-                MakeTexture=function(pixels,w,h)return requireModule("FrameArtwork").Texture(pixels,w,h,game:GetService("AssetService"))end,
+                MakeTexture=function(pixels,w,h)return tbl12.GUIFrameFiles:Texture(pixels,w,h)end,
                 RasterFrame=function(data,w,h,border,radius,edge)
                     local art=requireModule("FrameArtwork");local pixels,iw,ih=art.Raster(data,w,h,border,radius,edge)
-                    return art.Texture(pixels,iw,ih,game:GetService("AssetService"))
+                    return tbl12.GUIFrameFiles:Texture(pixels,iw,ih)
                 end,
                 Resolve=function(source,kind,callback)
                     return tbl12.ResolveAssetInput(source,"GUI"..kind,"image",callback,"",false,true)
@@ -37830,14 +37856,14 @@ Escape Timer: %*]]
                     if filename then assets.Files[filename]=nil end
                 end,
             })
-            lib:OnUnload(function()tbl12.GUIAppearance:Dispose()end)
+            lib:OnUnload(function()tbl12.GUIAppearance:Dispose();tbl12.GUIFrameFiles:Dispose()end)
             tbl12.GUIStyle=requireModule("GUIStyle").Install({Library=lib,Tab=tbl15.GUI,Defer=task.defer,
                 Icon=function(text)return requireModule("MenuDecor").Icon(text)end,
                 Encode=function(value)return HttpService:JSONEncode(value)end,Decode=function(value)return HttpService:JSONDecode(value)end})
             lib:OnUnload(function()tbl12.GUIStyle:Dispose()end)
             local playerUI=localPlayer:FindFirstChild("PlayerGui")
             if playerUI then
-                tbl12.GameShopStyle=requireModule("GameShopStyle").Install({Library=lib,Tab=tbl15.GUI,PlayerGui=playerUI,Defer=task.defer})
+                tbl12.GameShopStyle=requireModule("GameShopStyle").Install({Library=lib,Tab=tbl15.GUI,PlayerGui=playerUI,Defer=task.defer,Workspace=workspace})
                 lib:OnUnload(function()tbl12.GameShopStyle:Dispose()end)
             end
         end
@@ -37863,7 +37889,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.82",true)
+            box:AddLabel("Astral v4.83",true)
         end
 
         do
@@ -44190,6 +44216,9 @@ local function new(class, props)
     for key, value in pairs(props) do object[key] = value end
     return object
 end
+function Appearance:BindTexture(node,value)
+    if type(value)=='string'then node.Image=value else node.ImageContent=value end
+end
 function Appearance:Track(connection)
     self.Connections[#self.Connections+1] = connection
     return connection
@@ -44283,7 +44312,8 @@ function Appearance:SetSource(kind, value)
                 if self.PreviewTexture then self.PreviewTexture:Destroy();self.PreviewTexture=nil end
                 if data and self.Context.MakeTexture then
                     local ok,image,content=pcall(self.Context.MakeTexture,data.Pixels,data.Width,data.Height)
-                    if ok then self.PreviewTexture=image;self.PreviewImages.Frame.ImageContent=content end
+                    if not valid()then if ok and image then image:Destroy()end;return end
+                    if ok then self.PreviewTexture=image;self:BindTexture(self.PreviewImages.Frame,content) end
                 end
                 if not data then self:SetStatus(kind,why or'Обработка рамки недоступна: показан округлый контур.')
                 else self:SetStatus(kind,data.Removed>0 and'Сетка удалена. Рамка подготовлена.'or'Рамка подготовлена.')end
@@ -44297,7 +44327,7 @@ function Appearance:SetSource(kind, value)
             self:Apply()
         end
         if kind=='Frame'and self.Context.PrepareFrame then self.Context.PrepareFrame(asset,self.Config.RemoveGrid,valid,display)
-        elseif kind=='Frame'then display(nil,'EditableImage недоступен: рамка показана округлым контуром.')
+        elseif kind=='Frame'then display(nil,'Обработка картинки недоступна.')
         else display()end
     end
     if source:match('^rbxthumb://')or source:match('^rbxasset://')then accept(source)
@@ -44340,7 +44370,7 @@ function Appearance:Apply()
             local ok,image,content=pcall(self.Context.RasterFrame,self.Assets.Frame.Data,size.X,size.Y,t,radius,c.FrameEdge)
             if self.Closed or generation~=self.FrameGeneration then if ok and image then image:Destroy()end;return end
             if ok and image then
-                local previous=self.FrameTexture;self.FrameTexture=image;self.FramePicture.ImageContent=content
+                local previous=self.FrameTexture;self.FrameTexture=image;self:BindTexture(self.FramePicture,content)
                 self.FrameUnavailable=false;self.Fallback.Visible=false;self.FramePicture.Visible=true
                 if previous then previous:Destroy()end
             else self.FrameUnavailable=true;self.Fallback.Visible=true;self.FramePicture.Visible=false;self:SetStatus('Frame','Рендер рамки недоступен: '..tostring(image))end
@@ -44398,7 +44428,7 @@ function Appearance:BuildUI(tab)
             box:AddToggle('AstralGUIFrameMatchTheme',{Text='Точно под цвет GUI',Default=false,Callback=changed})
             box:AddSlider('AstralGUIFrameWidth',{Text='Ширина рамки',Default=14,Min=2,Max=80,Rounding=0,Suffix=' px',Compact=true,Callback=changed})
             box:AddSlider('AstralGUIFrameEdge',{Text='Область краёв фото',Default=22,Min=5,Max=45,Rounding=0,Suffix=' %',Compact=true,Callback=changed})
-            box:AddLabel('Рамка находится снаружи окна. Сетка удаляется при обработке картинки; середина и углы вырезаются по форме GUI.',true)
+            box:AddLabel('Рамка выводится из PNG-файла без доступа к EditableImage. Середина остаётся прозрачной; контур повторяет закругления GUI.',true)
         end
         box:AddButton({Text='Убрать картинку',Func=function()self.Library.Options['AstralGUI'..kind..'URL']:SetValue('')end})
         self.Status[kind]=box:AddLabel('Вставь ссылку под превью.',true)
@@ -44492,34 +44522,43 @@ function Art.Clean(p,w,h,enabled)
   local v=gray(p,(y*w+x)*4)
   if v then local bin=math.floor(v/4);histogram[bin]=(histogram[bin]or 0)+1;neutral+=1 end
  end end
- local a,ac,b,bc=nil,0,nil,0
- for k,n in pairs(histogram)do if n>ac then a,ac=k,n end end
- if a then for k,n in pairs(histogram)do if math.abs(k-a)>=3 and math.abs(k-a)<=22 and n>bc then b,bc=k,n end end end
- local tones=a and b and{a*4+2,b*4+2}or nil
- local regularRows,regularColumns=0,0
- if enabled and transparent<sampled*.05 and tones and ac+bc>neutral*.48 and bc>neutral*.1 then
-  for _,fraction in ipairs({.05,.25,.5,.75,.95})do
-   for axis=1,2 do
-    local limit=axis==1 and w or h;local fixed=math.floor((axis==1 and h-1 or w-1)*fraction)
-    local last,run,changes,runs=nil,0,0,{}
-    for k=0,limit-1 do
-     local i=axis==1 and(fixed*w+k)*4 or(k*w+fixed)*4;local v=gray(p,i)
-     local tag=v and math.min(math.abs(v-tones[1]),math.abs(v-tones[2]))<=8 and(math.abs(v-tones[1])<math.abs(v-tones[2])and 1 or 2)or nil
-     if tag and tag==last then run+=1 else
-      if tag and last and run>=3 and run<=80 then changes+=1;runs[#runs+1]=run end
-      last=tag;run=1
-     end
-    end
-    if changes>=5 then
-     table.sort(runs);local median=runs[math.ceil(#runs/2)];local count=0
-     for _,v in ipairs(runs)do if math.abs(v-median)<=math.max(2,median*.35)then count+=1 end end
-     if count>=#runs*.65 then if axis==1 then regularRows+=1 else regularColumns+=1 end end
+ local candidates={}
+ for bin,count in pairs(histogram)do candidates[#candidates+1]={Bin=bin,Count=count}end
+ table.sort(candidates,function(a,b)return a.Count>b.Count end)
+ local function regularGrid(tones)
+  local rows,columns=0,0
+  for _,fraction in ipairs({.05,.25,.5,.75,.95})do for axis=1,2 do
+   local limit=axis==1 and w or h;local fixed=math.floor((axis==1 and h-1 or w-1)*fraction)
+   local last,run,changes,runs=nil,0,0,{}
+   for k=0,limit-1 do
+    local i=axis==1 and(fixed*w+k)*4 or(k*w+fixed)*4;local v=gray(p,i)
+    local tag=v and math.min(math.abs(v-tones[1]),math.abs(v-tones[2]))<=8 and(math.abs(v-tones[1])<math.abs(v-tones[2])and 1 or 2)or nil
+    if tag and tag==last then run+=1 else
+     if tag and last and run>=3 and run<=80 then changes+=1;runs[#runs+1]=run end
+     last=tag;run=1
     end
    end
-  end
+   if changes>=5 then
+    table.sort(runs);local median=runs[math.ceil(#runs/2)];local count=0
+    for _,v in ipairs(runs)do if math.abs(v-median)<=math.max(2,median*.35)then count+=1 end end
+    if count>=#runs*.65 then if axis==1 then rows+=1 else columns+=1 end end
+   end
+  end end
+  return rows,columns
+ end
+ local tones,best=nil,-1
+ if enabled and transparent<sampled*.05 then
+  for i=1,math.min(#candidates,16)do for j=i+1,math.min(#candidates,16)do
+   local a,b=candidates[i],candidates[j];local diff=math.abs(a.Bin-b.Bin)
+   if diff>=3 and diff<=22 and a.Count+b.Count>neutral*.12 and math.min(a.Count,b.Count)>neutral*.025 then
+    local pair={a.Bin*4+2,b.Bin*4+2};local rows,columns=regularGrid(pair)
+    local score=rows+columns+(a.Count+b.Count)/math.max(neutral,1)
+    if rows>0 and columns>0 and score>best then best=score;tones=pair end
+   end
+  end end
  end
  local removed=0
- if enabled and tones and regularRows>0 and regularColumns>0 then
+ if enabled and tones then
   for i=0,w*h-1 do
    local v=gray(p,i*4)
    if v and math.min(math.abs(v-tones[1]),math.abs(v-tones[2]))<=9 then buffer.writeu8(out,i*4+3,0);removed+=1 end
@@ -44715,83 +44754,2243 @@ return Style
 
 ]========]
 sources.GameShopStyle = [========[
--- Reskin the real MenuGui/Menu only. Native buttons, favorites, category
--- pages, item images, ordering and event connections are retained.
+-- Layout the game's existing inventory. Do not style Settings, its HSV controls,
+-- purchase dialogs, HUD or unrelated pages. Every native button keeps its path.
 local Shop={};Shop.__index=Shop
-local function add(class,parent,props)local v=Instance.new(class);for k,x in pairs(props)do v[k]=x end;v.Parent=parent;return v end
+local C=Color3.fromRGB
+local function isGui(v)return v and v:IsA('GuiObject')end
+local function descendants(v)return v and v:GetDescendants()or{}end
+local function named(v,names)
+ for _,name in ipairs(names)do local found=v:FindFirstChild(name);if found then return found end end
+ return nil
+end
+local function corner(node)return node:FindFirstChildOfClass('UICorner')end
 function Shop.Install(ctx)
- local self=setmetatable({Context=ctx,Records={},Created={},Connections={},Enabled=false},Shop)
+ local self=setmetatable({Context=ctx,Records={},Created={},Connections={},MenuConnections={},Pages={},Enabled=false},Shop)
  local box=ctx.Tab:AddRightGroupbox('Игровой магазин','shopping-bag')
- box:AddToggle('AstralGUIShopStyle',{Text='Магазин как на образце',Default=true,Callback=function(v)self:SetEnabled(v)end})
- box:AddLabel('Оформляется игровой Your Toys. Предметы, категории и звёзды остаются игровыми.',true)
- self.Status=box:AddLabel('Ожидание игрового магазина.',true)
- self.Connections[1]=ctx.PlayerGui.DescendantAdded:Connect(function(v)
-  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu')then ctx.Defer(function()self:Find()end)end
+ box:AddToggle('AstralGUIShopStyle',{Text='Компактный магазин',Default=true,Callback=function(v)self:SetEnabled(v)end})
+ box:AddLabel('Сетка игрушек, верхние категории и боковые иконки — как на образце.',true)
+ self.Status=box:AddLabel('Открой игровой магазин.',true)
+ self.Connections[#self.Connections+1]=ctx.PlayerGui.DescendantAdded:Connect(function(v)
+  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu'or v.Name=='TabContents')then self:Queue()end
  end)
+ if ctx.Library.ScreenGui then
+  self.Connections[#self.Connections+1]=ctx.Library.ScreenGui:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()self:Queue()end)
+ end
  return self
 end
-function Shop:Write(node,key,value)
- local r=self.Records[node];if not r then r={};self.Records[node]=r end
- if r[key]==nil then r[key]={Original=node[key]}end
- node[key]=value;r[key].Forced=value
+function Shop:Queue()
+ if self.Closed or self.Queued then return end;self.Queued=true
+ self.Context.Defer(function()self.Queued=false;if not self.Closed and self.Enabled then self:Find()end end)
 end
-function Shop:Round(node,radius)
- local c=node:FindFirstChildOfClass('UICorner')
- if not c then c=add('UICorner',node,{CornerRadius=UDim.new(0,radius)});self.Created[#self.Created+1]=c
- else self:Write(c,'CornerRadius',UDim.new(0,radius))end
+function Shop:Write(node,key,value,scope)
+ local r=self.Records[node]
+ if not r then r={Properties={},Scope=scope or'page'};self.Records[node]=r end
+ local property=r.Properties[key]
+ if not property then property={Original=node[key]};r.Properties[key]=property end
+ node[key]=value;property.Forced=value
 end
-function Shop:Style(node)
- if not self.Enabled or not self.Menu or not node:IsDescendantOf(self.Menu)and node~=self.Menu then return end
- if node:GetAttribute('AstralShopOwned')then return end
- local name=node.Name:lower()
- if node==self.Menu then
-  self:Write(node,'BackgroundColor3',Color3.fromRGB(61,63,66));self:Write(node,'BackgroundTransparency',.18);self:Write(node,'BorderSizePixel',0);self:Round(node,20)
- elseif node:IsA('TextLabel')or node:IsA('TextButton')or node:IsA('TextBox')then
-  self:Write(node,'TextColor3',Color3.fromRGB(245,245,245));self:Write(node,'FontFace',Font.fromEnum(Enum.Font.BuilderSansBold))
-  if node:IsA('TextLabel')then self:Write(node,'BackgroundTransparency',1)end
+function Shop:Round(node,radius,scope)
+ local c=corner(node)
+ if c then self:Write(c,'CornerRadius',UDim.new(0,radius),scope)
+ else
+  c=Instance.new('UICorner');c.Name='AstralShopCorner';c.CornerRadius=UDim.new(0,radius);c.Parent=node
+  self.Created[#self.Created+1]={Node=c,Scope=scope or'page'}
  end
- if node:IsA('ImageButton')or node:IsA('TextButton')then
-  if name:find('star',1,true)or name:find('fav',1,true)then self:Write(node,'BackgroundTransparency',1)
-  else self:Write(node,'BackgroundColor3',Color3.fromRGB(38,40,42));self:Write(node,'BackgroundTransparency',.3);self:Write(node,'BorderSizePixel',0);self:Round(node,9)end
- elseif node:IsA('Frame')or node:IsA('ScrollingFrame')then
-  if node~=self.Menu and(node.BackgroundTransparency<1 or name:find('bar',1,true)or name:find('tab',1,true))then
-   self:Write(node,'BackgroundColor3',Color3.fromRGB(59,61,64));self:Write(node,'BackgroundTransparency',.3);self:Write(node,'BorderSizePixel',0);self:Round(node,12)
+end
+function Shop:Restore(scope)
+ for node,r in pairs(self.Records)do if not scope or r.Scope==scope then
+  if node.Parent then for key,value in pairs(r.Properties)do if node[key]==value.Forced then node[key]=value.Original end end end
+  self.Records[node]=nil
+ end end
+ for i=#self.Created,1,-1 do local r=self.Created[i];if not scope or r.Scope==scope then r.Node:Destroy();table.remove(self.Created,i)end end
+end
+function Shop:Detach()
+ for _,c in ipairs(self.MenuConnections)do c:Disconnect()end;self.MenuConnections={}
+ for _,page in ipairs(self.Pages)do if page.Connection then page.Connection:Disconnect()end end
+ self:Restore();self.Pages={};self.Menu=nil;self.Contents=nil;self.Sidebar=nil
+end
+function Shop:Bind(menu,contents)
+ self:Detach();self.Menu=menu;self.Contents=contents
+ self.Sidebar=named(menu,{'Tabs','TabButtons','Navigation','Sidebar'})
+ if not isGui(self.Sidebar)then
+  for _,child in ipairs(menu:GetChildren())do if child~=contents and(child:IsA('Frame')or child:IsA('ScrollingFrame'))then
+   local count=0;for _,v in ipairs(child:GetDescendants())do if v:IsA('ImageButton')then count+=1 end end
+   if count>=4 and count<=12 then self.Sidebar=child;break end
+  end end
+ end
+ self.MenuConnections[#self.MenuConnections+1]=menu.DescendantAdded:Connect(function(v)
+  if v.Name~='AstralShopCorner'then self:Queue()end
+ end)
+ self.MenuConnections[#self.MenuConnections+1]=menu:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
+ self.MenuConnections[#self.MenuConnections+1]=contents:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
+end
+function Shop:Discover()
+ local seen={};for _,record in ipairs(self.Pages)do seen[record.Node]=true end
+ for _,page in ipairs(self.Contents:GetChildren())do
+  -- Actual game path: MenuGui.Menu.TabContents.Toys.Contents.
+  local name=page.Name:lower()
+  if isGui(page)and(name=='toys'or name=='toyshop'or name=='shop'or name=='toystore')and not seen[page]then
+   local list=page:FindFirstChild('Contents',true)
+   if list and(list:IsA('ScrollingFrame')or list:IsA('Frame'))then
+    local record={Node=page,List=list};self.Pages[#self.Pages+1]=record
+    record.Connection=page:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
+   end
   end
-  if node:IsA('ScrollingFrame')then self:Write(node,'ScrollBarThickness',3);self:Write(node,'ScrollBarImageColor3',Color3.fromRGB(225,225,225))end
  end
- -- The native inventory already owns its grid and category geometry. Preserve
- -- that layout, including cell ordering and favorite hitboxes.
+end
+function Shop:Window()
+ local camera=self.Context.Workspace and self.Context.Workspace.CurrentCamera
+ local viewport=camera and camera.ViewportSize or self.Context.Library.ScreenGui and self.Context.Library.ScreenGui.AbsoluteSize or Vector2.new(1024,768)
+ local width=math.max(160,math.min(720,viewport.X-32,(viewport.Y-54)*720/530))
+ local height=width*530/720
+ local scale=self.Menu:FindFirstChildOfClass('UIScale');local dpi=math.max(.1,scale and scale.Scale or 1)
+ self.Width=width/dpi;self.Height=height/dpi
+ self:Write(self.Menu,'Size',UDim2.fromOffset(self.Width,self.Height),'shared')
+ self:Write(self.Menu,'AnchorPoint',Vector2.new(.5,.5),'shared')
+ self:Write(self.Menu,'Position',UDim2.fromScale(.5,.5),'shared')
+ self:Write(self.Menu,'BackgroundTransparency',1,'shared')
+ self:Write(self.Menu,'BorderSizePixel',0,'shared')
+ local aspect=self.Menu:FindFirstChildOfClass('UIAspectRatioConstraint')
+ if aspect then self:Write(aspect,'AspectRatio',720/530,'shared')end
+ self:Write(self.Contents,'AnchorPoint',Vector2.zero,'shared');self:Write(self.Contents,'Position',UDim2.fromOffset(76,0),'shared')
+ self:Write(self.Contents,'Size',UDim2.new(1,-76,1,0),'shared')
+ self:Write(self.Contents,'BackgroundTransparency',1,'shared')
+ if isGui(self.Sidebar)then
+  local top=self.Height>=360 and 80 or 38
+  self:Write(self.Sidebar,'AnchorPoint',Vector2.zero,'shared');self:Write(self.Sidebar,'Position',UDim2.fromOffset(0,top),'shared')
+  self:Write(self.Sidebar,'Size',UDim2.new(0,64,1,-top),'shared')
+  self:Write(self.Sidebar,'BackgroundColor3',C(54,56,59),'shared')
+  self:Write(self.Sidebar,'BackgroundTransparency',.3,'shared')
+  self:Write(self.Sidebar,'BorderSizePixel',0,'shared');self:Round(self.Sidebar,18,'shared')
+  if self.Sidebar:IsA('ScrollingFrame')then self:Write(self.Sidebar,'ScrollBarThickness',0,'shared')end
+  local buttons={};for _,v in ipairs(self.Sidebar:GetChildren())do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end
+  local layout=self.Sidebar:FindFirstChildOfClass('UIListLayout')
+  local rowHeight=math.min(58,(self.Height-top)/math.max(#buttons,1))
+  for index,v in ipairs(buttons)do
+   self:Write(v,'BackgroundTransparency',1,'shared');self:Write(v,'BorderSizePixel',0,'shared')
+   self:Write(v,'Size',UDim2.new(1,0,0,height))
+   if v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit,'shared')end
+   if not layout then self:Write(v,'AnchorPoint',Vector2.zero,'shared');self:Write(v,'Position',UDim2.fromOffset(0,(index-1)*rowHeight),'shared')end
+  end
+ end
+ local close=named(self.Menu,{'Close','CloseButton','Exit','X'})
+ if isGui(close)then
+  self:Write(close,'AnchorPoint',Vector2.new(1,0),'shared');self:Write(close,'Position',UDim2.new(1,-2,0,-28),'shared')
+  self:Write(close,'Size',UDim2.fromOffset(24,24),'shared')
+ end
+end
+function Shop:Header(record)
+ local page,list=record.Node,record.List;local categories,title,search
+ for _,v in ipairs(descendants(page))do if not v:IsDescendantOf(list)and v~=list then
+  local name=v.Name:lower()
+  if(v:IsA('Frame')or v:IsA('ScrollingFrame'))and(name:find('categor',1,true)or name=='filters')then categories=categories or v end
+  if v:IsA('TextBox')then search=search or v end
+  if v:IsA('TextLabel')and(name:find('title',1,true)or name=='heading'or v.Text:lower():find('toys',1,true)or v.Text:lower():find('игруш',1,true))then title=title or v end
+ end end
+ local function normalizeParents(node)
+  local parent=node and node.Parent
+  while parent and parent~=page do
+   if isGui(parent)then
+    self:Write(parent,'AnchorPoint',Vector2.zero);self:Write(parent,'Position',UDim2.fromOffset(0,0));self:Write(parent,'Size',UDim2.new(1,0,0,34))
+    self:Write(parent,'BackgroundTransparency',1);self:Write(parent,'ClipsDescendants',false)
+   end
+   parent=parent.Parent
+  end
+ end
+ normalizeParents(title);normalizeParents(search);normalizeParents(categories)
+ if title then
+  self:Write(title,'TextColor3',C(245,245,245));self:Write(title,'FontFace',Font.fromEnum(Enum.Font.BuilderSansBold))
+  self:Write(title,'TextSize',18);self:Write(title,'TextXAlignment',Enum.TextXAlignment.Left)
+  if title.Parent then
+   self:Write(title,'AnchorPoint',Vector2.zero);self:Write(title,'Position',UDim2.fromOffset(10,0));self:Write(title,'Size',UDim2.new(search and .26 or .53,-14,0,34))
+  end
+ end
+ if search and search.Parent then
+  self:Write(search,'AnchorPoint',Vector2.zero);self:Write(search,'Position',UDim2.new(.28,0,0,4));self:Write(search,'Size',UDim2.new(.26,-4,0,26))
+  self:Write(search,'BackgroundTransparency',1);self:Write(search,'TextSize',12);self:Write(search,'TextColor3',C(230,230,230))
+ end
+ if categories and categories.Parent then
+  self:Write(categories,'AnchorPoint',Vector2.zero);self:Write(categories,'Position',UDim2.new(.56,3,0,0));self:Write(categories,'Size',UDim2.new(.44,-3,0,34))
+  self:Write(categories,'BackgroundColor3',C(54,56,59));self:Write(categories,'BackgroundTransparency',.18)
+  self:Write(categories,'BorderSizePixel',0);self:Round(categories,15)
+  if categories:IsA('ScrollingFrame')then self:Write(categories,'ScrollBarThickness',0)end
+  local buttons={};for _,v in ipairs(categories:GetChildren())do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end
+  local layout=categories:FindFirstChildOfClass('UIListLayout')
+  if layout then self:Write(layout,'FillDirection',Enum.FillDirection.Horizontal);self:Write(layout,'Padding',UDim.new(0,1))end
+  for index,v in ipairs(buttons)do
+   self:Write(v,'BackgroundTransparency',1);self:Write(v,'BorderSizePixel',0)
+   if v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit)end
+   self:Write(v,'Size',UDim2.new(1/math.max(#buttons,1),-1,1,0))
+   if not layout then self:Write(v,'AnchorPoint',Vector2.zero);self:Write(v,'Position',UDim2.fromScale((index-1)/math.max(#buttons,1),0))end
+  end
+ end
+end
+function Shop:Page(record)
+ local page,list=record.Node,record.List
+ self:Write(page,'AnchorPoint',Vector2.zero);self:Write(page,'Position',UDim2.fromOffset(0,0));self:Write(page,'Size',UDim2.fromScale(1,1))
+ self:Write(page,'BackgroundColor3',C(48,50,53));self:Write(page,'BackgroundTransparency',.28)
+ self:Write(page,'BorderSizePixel',0);self:Write(page,'ClipsDescendants',true);self:Round(page,18)
+ self:Write(list,'AnchorPoint',Vector2.zero);self:Write(list,'Position',UDim2.fromOffset(7,38));self:Write(list,'Size',UDim2.new(1,-14,1,-44))
+ self:Write(list,'BackgroundTransparency',1);self:Write(list,'BorderSizePixel',0);self:Write(list,'ClipsDescendants',true)
+ local available=math.max(20,self.Width-90);local columns=math.clamp(math.floor((available+4)/34),4,10)
+ local cell=math.max(12,math.floor((available-(columns-1)*4)/columns))
+ local grid=list:FindFirstChildOfClass('UIGridLayout')
+ if grid then
+  self:Write(grid,'CellSize',UDim2.fromOffset(cell,cell));self:Write(grid,'CellPadding',UDim2.fromOffset(4,4))
+  self:Write(grid,'FillDirection',Enum.FillDirection.Horizontal);self:Write(grid,'FillDirectionMaxCells',columns)
+ end
+ if list:IsA('ScrollingFrame')then
+  self:Write(list,'ScrollBarThickness',0);self:Write(list,'ScrollingDirection',Enum.ScrollingDirection.Y)
+  self:Write(list,'AutomaticCanvasSize',Enum.AutomaticSize.Y)
+ end
+ for _,v in ipairs(descendants(list))do
+  if isGui(v)then
+   self:Write(v,'BackgroundTransparency',1);self:Write(v,'BorderSizePixel',0)
+   if v:IsA('ImageLabel')or v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit)end
+   if v:IsA('TextLabel')then self:Write(v,'TextColor3',C(245,245,245));self:Write(v,'FontFace',Font.fromEnum(Enum.Font.BuilderSansBold))end
+  end
+ end
+ self:Header(record)
 end
 function Shop:Find()
- if not self.Enabled or self.Closed then return end
+ if not self.Enabled or self.Closed or self.Updating then return end;self.Updating=true
  local gui=self.Context.PlayerGui:FindFirstChild('MenuGui');local menu=gui and gui:FindFirstChild('Menu')
- if not menu or not menu:IsA('GuiObject')then self.Status:SetText('Ожидание MenuGui / Menu.');return end
- if self.Menu~=menu then
-  self:Restore();self.Menu=menu
-  self.MenuConnection=menu.DescendantAdded:Connect(function(v)self.Context.Defer(function()if v.Parent then self:Style(v)end end)end)
+ local contents=menu and menu:FindFirstChild('TabContents')
+ if not isGui(menu)or not isGui(contents)then
+  if self.Menu then self:Detach()end;self.Status:SetText('Открой игровой магазин.');self.Updating=false;return
  end
- self:Style(menu);for _,v in ipairs(menu:GetDescendants())do self:Style(v)end
- self.Status:SetText('Игровой магазин оформлен.')
-end
-function Shop:Restore()
- if self.MenuConnection then self.MenuConnection:Disconnect();self.MenuConnection=nil end
- for node,properties in pairs(self.Records)do if node.Parent then for key,r in pairs(properties)do if node[key]==r.Forced then node[key]=r.Original end end end end
- for _,v in ipairs(self.Created)do v:Destroy()end
- self.Records={};self.Created={};self.Menu=nil
+ if self.Menu~=menu or self.Contents~=contents then self:Bind(menu,contents)end
+ self:Discover()
+ local active=false
+ for _,r in ipairs(self.Pages)do if r.Node.Parent and r.Node.Visible then active=true;break end end
+ if active and contents.Visible and menu.Visible then
+  self:Window();for _,r in ipairs(self.Pages)do if r.Node.Parent and r.Node.Visible then self:Page(r)end end
+  self.Status:SetText('Игровой магазин: компактная сетка включена.')
+ else self:Restore('shared');self.Status:SetText('Оформление включится на вкладке игрушек.')end
+ self.Updating=false
 end
 function Shop:SetEnabled(value)
- if self.Closed then return end
- self.Enabled=value==true
- if self.Enabled then
-  if self.Context.Before then self.Context.Before()end
-  if self.Status then self:Find()end
- else self:Restore();if self.Status then self.Status:SetText('Оригинальное оформление магазина.')end end
+ if self.Closed then return end;self.Enabled=value==true
+ if self.Enabled then if self.Status then self:Find()end
+ else self:Detach();if self.Status then self.Status:SetText('Оригинальное оформление магазина.')end end
 end
 function Shop:Sync()local t=self.Context.Library.Toggles.AstralGUIShopStyle;self:SetEnabled(t and t.Value)end
 function Shop:Dispose()
- if self.Closed then return end;self.Closed=true;self.Enabled=false;self:Restore();for _,c in ipairs(self.Connections)do c:Disconnect()end
+ if self.Closed then return end;self.Closed=true;self.Enabled=false;self:Detach()
+ for _,c in ipairs(self.Connections)do c:Disconnect()end
 end
 return Shop
+
+]========]
+sources.FrameImageFiles = [========[
+-- Custom-asset files work without EditableImage or ImageContent permissions.
+local requireModule=...
+local decodePNG=requireModule('PNGDecode').Decode
+local encodePNG=requireModule('PNGEncode')
+local decodeJPEG=requireModule('JPEGDecode')
+local Files={};Files.__index=Files
+function Files.Install(ctx)return setmetatable({Context=ctx,Resources={},Serial=0},Files)end
+function Files:Decode(asset)
+ assert(not self.Closed,'Рамка выгружена')
+ local ok,bytes=pcall(self.Context.ReadAsset,asset)
+ if ok and type(bytes)=='string'and bytes:sub(1,8)=='\137PNG\13\10\26\10'then
+  local source=buffer.fromstring(bytes :: string);local parsed,why=decodePNG(source)
+  assert(parsed,why and why.message or'Некорректная PNG')
+  assert(parsed.width<=4096 and parsed.height<=4096 and parsed.width*parsed.height<=4194304,'Рамка должна быть не больше 4 Мп')
+  local image,errorInfo=parsed.cel(0,'rgba8');assert(image,errorInfo and errorInfo.message or'Не удалось прочитать PNG')
+  return{Pixels=image.bitmap,Width=parsed.width,Height=parsed.height}
+ end
+ if ok and type(bytes)=='string'and bytes:byte(1)==255 and bytes:byte(2)==216 then
+  local decoded,image=pcall(decodeJPEG.decode,bytes)
+  if decoded then
+   local pixels=buffer.create(image.width*image.height*4)
+   for i=0,image.width*image.height-1 do
+    local j=i*3;buffer.writeu8(pixels,i*4,image.pixels[j+1]);buffer.writeu8(pixels,i*4+1,image.pixels[j+2]);buffer.writeu8(pixels,i*4+2,image.pixels[j+3]);buffer.writeu8(pixels,i*4+3,255)
+   end
+   return{Pixels=pixels,Width=image.width,Height=image.height}
+  end
+ end
+ if self.Context.NativeDecode then
+  local decoded,result=pcall(self.Context.NativeDecode,asset)
+  if decoded then return result end
+ end
+ error('Не удалось прочитать рамку. Вставь прямую ссылку на PNG с прозрачным фоном.')
+end
+function Files:Texture(p,w,h)
+ assert(not self.Closed,'Рамка выгружена')
+ if not(self.Context.Write and self.Context.Register)then return self.Context.NativeTexture(p,w,h)end
+ self.Serial+=1
+ local filename=self.Context.Name(self.Serial)
+ local ok,asset=pcall(function()
+  self.Context.Write(filename,encodePNG.Encode(p,w,h))
+  return assert(self.Context.Register(filename),'Регистрация PNG не удалась')
+ end)
+ if not ok then if self.Context.Remove then pcall(self.Context.Remove,filename)end;error(asset)end
+ if self.Closed then if self.Context.Remove then pcall(self.Context.Remove,filename)end;error('Рамка выгружена')end
+ local resource={Filename=filename,Owner=self}
+ function resource:Destroy()
+  if self.Destroyed then return end;self.Destroyed=true;self.Owner.Resources[self]=nil
+  if self.Owner.Context.Remove then pcall(self.Owner.Context.Remove,self.Filename)end
+ end
+ self.Resources[resource]=true
+ return resource,asset
+end
+function Files:Dispose()
+ if self.Closed then return end;self.Closed=true
+ local all={};for r in pairs(self.Resources)do all[#all+1]=r end;for _,r in ipairs(all)do r:Destroy()end
+end
+return Files
+
+]========]
+sources.JPEGDecode = [========[
+-- lua-img-ascii JPEG decoder; {"repo": "tiberium/lua-img-ascii", "commit": "822915dd0cc1d72280a018dde0a622fe59fa696b"}
+-- Astral changes: separable IDCT, progressive scans, restart handling and size bounds.
+--[[
+MIT License
+
+Copyright (c) 2024 Tomasz Skalniak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+]]
+local M = {}
+
+local JPEG_START_OF_IMAGE = 0xD8
+local JPEG_END_OF_IMAGE = 0xD9
+local JPEG_START_OF_FRAME_BASELINE = 0xC0
+local JPEG_DEFINE_HUFFMAN_TABLE = 0xC4
+local JPEG_DEFINE_QUANTIZATION_TABLE = 0xDB
+local JPEG_START_OF_SCAN = 0xDA
+local JPEG_RESTART_INTERVAL = 0xDD
+local JPEG_RESTART_MARKER_MINIMUM = 0xD0
+local JPEG_RESTART_MARKER_MAXIMUM = 0xD7
+local JPEG_MARKER_PREFIX = 0xFF
+local JPEG_BYTE_STUFFING = 0x00
+local JPEG_8_BIT_PRECISION = 8
+local JPEG_DC_TABLE_CLASS = 0
+local JPEG_AC_TABLE_CLASS = 1
+local JPEG_QUANTIZATION_8_BIT = 0
+local JPEG_BLOCK_SIZE = 8
+local JPEG_FIRST_LUA_INDEX = 1
+local JPEG_CENTER_VALUE = 128
+local JPEG_MAXIMUM_VALUE = 255
+local JPEG_COMPONENT_GRAYSCALE = 1
+local JPEG_COMPONENT_RGB = 3
+local JPEG_16_BIT_SEGMENT_LENGTH = 2
+local JPEG_COMPONENT_HEADER_SIZE = 3
+local JPEG_DQT_TABLE_INFORMATION_SIZE = 1
+local JPEG_DQT_8_BIT_TABLE_SIZE = 64
+local JPEG_DHT_TABLE_INFORMATION_SIZE = 1
+local JPEG_DHT_CODE_LENGTH_COUNT = 16
+local JPEG_CHROMA_RED = 1.402
+local JPEG_CHROMA_GREEN_CB = 0.344136
+local JPEG_CHROMA_GREEN_CR = 0.714136
+local JPEG_CHROMA_BLUE = 1.772
+
+local ZIGZAG = {
+	1,
+	2,
+	9,
+	17,
+	10,
+	3,
+	4,
+	11,
+	18,
+	25,
+	33,
+	26,
+	19,
+	12,
+	5,
+	6,
+	13,
+	20,
+	27,
+	34,
+	41,
+	49,
+	42,
+	35,
+	28,
+	21,
+	14,
+	7,
+	8,
+	15,
+	22,
+	29,
+	36,
+	43,
+	50,
+	57,
+	58,
+	51,
+	44,
+	37,
+	30,
+	23,
+	16,
+	24,
+	31,
+	38,
+	45,
+	52,
+	59,
+	60,
+	53,
+	46,
+	39,
+	32,
+	40,
+	47,
+	54,
+	61,
+	62,
+	55,
+	48,
+	56,
+	63,
+	64,
+}
+
+local function read_uint16(data, offset)
+	return data:byte(offset) * 256 + data:byte(offset + 1)
+end
+
+local function clamp(value)
+	return math.max(0, math.min(JPEG_MAXIMUM_VALUE, math.floor(value + 0.5)))
+end
+
+local function new_bit_reader(data, offset)
+	return { data = data, offset = offset, current_byte = nil, bit_index = JPEG_8_BIT_PRECISION }
+end
+
+local function read_bit(reader)
+	if reader.bit_index == JPEG_8_BIT_PRECISION then
+		local byte = reader.data:byte(reader.offset)
+		if not byte then
+			error("Unexpected end of JPEG scan data.")
+		end
+		reader.offset = reader.offset + 1
+		if byte == JPEG_MARKER_PREFIX then
+			local next_byte = reader.data:byte(reader.offset)
+			while next_byte == JPEG_MARKER_PREFIX do
+				reader.offset = reader.offset + 1
+				next_byte = reader.data:byte(reader.offset)
+			end
+			if next_byte == JPEG_BYTE_STUFFING then
+				reader.offset = reader.offset + 1
+			elseif
+				next_byte
+				and next_byte >= JPEG_RESTART_MARKER_MINIMUM
+				and next_byte <= JPEG_RESTART_MARKER_MAXIMUM
+			then
+				reader.offset = reader.offset + 1
+			else
+				error("Unexpected JPEG marker in scan data.")
+			end
+		end
+		reader.current_byte = byte
+		reader.bit_index = 0
+	end
+
+	local bit = math.floor(reader.current_byte / 2 ^ (JPEG_8_BIT_PRECISION - JPEG_FIRST_LUA_INDEX - reader.bit_index))
+		% 2
+	reader.bit_index = reader.bit_index + 1
+	return bit
+end
+
+local function read_bits(reader, count)
+	local value = 0
+	for _ = JPEG_FIRST_LUA_INDEX, count do
+		value = value * 2 + read_bit(reader)
+	end
+	return value
+end
+
+local function receive_extend(reader, length)
+	if length == 0 then
+		return 0
+	end
+	local value = read_bits(reader, length)
+	local threshold = 2 ^ (length - 1)
+	return value < threshold and value - (2 ^ length - 1) or value
+end
+
+local function read_huffman(reader, table)
+	local code = 0
+	for length = JPEG_FIRST_LUA_INDEX, JPEG_DHT_CODE_LENGTH_COUNT do
+		code = code * 2 + read_bit(reader)
+		local symbol = table[length] and table[length][code]
+		if symbol then
+			return symbol
+		end
+	end
+	error("Invalid JPEG Huffman code.")
+end
+
+local BASIS={}
+for x=0,7 do BASIS[x]={};for u=0,7 do BASIS[x][u]=math.cos((2*x+1)*u*math.pi/16)*(u==0 and 1/math.sqrt(2)or 1)end end
+local function idct_block(coefficients)
+ local output,temporary={},{}
+ for v=0,7 do for x=0,7 do
+  local total=0;for u=0,7 do total+=coefficients[v*8+u+1]*BASIS[x][u]end;temporary[v*8+x+1]=total
+ end end
+ for y=0,7 do for x=0,7 do
+  local total=0;for v=0,7 do total+=temporary[v*8+x+1]*BASIS[y][v]end
+  output[y*8+x+1]=clamp(total*.25+128)
+ end end
+ return output
+end
+local function restart(reader)
+ reader.bit_index=8
+ local p=reader.offset
+ assert(reader.data:byte(p)==255,'Missing JPEG restart marker')
+ while reader.data:byte(p)==255 do p+=1 end
+ local marker=reader.data:byte(p);assert(marker and marker>=208 and marker<=215,'Invalid JPEG restart marker')
+ reader.offset=p+1
+end
+local function scan_block(reader,component,coeff,dc_table,ac_table,ss,se,ah,al,state,progressive)
+ local step=2^al
+ if ss==0 then
+  if ah==0 then component.dc+=receive_extend(reader,read_huffman(reader,dc_table));coeff[1]=component.dc*step
+  else coeff[1]+=read_bit(reader)*step end
+  if progressive then return end
+ end
+ local k=math.max(ss,1)
+ local function refine(index)
+  local v=coeff[index]
+  if read_bit(reader)==1 and math.floor(math.abs(v)/step)%2==0 then coeff[index]=v+(v<0 and-step or step)end
+ end
+ if ah==0 then
+  if state.EOB>0 then state.EOB-=1;return end
+  while k<=se do
+   local symbol=read_huffman(reader,ac_table);local run,size=math.floor(symbol/16),symbol%16
+   if size==0 then
+    if run==15 then k+=16 else state.EOB=2^run+read_bits(reader,run)-1;break end
+   else
+    k+=run;assert(k<=se,'JPEG AC coefficient exceeds scan');coeff[ZIGZAG[k+1]]=receive_extend(reader,size)*step;k+=1
+   end
+  end
+ elseif state.EOB>0 then
+  while k<=se do local index=ZIGZAG[k+1];if coeff[index]~=0 then refine(index)end;k+=1 end
+  state.EOB-=1
+ else
+  while k<=se do
+   local symbol=read_huffman(reader,ac_table);local run,size=math.floor(symbol/16),symbol%16;local value
+   if size==0 then
+    if run<15 then
+     state.EOB=2^run+read_bits(reader,run)
+     while k<=se do local index=ZIGZAG[k+1];if coeff[index]~=0 then refine(index)end;k+=1 end
+     state.EOB-=1;break
+    end
+    run=16
+   else assert(size==1,'Invalid JPEG refinement coefficient');value=read_bit(reader)==1 and step or-step end
+   while k<=se do
+    local index=ZIGZAG[k+1]
+    if coeff[index]~=0 then refine(index)
+    elseif run==0 then break else run-=1 end
+    k+=1
+   end
+   if value then assert(k<=se,'JPEG refinement exceeds scan');coeff[ZIGZAG[k+1]]=value;k+=1
+   else assert(run==0,'Truncated JPEG zero run')end
+  end
+ end
+end
+
+local function parse_huffman_table(data, offset, length, tables)
+	local end_offset = offset + length
+	while offset < end_offset do
+		local information = data:byte(offset)
+		offset = offset + JPEG_DHT_TABLE_INFORMATION_SIZE
+		local table_class = math.floor(information / 16)
+		local table_id = information % 16
+		if table_class ~= JPEG_DC_TABLE_CLASS and table_class ~= JPEG_AC_TABLE_CLASS then
+			error("JPEG has an invalid Huffman table class.")
+		end
+
+		local counts = {}
+		local symbol_count = 0
+		for index = JPEG_FIRST_LUA_INDEX, JPEG_DHT_CODE_LENGTH_COUNT do
+			counts[index] = data:byte(offset + index - JPEG_FIRST_LUA_INDEX)
+			symbol_count = symbol_count + counts[index]
+		end
+		offset = offset + JPEG_DHT_CODE_LENGTH_COUNT
+
+		local huffman = {}
+		local code = 0
+		for code_length = JPEG_FIRST_LUA_INDEX, JPEG_DHT_CODE_LENGTH_COUNT do
+			huffman[code_length] = {}
+			for _ = JPEG_FIRST_LUA_INDEX, counts[code_length] do
+				huffman[code_length][code] = data:byte(offset)
+				offset = offset + 1
+				code = code + 1
+			end
+			code = code * 2
+		end
+		if offset > end_offset + 1 then
+			error("JPEG Huffman table exceeds its segment.")
+		end
+		tables[table_class][table_id] = huffman
+	end
+end
+
+local function write_block(component, block, x_offset, y_offset)
+	for y = 0, JPEG_BLOCK_SIZE - 1 do
+		local destination_y = y_offset + y
+		if destination_y < component.height then
+			for x = 0, JPEG_BLOCK_SIZE - 1 do
+				local destination_x = x_offset + x
+				if destination_x < component.width then
+					component.samples[destination_y * component.width + destination_x + JPEG_FIRST_LUA_INDEX] =
+						block[y * JPEG_BLOCK_SIZE + x + JPEG_FIRST_LUA_INDEX]
+				end
+			end
+		end
+	end
+end
+
+---@param jpeg string
+---@return { width: number, height: number, channels: number, pixels: number[] }
+function M.decode(jpeg)
+	if type(jpeg) ~= "string" or jpeg:byte(1) ~= JPEG_MARKER_PREFIX or jpeg:byte(2) ~= JPEG_START_OF_IMAGE then
+		error("Input is not a JPEG file.")
+	end
+
+	local offset = 3
+	local quantization_tables = {}
+	local huffman_tables = { [JPEG_DC_TABLE_CLASS] = {}, [JPEG_AC_TABLE_CLASS] = {} }
+	local components = {}
+	local components_by_id = {}
+	local width
+	local height
+	local maximum_horizontal_sampling
+	local maximum_vertical_sampling
+	local restart_interval = 0
+    local progressive=false;local scans=0
+
+	while offset <= #jpeg do
+		while jpeg:byte(offset) == JPEG_MARKER_PREFIX do
+			offset = offset + 1
+		end
+		local marker = jpeg:byte(offset)
+		offset = offset + 1
+		if marker == JPEG_END_OF_IMAGE then
+			break
+		elseif marker < JPEG_RESTART_MARKER_MINIMUM or marker > JPEG_RESTART_MARKER_MAXIMUM then
+			local segment_length = read_uint16(jpeg, offset)
+			local segment_offset = offset + JPEG_16_BIT_SEGMENT_LENGTH
+			local segment_data_length = segment_length - JPEG_16_BIT_SEGMENT_LENGTH
+			offset = segment_offset + segment_data_length
+
+			if marker == JPEG_DEFINE_QUANTIZATION_TABLE then
+				local table_offset = segment_offset
+				while table_offset < offset do
+					local information = jpeg:byte(table_offset)
+					table_offset = table_offset + JPEG_DQT_TABLE_INFORMATION_SIZE
+					if math.floor(information / 16) ~= JPEG_QUANTIZATION_8_BIT then
+						error("Only 8-bit JPEG quantization tables are supported.")
+					end
+					local table_id = information % 16
+					local table = {}
+					for index = JPEG_FIRST_LUA_INDEX, JPEG_DQT_8_BIT_TABLE_SIZE do
+						table[ZIGZAG[index]] = jpeg:byte(table_offset + index - JPEG_FIRST_LUA_INDEX)
+					end
+					table_offset = table_offset + JPEG_DQT_8_BIT_TABLE_SIZE
+					quantization_tables[table_id] = table
+				end
+			elseif marker == JPEG_START_OF_FRAME_BASELINE or marker==0xC2 then
+                progressive=marker==0xC2
+				if jpeg:byte(segment_offset) ~= JPEG_8_BIT_PRECISION then
+					error("Only 8-bit JPEG precision is supported.")
+				end
+				height = read_uint16(jpeg, segment_offset + 1)
+				width = read_uint16(jpeg, segment_offset + 3)
+				assert(width>0 and height>0 and width<=4096 and height<=4096 and width*height<=1048576,"JPEG frame exceeds 1 megapixel")
+                local component_count = jpeg:byte(segment_offset + 5)
+				if component_count ~= JPEG_COMPONENT_GRAYSCALE and component_count ~= JPEG_COMPONENT_RGB then
+					error("Only grayscale and three-component JPEG images are supported.")
+				end
+				maximum_horizontal_sampling = 0
+				maximum_vertical_sampling = 0
+				for index = JPEG_FIRST_LUA_INDEX, component_count do
+					local component_offset = segment_offset
+						+ 6
+						+ (index - JPEG_FIRST_LUA_INDEX) * JPEG_COMPONENT_HEADER_SIZE
+					local sampling = jpeg:byte(component_offset + 1)
+					local component = {
+						id = jpeg:byte(component_offset),
+						h = math.floor(sampling / 16),
+						v = sampling % 16,
+						quantization_id = jpeg:byte(component_offset + 2),
+						dc = 0,
+					}
+					assert(component.h>=1 and component.h<=4 and component.v>=1 and component.v<=4,"Invalid JPEG sampling")
+                    maximum_horizontal_sampling = math.max(maximum_horizontal_sampling, component.h)
+					maximum_vertical_sampling = math.max(maximum_vertical_sampling, component.v)
+					table.insert(components, component)
+					components_by_id[component.id] = component
+				end
+			elseif marker == JPEG_DEFINE_HUFFMAN_TABLE then
+				parse_huffman_table(jpeg, segment_offset, segment_data_length, huffman_tables)
+			elseif marker == JPEG_RESTART_INTERVAL then
+				restart_interval = read_uint16(jpeg, segment_offset)
+			elseif marker == JPEG_START_OF_SCAN then
+				if not width then
+					error("JPEG scan appears before its frame.")
+				end
+                scans+=1;assert(scans<=128,'Too many JPEG scans')
+                local scan_count=jpeg:byte(segment_offset);assert(scan_count>=1 and scan_count<=#components,'Invalid JPEG scan components')
+                local selected={}
+                for index=1,scan_count do
+                    local p=segment_offset+1+(index-1)*2
+                    local c=assert(components_by_id[jpeg:byte(p)],'Unknown JPEG scan component')
+                    local tables=jpeg:byte(p+1);c.dc_table_id=math.floor(tables/16);c.ac_table_id=tables%16;c.dc=0;selected[#selected+1]=c
+                end
+                local spectral=segment_offset+1+scan_count*2
+                local ss,se,approx=jpeg:byte(spectral),jpeg:byte(spectral+1),jpeg:byte(spectral+2)
+                local ah,al=math.floor(approx/16),approx%16
+                assert(ss<=se and se<=63 and ah<=13 and al<=13,'Invalid JPEG spectral range')
+                assert(progressive or(ss==0 and se==63 and ah==0 and al==0),'Invalid sequential JPEG scan')
+                assert(not progressive or(ss==0 and se==0 or ss>0 and scan_count==1),'Invalid progressive JPEG scan')
+                local mcu_columns=math.ceil(width/(8*maximum_horizontal_sampling));local mcu_rows=math.ceil(height/(8*maximum_vertical_sampling))
+                for _,c in ipairs(components)do
+                    c.quantization=assert(quantization_tables[c.quantization_id],'Missing JPEG quantization table')
+                    c.width=math.ceil(width*c.h/maximum_horizontal_sampling);c.height=math.ceil(height*c.v/maximum_vertical_sampling)
+                    c.block_columns=mcu_columns*c.h;c.blocks=c.blocks or{}
+                end
+                local reader=new_bit_reader(jpeg,offset);local state={EOB=0};local units=0
+                local function decode(c,x,y)
+                    local index=y*c.block_columns+x+1;local block=c.blocks[index]
+                    if not block then block=table.create(64,0);c.blocks[index]=block end
+                    local dc=huffman_tables[0][c.dc_table_id];local ac=huffman_tables[1][c.ac_table_id]
+                    assert(ss~=0 or ah~=0 or dc,'Missing JPEG DC table');assert(se==0 or ac,'Missing JPEG AC table')
+                    scan_block(reader,c,block,dc,ac,ss,se,ah,al,state,progressive)
+                end
+                local columns=scan_count==1 and math.ceil(selected[1].width/8)or mcu_columns
+                local rows=scan_count==1 and math.ceil(selected[1].height/8)or mcu_rows
+                for y=0,rows-1 do for x=0,columns-1 do
+                    if restart_interval>0 and units>0 and units%restart_interval==0 then
+                        restart(reader);state.EOB=0;for _,c in ipairs(selected)do c.dc=0 end
+                    end
+                    if scan_count==1 then decode(selected[1],x,y)
+                    else for _,c in ipairs(selected)do for by=0,c.v-1 do for bx=0,c.h-1 do decode(c,x*c.h+bx,y*c.v+by)end end end end
+                    units+=1
+                end end
+                offset=reader.offset
+			end
+		end
+	end
+
+	if not width then
+		error("JPEG is missing a baseline frame.")
+	end
+
+    for _,c in ipairs(components)do
+        assert(c.blocks,'JPEG component has no image data');c.samples={}
+        for index,block in pairs(c.blocks)do
+            local coefficients=table.create(64)
+            for k=1,64 do coefficients[k]=block[k]*c.quantization[k]end
+            write_block(c,idct_block(coefficients),((index-1)%c.block_columns)*8,math.floor((index-1)/c.block_columns)*8)
+        end
+        c.blocks=nil
+    end
+
+	local pixels = {}
+	for y = 0, height - 1 do
+		for x = 0, width - 1 do
+			local samples = {}
+			for index, component in ipairs(components) do
+				local sample_x = math.floor(x * component.h / maximum_horizontal_sampling)
+				local sample_y = math.floor(y * component.v / maximum_vertical_sampling)
+				samples[index] = component.samples[sample_y * component.width + sample_x + JPEG_FIRST_LUA_INDEX]
+			end
+			if #components == JPEG_COMPONENT_GRAYSCALE then
+				table.insert(pixels, samples[1])
+				table.insert(pixels, samples[1])
+				table.insert(pixels, samples[1])
+			else
+				local luminance = samples[1]
+				local blue_chroma = samples[2] - JPEG_CENTER_VALUE
+				local red_chroma = samples[3] - JPEG_CENTER_VALUE
+				table.insert(pixels, clamp(luminance + JPEG_CHROMA_RED * red_chroma))
+				table.insert(
+					pixels,
+					clamp(luminance - JPEG_CHROMA_GREEN_CB * blue_chroma - JPEG_CHROMA_GREEN_CR * red_chroma)
+				)
+				table.insert(pixels, clamp(luminance + JPEG_CHROMA_BLUE * blue_chroma))
+			end
+		end
+	end
+
+	return { width = width, height = height, channels = JPEG_COMPONENT_RGB, pixels = pixels }
+end
+
+return M
+
+]========]
+sources.PNGCRC = [========[
+-- Picguin crc32; origin {"repo": "wizevaxel/picguin", "commit": "c9c10f5639720d7dedc7955052026d6636b3d5b0"}
+-- Adapted module resolution and table exports for the standalone bundle.
+--[[
+MIT License
+
+Copyright (c) 2026 wizeväxel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+]]
+--!strict
+--!native
+--!optimize 2
+
+local LOOKUP = buffer.create(0x1000)
+
+for index = 0, 0xFF do
+	local crc = index
+	for _ = 1, 8 do
+		crc = crc % 2 == 1 and bit32.bxor(crc // 2, 0xEDB88320) or crc // 2
+	end
+
+	buffer.writeu32(LOOKUP, index * 4, crc)
+end
+
+for index = 0, 0xFF do
+	local crc = buffer.readu32(LOOKUP, index * 4)
+	for cursor = 1, 3 do
+		crc = bit32.bxor(crc // 0x100, buffer.readu32(LOOKUP, (crc % 0x100) * 4))
+		buffer.writeu32(LOOKUP, cursor * 0x400 + index * 4, crc)
+	end
+end
+
+local function compute(source: buffer, read_offset: number, read_length: number): number
+	local read_end = read_offset + read_length
+
+	local crc = 0xFFFFFFFF
+	local offset = read_offset
+
+	while offset + 4 <= read_end do
+		crc = bit32.bxor(
+			buffer.readu32(LOOKUP, 0xC00 + bit32.bxor((crc % 0x100), buffer.readu8(source, offset)) * 4),
+			buffer.readu32(LOOKUP, 0x800 + bit32.bxor((crc // 0x100) % 0x100, buffer.readu8(source, offset + 1)) * 4),
+			buffer.readu32(LOOKUP, 0x400 + bit32.bxor((crc // 0x10000) % 0x100, buffer.readu8(source, offset + 2)) * 4),
+			buffer.readu32(LOOKUP, bit32.bxor((crc // 0x1000000), buffer.readu8(source, offset + 3)) * 4)
+		)
+
+		offset += 4
+	end
+
+	while offset < read_end do
+		local index = bit32.bxor(crc % 0x100, buffer.readu8(source, offset))
+		crc = bit32.bxor(buffer.readu32(LOOKUP, index * 4), crc // 0x100)
+		offset += 1
+	end
+
+	return bit32.bxor(crc, 0xFFFFFFFF)
+end
+
+return {Compute=compute}
+
+]========]
+sources.PNGDecode = [========[
+-- Picguin decode; origin {"repo": "wizevaxel/picguin", "commit": "c9c10f5639720d7dedc7955052026d6636b3d5b0"}
+-- Adapted module resolution and table exports for the standalone bundle.
+--[[
+MIT License
+
+Copyright (c) 2026 wizeväxel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+]]
+--!strict
+--!native
+--!optimize 2
+local requireModule=...
+
+local types = requireModule("PNGTypes")
+local crc32 = requireModule("PNGCRC").Compute
+local zlib = requireModule("PNGInflate")
+
+export type DecodeErrorCode =
+	| "unsupported"
+	| "overflow"
+	| "unexpected_eof"
+	| "invalid_signature"
+	| "invalid_crc"
+	| "invalid_length"
+	| "invalid_header"
+	| "unknown_chunk"
+	| "missing_chunk"
+export type DecodeError = types.Error<DecodeErrorCode>
+
+export type CelErrorCode =
+	| zlib.DecompressErrorCode
+	| "invalid_filter"
+	| "invalid_option"
+export type CelError = types.Error<CelErrorCode>
+
+export type DecodeOptions = {
+	crc: ("all" | "critical" | "none")?,
+}
+
+export type Parsed = {
+	width: number,
+	height: number,
+	frames: number,
+	plays: number,
+	alpha: boolean,
+
+	headers: {
+		interlacing: boolean,
+		channels: number,
+		bit_depth: number,
+		color_space: types.ColorSpace,
+	},
+	palette: {number}?,
+
+	cel: (frame: number?, target: ColorTarget?) -> (Cel?, CelError),
+}
+
+export type Cel = {
+	bitmap: buffer,
+	region: BitmapRegion,
+	duration: number,
+
+	dispose: types.DisposeOperation,
+	blend: types.BlendOperation,
+}
+
+export type ColorTarget =
+	| "rgba8"
+	| "rgba16"
+
+export type BitmapRegion = {
+	size: vector,
+	position: vector,
+}
+
+type DecodeContext = {
+	source: buffer,
+	length: number,
+
+	crc: ("all" | "critical" | "none"),
+
+	frames: {FrameContext},
+	frame: FrameContext | false,
+
+	spans: {[types.Chunk]: SourceSpans},
+	parsed: Parsed,
+}
+
+type FrameContext = {
+	width: number,
+	height: number,
+	x: number,
+	y: number,
+
+	dispose: types.DisposeOperation,
+	blend: types.BlendOperation,
+	duration: number,
+
+	row_length: number,
+	out_length: number,
+	spans: SourceSpans,
+}
+
+type SourceSpans = {number}
+
+local function map<T>(t: {T}): {[T]: true}
+	local out: {[T]: true} = {}
+	for _, value in t do
+		out[value] = true
+	end
+
+	return out
+end
+
+local function ok(): {code: "ok", message: ""}
+	return {code = "ok", message = ""}
+end
+
+local function decode_error(code: DecodeErrorCode, message: string): DecodeError
+	return {code = code, message = message}
+end
+
+local function cel_error(code: CelErrorCode, message: string): CelError
+	return {code = code, message = message}
+end
+
+local MAX_BUFFER_SIZE = 2 ^ 30
+
+local SIGNATURE = "\x89PNG\x0D\x0A\x1A\x0A"
+
+local CRITICAL_CHUNK_MAP = map {
+	"IHDR", "IDAT", "PLTE", "IEND",
+} :: {[types.CriticalChunk]: true} & {[types.AncillaryChunk]: nil}
+
+local COLOR_TYPE_MAP: {[number]: {color_space: types.ColorSpace, channels: number, bit_depths: {[number]: true}}} = {
+	[0] = {color_space = "grayscale", channels = 1, bit_depths = map {1, 2, 4, 8, 16}},
+	[2] = {color_space = "truecolor", channels = 3, bit_depths = map {8, 16}},
+	[3] = {color_space = "indexed", channels = 1, bit_depths =  map {1, 2, 4, 8}},
+	[4] = {color_space = "grayscale", channels = 2, bit_depths = map {8, 16}},
+	[6] = {color_space = "truecolor", channels = 4, bit_depths = map {8, 16}},
+}
+
+local DISPOSE_OP_MAP: {[number]: types.DisposeOperation} = {
+	[0] = "none",
+	[1] = "background",
+	[2] = "previous",
+}
+local BLEND_OP_MAP: {[number]: types.BlendOperation} = {
+	[0] = "source",
+	[1] = "over",
+}
+
+local CHUNK_PARSER: {[types.Chunk]: (DecodeContext, SourceSpans, number) -> DecodeError?} = {
+	["IHDR"] = function(context, chunk_spans, spans_index)
+		local chunk_offset = chunk_spans[spans_index]
+		local chunk_length = chunk_spans[spans_index + 1]
+		if chunk_length ~= 13 then
+			return decode_error("invalid_length", `invalid IHDR chunk length: expected 13 bytes, got {chunk_length}`)
+		end
+
+		local source = context.source
+
+		local width = bit32.byteswap(buffer.readu32(source, chunk_offset))
+		local height = bit32.byteswap(buffer.readu32(source, chunk_offset + 4))
+		if width == 0 or height == 0 then
+			return decode_error("invalid_header", `invalid image dimensions: {width}x{height}`)
+		end
+
+		local bit_depth = buffer.readu8(source, chunk_offset + 8)
+		local color_type = buffer.readu8(source, chunk_offset + 9)
+		local color_info = COLOR_TYPE_MAP[color_type]
+		if not color_info then
+			return decode_error("invalid_header", `invalid color type: {color_type}`)
+		elseif not color_info.bit_depths[bit_depth] then
+			return decode_error("invalid_header", `invalid bit depth: {bit_depth}`)
+		end
+
+		local alpha = color_type > 3
+		local color_space = color_info.color_space
+		local channels = color_info.channels
+
+		local row_length = (width * bit_depth * channels + 7) // 8
+		local out_length = height * row_length
+		if out_length + height > MAX_BUFFER_SIZE then
+			return decode_error("overflow", "predetermined decompressed output too large")
+		end
+
+		local compression = buffer.readu8(source, chunk_offset + 10)
+		if compression > 0 then
+			return decode_error("unsupported", `unsupported compression method: {compression}`)
+		end
+
+		local filtering = buffer.readu8(source, chunk_offset + 11)
+		if filtering > 0 then
+			return decode_error("unsupported", `unsupported filter method: {filtering}`)
+		end
+
+		local interlacing = buffer.readu8(source, chunk_offset + 12)
+		if interlacing > 1 then
+			return decode_error("invalid_header", `invalid interlacing specifier: {interlacing}`)
+		elseif interlacing == 1 then
+			return decode_error("unsupported", "interlacing is unsupported")
+		end
+
+		local parsed = context.parsed
+		parsed.width = width
+		parsed.height = height
+		parsed.frames = 1
+		parsed.alpha = alpha
+
+		local headers = parsed.headers
+		headers.interlacing = interlacing == 1
+		headers.color_space = color_space
+		headers.bit_depth = bit_depth
+		headers.channels = channels
+
+		local frame: FrameContext = {
+			width = parsed.width,
+			height = parsed.height,
+			x = 0,
+			y = 0,
+
+			dispose = "none",
+			blend = "source",
+			duration = 0,
+
+			row_length = row_length,
+			out_length = out_length,
+			spans = {},
+		}
+		context.frames[0] = frame
+		context.frame = frame
+
+		return nil
+	end,
+	["acTL"] = function(context, chunk_spans, spans_index)
+		local chunk_offset = chunk_spans[spans_index]
+		local chunk_length = chunk_spans[spans_index + 1]
+		if chunk_length ~= 8 then
+			return decode_error("invalid_length", `invalid acTL chunk length: expected 8 bytes, got {chunk_length}`)
+		end
+
+		context.parsed.frames = bit32.byteswap(buffer.readu32(context.source, chunk_offset))
+		context.parsed.plays = bit32.byteswap(buffer.readu32(context.source, chunk_offset + 4))
+
+		return nil
+	end,
+	["PLTE"] = function(context, chunk_spans, spans_index)
+		local chunk_offset = chunk_spans[spans_index]
+		local chunk_length = chunk_spans[spans_index + 1]
+		if chunk_length < 3 or chunk_length > 768 then
+			return decode_error("invalid_length", `invalid PLTE chunk length: expected 3-768 bytes, got {chunk_length}`)
+		elseif chunk_length % 3 ~= 0 then
+			return decode_error("invalid_length", `invalid PLTE chunk length: expected a multiple of 3, got {chunk_length}`)
+		end
+
+		local source = context.source
+
+		local palette = table.create(chunk_length // 3, 0xFF000000)
+		context.parsed.palette = palette
+
+		for index = 0, chunk_length // 3 - 1 do
+			local offset = chunk_offset + index * 3
+			palette[index + 1] += buffer.readu16(source, offset) + buffer.readu8(source, offset + 2) * 0x10000
+		end
+
+		return nil
+	end,
+	["tRNS"] = function(context, chunk_spans, spans_index)
+		local chunk_offset = chunk_spans[spans_index]
+		local chunk_length = chunk_spans[spans_index + 1]
+
+		local source = context.source
+		local parsed = context.parsed
+
+		if parsed.headers.color_space == "indexed" then
+			local palette = parsed.palette
+			if not palette then return nil end
+
+			local count = math.min(chunk_length, #palette)
+			local offset = chunk_offset - 1
+			for index = 1, count do
+				palette[index] = palette[index] % 0x1000000 + buffer.readu8(source, offset + index) * 0x1000000
+			end
+		end
+
+		return nil
+	end,
+	["fcTL"] = function(context, chunk_spans, spans_index)
+		local chunk_offset = chunk_spans[spans_index]
+		local chunk_length = chunk_spans[spans_index + 1]
+		if chunk_length ~= 26 then
+			return decode_error("invalid_length", `invalid fcTL chunk length: expected 26 bytes, got {chunk_length}`)
+		end
+
+		local source = context.source
+		local headers = context.parsed.headers
+
+		local width = bit32.byteswap(buffer.readu32(source, chunk_offset + 4))
+		local height = bit32.byteswap(buffer.readu32(source, chunk_offset + 8))
+		if width == 0 or height == 0 then
+			return decode_error("invalid_header", `invalid image dimensions: {width}x{height}`)
+		end
+
+		local x = bit32.byteswap(buffer.readu32(source, chunk_offset + 12))
+		local y = bit32.byteswap(buffer.readu32(source, chunk_offset + 16))
+
+		local dispose_op = buffer.readu8(source, chunk_offset + 24)
+		local dispose = DISPOSE_OP_MAP[dispose_op]
+		if not dispose then
+			return decode_error("invalid_header", `invalid dispose_op: {dispose_op}`)
+		end
+
+		local blend_op = buffer.readu8(source, chunk_offset + 25)
+		local blend = BLEND_OP_MAP[blend_op]
+		if not blend then
+			return decode_error("invalid_header", `invalid blend_op: {blend_op}`)
+		end
+
+		local delay_num = bit32.byteswap(buffer.readu16(source, chunk_offset + 20) * 0x10000)
+		local delay_den = bit32.byteswap(buffer.readu16(source, chunk_offset + 22) * 0x10000)
+
+		local row_length = (width * headers.bit_depth * headers.channels + 7) // 8
+		local out_length = height * row_length
+		if out_length + height > MAX_BUFFER_SIZE then
+			return decode_error("overflow", `frame {#context.frames + 1} predetermined decompressed output too large`)
+		end
+
+		local frame: FrameContext = {
+			width = width,
+			height = height,
+			x = x,
+			y = y,
+
+			dispose = dispose,
+			blend = blend,
+			duration = delay_num / (delay_den == 0 and 100 or delay_den),
+
+			row_length = row_length,
+			out_length = out_length,
+			spans = {},
+		}
+		table.insert(context.frames, frame)
+		context.frame = frame
+
+		return nil
+	end,
+	["IDAT"] = function(context, chunk_spans, spans_index)
+		local chunk_offset = chunk_spans[spans_index]
+		local chunk_length = chunk_spans[spans_index + 1]
+
+		local frame = context.frame
+		if frame then
+			table.insert(frame.spans, chunk_offset)
+			table.insert(frame.spans, chunk_length)
+		end
+
+		return nil
+	end,
+	["fdAT"] = function(context, chunk_spans, spans_index)
+		local chunk_offset = chunk_spans[spans_index]
+		local chunk_length = chunk_spans[spans_index + 1]
+		if chunk_length < 4 then
+			return decode_error("invalid_length", `invalid fdAT chunk length: expected less than 4 bytes, got {chunk_length}`)
+		end
+
+		local frame = context.frame
+		if frame then
+			table.insert(frame.spans, chunk_offset + 4)
+			table.insert(frame.spans, chunk_length - 4)
+		end
+
+		return nil
+	end,
+	["IEND"] = function(context, chunk_spans, spans_index)
+		if not context.spans["IDAT"] then
+			return decode_error("missing_chunk", "missing IDAT chunk")
+		end
+
+		if context.parsed.headers.color_space == "indexed" and not context.spans["PLTE"] then
+			return decode_error("missing_chunk", "missing PLTE chunk with indexed color type")
+		end
+
+		context.frame = false
+
+		return nil
+	end,
+}
+
+local CONVERT_COLOR: {[types.ColorSpace]: (DecodeContext, FrameContext, buffer) -> buffer} = {
+	["truecolor"] = function(context, frame, data)
+		local length = frame.out_length
+		local parsed = context.parsed
+		local headers = parsed.headers
+
+		local channels = headers.channels
+		local bit_depth = headers.bit_depth
+
+		local transparency: number?
+		if context.spans["tRNS"] then
+			local source = context.source
+			local offset = context.spans["tRNS"][1]
+
+			if bit_depth == 16 then
+				transparency = bit32.byteswap(buffer.readu16(source, offset) * 0x10000)
+					+ bit32.byteswap(buffer.readu16(source, offset + 2))
+					+ bit32.byteswap(buffer.readu16(source, offset + 4)) * 0x10000
+			else
+				transparency = buffer.readu8(source, offset + 1)
+					+ buffer.readu8(source, offset + 3) * 0x100
+					+ buffer.readu8(source, offset + 5) * 0x10000
+			end
+		end
+
+		local out = buffer.create(frame.width * frame.height * (bit_depth == 16 and 2 or 1) * 4)
+
+		if bit_depth == 16 then
+			if channels == 4 then
+				local cursor = 0
+				for offset = 0, length - 1, 8 do
+					local rg = bit32.byteswap(buffer.readu16(data, offset) * 0x10000)
+						+ bit32.byteswap(buffer.readu16(data, offset + 2))
+					local ba = bit32.byteswap(buffer.readu16(data, offset + 4) * 0x10000)
+						+ bit32.byteswap(buffer.readu16(data, offset + 6))
+					buffer.writeu32(out, cursor, rg)
+					buffer.writeu32(out, cursor + 4, ba)
+					cursor += 8
+				end
+			else
+				local cursor = 0
+				for offset = 0, length - 1, 6 do
+					local rgb = bit32.byteswap(buffer.readu16(data, offset) * 0x10000)
+						+ bit32.byteswap(buffer.readu16(data, offset + 2))
+						+ bit32.byteswap(buffer.readu16(data, offset + 4)) * 0x10000
+					buffer.writeu32(out, cursor, rgb % 0x100000000)
+					buffer.writeu32(out, cursor + 4, rgb // 0x100000000 + (rgb == transparency and 0 or 0xFFFF0000))
+					cursor += 8
+				end
+			end
+		else
+			if channels == 4 then
+				buffer.copy(out, 0, data, 0, length)
+			else
+				local cursor = 0
+				for offset = 0, length - 1, 3 do
+					local rgb = buffer.readu16(data, offset) + buffer.readu8(data, offset + 2) * 0x10000
+					buffer.writeu32(out, cursor, rgb + (rgb == transparency and 0 or 0xFF000000))
+					cursor += 4
+				end
+			end
+		end
+
+		return out
+	end,
+	["grayscale"] = function(context, frame, data)
+		local length = frame.out_length
+		local parsed = context.parsed
+		local headers = parsed.headers
+
+		local channels = headers.channels
+		local bit_depth = headers.bit_depth
+
+		local transparency = -1
+		if context.spans["tRNS"] then
+			local source = context.source
+			local offset = context.spans["tRNS"][1]
+			transparency = bit32.byteswap(buffer.readu16(source, offset) * 0x10000)
+		end
+
+		local width = frame.width
+		local height = frame.height
+		local out = buffer.create(width * height * (bit_depth == 16 and 2 or 1) * 4)
+
+		if bit_depth == 16 then
+			if channels == 2 then
+				local cursor = 0
+				for offset = 0, length - 1, 4 do
+					local v = bit32.byteswap(buffer.readu16(data, offset) * 0x10000)
+					local a = bit32.byteswap(buffer.readu16(data, offset + 2) * 0x10000)
+					buffer.writeu32(out, cursor, v + v * 0x10000)
+					buffer.writeu32(out, cursor + 4, v + a * 0x10000)
+					cursor += 8
+				end
+			else
+				local cursor = 0
+				for offset = 0, length - 1, 2 do
+					local v = bit32.byteswap(buffer.readu16(data, offset) * 0x10000)
+					buffer.writeu32(out, cursor, v + v * 0x10000)
+					buffer.writeu32(out, cursor + 4, v + (v == transparency and 0 or 0xFFFF0000))
+					cursor += 8
+				end
+			end
+		elseif bit_depth == 8 then
+			if channels == 2 then
+				local cursor = 0
+				for offset = 0, length - 1, 2 do
+					local v = buffer.readu8(data, offset)
+					buffer.writeu32(out, cursor, v + v * 0x100 + v * 0x10000 + buffer.readu8(data, offset + 1) * 0x1000000)
+					cursor += 4
+				end
+			else
+				local cursor = 0
+				for offset = 0, length - 1, 1 do
+					local v = buffer.readu8(data, offset)
+					buffer.writeu32(out, cursor, v + v * 0x100 + v * 0x10000 + (v == transparency and 0 or 0xFF000000))
+					cursor += 4
+				end
+			end
+		else
+			local row_length = frame.row_length
+			local scale = 255 // (bit32.lshift(1, bit_depth) - 1)
+			local field = 8 - bit_depth
+
+			local cursor = 0
+			for y = 0, height - 1 do
+				local row_offset = y * row_length
+				local offset = 0
+
+				local x = 0
+				while x < width do
+					local byte = buffer.readu8(data, row_offset + offset)
+					offset += 1
+
+					local shift = field
+					while shift >= 0 and x < width do
+						local value = bit32.extract(byte, shift, bit_depth)
+						local v = value * scale
+						local a = value == transparency and 0 or 0xFF000000
+						buffer.writeu32(out, cursor, v + v * 0x100 + v * 0x10000 + a)
+						cursor += 4
+						x += 1
+						shift -= bit_depth
+					end
+				end
+			end
+		end
+
+		return out
+	end,
+	["indexed"] = function(context, frame, data)
+		local length = frame.out_length
+		local parsed = context.parsed
+		local headers = parsed.headers
+
+		local palette = assert(parsed.palette)
+		local bit_depth = headers.bit_depth
+
+		local width = frame.width
+		local height = frame.height
+		local out = buffer.create(width * height * 4)
+
+		if bit_depth == 8 then
+			local cursor = 0
+			for offset = 0, length - 1, 1 do
+				buffer.writeu32(out, cursor, palette[buffer.readu8(data, offset) + 1])
+				cursor += 4
+			end
+		else
+			local row_length = frame.row_length
+			local field = 8 - bit_depth
+			local cursor = 0
+
+			for y = 0, height - 1 do
+				local row_offset = y * row_length
+				local offset = 0
+
+				local x = 0
+				while x < width do
+					local byte = buffer.readu8(data, row_offset + offset)
+					offset += 1
+
+					local shift = field
+					while shift >= 0 and x < width do
+						buffer.writeu32(out, cursor, palette[bit32.extract(byte, shift, bit_depth) + 1])
+						cursor += 4
+						x += 1
+						shift -= bit_depth
+					end
+				end
+			end
+		end
+
+		return out
+	end,
+}
+
+local CONVERT_TARGET: {[ColorTarget]: (DecodeContext, FrameContext, buffer) -> buffer} = {
+	["rgba8"] = function(context, frame, data)
+		local parsed = context.parsed
+		if parsed.headers.bit_depth < 16 then return data end
+
+		local out = buffer.create(frame.width * frame.height * 4)
+
+		local cursor = 0
+		for offset = 0, buffer.len(data) - 1, 8 do
+			local r = buffer.readu16(data, offset) // 0x101
+			local g = buffer.readu16(data, offset + 2) // 0x101
+			local b = buffer.readu16(data, offset + 4) // 0x101
+			local a = buffer.readu16(data, offset + 6) // 0x101
+			buffer.writeu32(out, cursor, r + g * 0x100 + b * 0x10000 + a * 0x1000000)
+			cursor += 4
+		end
+
+		return out
+	end,
+	["rgba16"] = function(context, frame, data)
+		local parsed = context.parsed
+		if parsed.headers.bit_depth == 16 then return data end
+
+		local out = buffer.create(frame.width * frame.height * 2 * 4)
+
+		local cursor = 0
+		for offset = 0, buffer.len(data) - 1, 4 do
+			local r = buffer.readu8(data, offset) * 0x101
+			local g = buffer.readu8(data, offset + 1) * 0x101
+			local b = buffer.readu8(data, offset + 2) * 0x101
+			local a = buffer.readu8(data, offset + 3) * 0x101
+			buffer.writeu32(out, cursor, r + g * 0x10000)
+			buffer.writeu32(out, cursor + 4, b + a * 0x10000)
+			cursor += 8
+		end
+
+		return out
+	end,
+}
+
+local function unfilter(context: DecodeContext, frame: FrameContext, data: buffer): (buffer?, CelError)
+	local parsed = context.parsed
+	local headers = parsed.headers
+
+	local row_length = frame.row_length
+	local bpp = (headers.bit_depth * headers.channels + 7) // 8
+
+	local out = buffer.create(frame.out_length)
+
+	local offset = 0
+	local cursor = 0
+
+	for y = 1, frame.height do
+		local filter = buffer.readu8(data, offset)
+		offset += 1
+
+		if filter == 0 or (filter == 2 and y == 1) then
+			buffer.copy(out, cursor, data, offset, row_length)
+			offset += row_length
+			cursor += row_length
+		elseif filter == 1 then
+			for x = 1, row_length do
+				local a = x > bpp and buffer.readu8(out, cursor - bpp) or 0
+				local value = buffer.readu8(data, offset) + a
+				buffer.writeu8(out, cursor, value % 0x100)
+				offset += 1
+				cursor += 1
+			end
+		elseif filter == 2 then
+			for _ = 1, row_length do
+				local b = buffer.readu8(out, cursor - row_length)
+				local value = buffer.readu8(data, offset) + b
+				buffer.writeu8(out, cursor, value % 0x100)
+				offset += 1
+				cursor += 1
+			end
+		elseif filter == 3 then
+			for x = 1, row_length do
+				local a = x > bpp and buffer.readu8(out, cursor - bpp) or 0
+				local b = y > 1 and buffer.readu8(out, cursor - row_length) or 0
+				local value = buffer.readu8(data, offset) + (a + b) // 2
+				buffer.writeu8(out, cursor, value % 0x100)
+				offset += 1
+				cursor += 1
+			end
+		elseif filter == 4 then
+			for x = 1, row_length do
+				local a = x > bpp and buffer.readu8(out, cursor - bpp) or 0
+				local b = y > 1 and buffer.readu8(out, cursor - row_length) or 0
+				local c = (y > 1 and x > bpp) and buffer.readu8(out, cursor - row_length - bpp) or 0
+				local p = a + b - c
+				local pa = math.abs(p - a)
+				local pb = math.abs(p - b)
+				local pc = math.abs(p - c)
+				local paeth = (pa <= pb and pa <= pc and a) or (pb <= pc and b) or c
+				local value = buffer.readu8(data, offset) + paeth
+				buffer.writeu8(out, cursor, value % 0x100)
+				offset += 1
+				cursor += 1
+			end
+		else
+			return nil, cel_error("invalid_filter", `invalid row filter: {filter}`)
+		end
+	end
+
+	return out, ok()
+end
+
+local function concatenate_spans(source: buffer, spans: SourceSpans): buffer
+	local out_length = 0
+	for size = 2, #spans, 2 do
+		out_length += spans[size]
+	end
+
+	local out = buffer.create(out_length + (out_length % 2))
+	local cursor = 0
+	for index = 1, #spans, 2 do
+		local size = spans[index + 1]
+		buffer.copy(out, cursor, source, spans[index], size)
+		cursor += size
+	end
+
+	return out
+end
+
+local function parse_png(context: DecodeContext): DecodeError?
+	local source = context.source
+	local length = context.length
+	if length < 8 then
+		return decode_error("unexpected_eof", "EOF while reading signature")
+	end
+
+	local signature = buffer.readstring(source, 0, 8)
+	if signature ~= SIGNATURE then
+		return decode_error("invalid_signature", "invalid PNG signature")
+	end
+
+	local offset = 8
+
+	local parsed = context.parsed
+	local crc_mode = context.crc
+	local spans = context.spans
+
+	while true do
+		if offset + 8 > length then
+			return decode_error("unexpected_eof", "EOF without IEND chunk")
+		end
+
+		local chunk_length = bit32.byteswap(buffer.readu32(source, offset))
+		local chunk_type = buffer.readstring(source, offset + 4, 4) :: types.Chunk
+		offset += 8
+
+		if offset + chunk_length + 4 > length then
+			return decode_error("unexpected_eof", `EOF while reading {chunk_type} chunk`)
+		end
+
+		local critical = bit32.band(string.byte(chunk_type), 0x20) == 0
+		if critical and not CRITICAL_CHUNK_MAP[chunk_type] then
+			return decode_error("unknown_chunk", `unknown critical chunk type: {chunk_type}`)
+		end
+
+		if crc_mode == "all" or (critical and crc_mode == "critical") then
+			local crc = bit32.byteswap(buffer.readu32(source, offset + chunk_length))
+			if crc ~= crc32(source, offset - 4, chunk_length + 4) then
+				return decode_error("invalid_crc", `invalid checksum in {chunk_type} chunk`)
+			end
+		end
+
+		local chunk_spans = spans[chunk_type]
+		if not chunk_spans then
+			chunk_spans = {}
+			spans[chunk_type] = chunk_spans
+		end
+
+		local spans_index = #chunk_spans + 1
+		table.insert(chunk_spans, offset)
+		table.insert(chunk_spans, chunk_length)
+
+		local parser = CHUNK_PARSER[chunk_type]
+		if parser then
+			local err = parser(context, chunk_spans, spans_index)
+			if err then return err end
+		end
+
+		offset += chunk_length + 4
+
+		if chunk_type == "IEND" then break end
+	end
+
+	parsed.cel = function(frame: number?, target: ColorTarget?): (Cel?, CelError)
+		if frame and type(frame) ~= "number" then
+			return nil, cel_error("invalid_option", "specified frame must be a number")
+		end
+
+		frame = frame and (frame // 1) % parsed.frames + 1 or 0
+		target = target or "rgba8" :: ColorTarget
+
+		if not CONVERT_TARGET[target] then
+			return nil, cel_error("invalid_option", `invalid color target: {target}`)
+		end
+
+		local active = context.frames[frame] or context.frames[0]
+
+		local concatenated = concatenate_spans(source, active.spans)
+		local decompressed, err_decompress = zlib.decompress(concatenated, active.out_length + active.height)
+		if not decompressed then
+			return nil, err_decompress :: CelError
+		end
+
+		local unfiltered, err_unfilter = unfilter(context, active, decompressed)
+		if not unfiltered then
+			return nil, err_unfilter
+		end
+
+		local converted = CONVERT_COLOR[parsed.headers.color_space](context, active, unfiltered)
+		local bitmap = CONVERT_TARGET[target](context, active, converted)
+
+		return {
+			bitmap = bitmap,
+			region = {
+				size = vector.create(active.width, active.height),
+				position = vector.create(active.x, active.y),
+			},
+			duration = active.duration,
+
+			dispose = active.dispose,
+			blend = active.blend,
+		}, ok()
+	end
+
+	return nil
+end
+
+local function decode(source: buffer, options: DecodeOptions?): (Parsed?, DecodeError)
+	options = options or {} :: DecodeOptions
+
+	local context: DecodeContext = {
+		source = source,
+		length = buffer.len(source),
+
+		crc = options.crc or "all" :: "all",
+
+		frames = {},
+		frame = false,
+
+		spans = {},
+		parsed = {
+			headers = {},
+		} :: Parsed,
+	}
+
+	local err = parse_png(context)
+	if err then return nil, err end
+
+	return context.parsed, ok()
+end
+
+return {Decode=decode}
+
+]========]
+sources.PNGEncode = [========[
+-- Deterministic RGBA PNG writer. Stored DEFLATE blocks avoid native codecs.
+local requireModule=...
+local crc=requireModule('PNGCRC').Compute
+local PNG={}
+local function u32(b,o,n)buffer.writeu8(b,o,math.floor(n/16777216)%256);buffer.writeu8(b,o+1,math.floor(n/65536)%256);buffer.writeu8(b,o+2,math.floor(n/256)%256);buffer.writeu8(b,o+3,n%256)end
+local function chunk(name,data)
+ local n=buffer.len(data);local out=buffer.create(n+12);u32(out,0,n);buffer.writestring(out,4,name);buffer.copy(out,8,data)
+ u32(out,n+8,crc(out,4,n+4));return out
+end
+function PNG.Encode(p,w,h)
+ assert(w>0 and h>0 and w<=4096 and h<=4096 and w*h<=4194304,'Слишком большое изображение')
+ assert(buffer.len(p)==w*h*4,'Неверная длина RGBA')
+ local stride=w*4+1;local raw=buffer.create(stride*h)
+ for y=0,h-1 do buffer.copy(raw,y*stride+1,p,y*w*4,w*4)end
+ local length=buffer.len(raw);local count=math.ceil(length/65535);local z=buffer.create(2+count*5+length+4)
+ buffer.writeu8(z,0,0x78);buffer.writeu8(z,1,1)
+ local source,dest,a,b=0,2,1,0
+ while source<length do
+  local n=math.min(65535,length-source)
+  buffer.writeu8(z,dest,source+n==length and 1 or 0);buffer.writeu16(z,dest+1,n);buffer.writeu16(z,dest+3,65535-n)
+  buffer.copy(z,dest+5,raw,source,n)
+  for i=source,source+n-1 do a=(a+buffer.readu8(raw,i))%65521;b=(b+a)%65521 end
+  source+=n;dest+=n+5
+ end
+ u32(z,dest,b*65536+a)
+ local header=buffer.create(13);u32(header,0,w);u32(header,4,h);buffer.writeu8(header,8,8);buffer.writeu8(header,9,6)
+ local parts={buffer.fromstring('\137PNG\13\10\26\10'),chunk('IHDR',header),chunk('IDAT',z),chunk('IEND',buffer.create(0))}
+ local total=0;for _,part in ipairs(parts)do total+=buffer.len(part)end
+ local out=buffer.create(total);local offset=0
+ for _,part in ipairs(parts)do buffer.copy(out,offset,part);offset+=buffer.len(part)end
+ return buffer.tostring(out)
+end
+return PNG
+
+]========]
+sources.PNGInflate = [========[
+-- Picguin zlib; origin {"repo": "wizevaxel/picguin", "commit": "c9c10f5639720d7dedc7955052026d6636b3d5b0"}
+-- Adapted module resolution and table exports for the standalone bundle.
+--[[
+MIT License
+
+Copyright (c) 2026 wizeväxel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+]]
+--!strict
+--!native
+--!optimize 2
+local requireModule=...
+
+local types = requireModule("PNGTypes")
+
+export type DecompressErrorCode =
+	| "unsupported"
+	| "unexpected_eof"
+	| "invalid_length"
+	| "invalid_header"
+	| "invalid_block"
+export type DecompressError = types.Error<DecompressErrorCode>
+
+local function ok(): {code: "ok", message: ""}
+	return {code = "ok", message = ""}
+end
+
+local function decompress_error(code: DecompressErrorCode, message: string): DecompressError
+	return {code = code, message = message}
+end
+
+local LEN_BASE = {
+	3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31,
+	35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258
+}
+local LEN_EXTRA = {
+	0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
+}
+local DIST_BASE = {
+	1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
+	257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577
+}
+local DIST_EXTRA = {
+	0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
+	7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13
+}
+local LEN_ORDER = {
+	16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
+}
+
+local BITSWAP = buffer.create(0x100)
+for index = 0, 0xFF do
+	local value = index
+	value = bit32.band(value, 0xAA) // 0b00010 + bit32.band(value, 0x55) * 0b00010
+	value = bit32.band(value, 0xCC) // 0b00100 + bit32.band(value, 0x33) * 0b00100
+	value = bit32.band(value, 0xF0) // 0b10000 + bit32.band(value, 0x0F) * 0b10000
+	buffer.writeu8(BITSWAP, index, value)
+end
+
+local function unroll(runs: {number}): {number}
+	local out: {number} = {}
+
+	for index = 1, #runs, 2 do
+		local value = runs[index]
+		for _ = 1, runs[index + 1] do
+			table.insert(out, value)
+		end
+	end
+
+	return out
+end
+
+local function huffman_tree(lengths: {number}): (buffer, number)
+	local max_bits = 0
+	for _, length in lengths do
+		if length > max_bits then max_bits = length end
+	end
+
+	local count = table.create(max_bits, 0)
+	count[0] = 0
+	for _, length in lengths do
+		if length > 0 then count[length] += 1 end
+	end
+
+	local next_code = table.create(max_bits, 0)
+	local code = 0
+
+	for bits = 1, max_bits do
+		code = (code + count[bits - 1]) * 2
+		next_code[bits] = code
+	end
+
+	local size = bit32.lshift(1, max_bits) * 2
+	local tree = buffer.create(size)
+
+	for symbol, length in lengths do
+		if length > 0 then
+			code = next_code[length]
+			next_code[length] += 1
+
+			local entry = (symbol - 1) * 0x10 + length
+			local step = bit32.lshift(1, length) * 2
+
+			local index = bit32.rshift(buffer.readu8(BITSWAP, code % 0x100) * 0x100 + buffer.readu8(BITSWAP, code // 0x100), 16 - length) * 2
+			while index < size do
+				buffer.writeu16(tree, index, entry)
+				index += step
+			end
+		end
+	end
+
+	return tree, max_bits
+end
+
+local FIXED_LIT_TREE, FIXED_LIT_BITS = huffman_tree(unroll({8, 144, 9, 112, 7, 24, 8, 8}))
+local FIXED_DIST_TREE, FIXED_DIST_BITS = huffman_tree(unroll({5, 32}))
+
+local function inflate_blocks(source: buffer, out_length: number): (buffer?, DecompressError)
+	local out = buffer.create(out_length)
+	local cursor = 0
+
+	local offset = 2
+	local stream = 0
+	local stream_bits = 0
+
+	while true do
+		if stream_bits < 3 then
+			stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+			offset += 2
+			stream_bits += 16
+		end
+
+		local bread = stream % 8
+		stream //= 8
+		stream_bits -= 3
+
+		local bfinal = bread % 2
+		local btype = bread // 2
+
+		if btype == 0 then
+			local byte_offset = offset - (stream_bits // 8)
+			local len = buffer.readu16(source, byte_offset)
+			buffer.copy(out, cursor, source, byte_offset + 4, len)
+			cursor += len
+			offset = byte_offset + 4 + len
+			stream = 0
+			stream_bits = 0
+		elseif btype < 3 then
+			local lit_tree = FIXED_LIT_TREE
+			local lit_bits = FIXED_LIT_BITS
+			local dist_tree = FIXED_DIST_TREE
+			local dist_bits = FIXED_DIST_BITS
+
+			if btype == 2 then
+				if stream_bits < 14 then
+					stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+					offset += 2
+					stream_bits += 16
+				end
+
+				local hread = stream % 16384
+				stream //= 16384
+				stream_bits -= 14
+
+				local hlit = (hread % 0x20) + 257
+				local hdist = bit32.extract(hread, 5, 5) + 1
+				local hclen = (hread // 0x400) + 4
+
+				local code_lengths = table.create(19, 0)
+				for index = 1, hclen do
+					if stream_bits < 3 then
+						stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+						offset += 2
+						stream_bits += 16
+					end
+
+					code_lengths[LEN_ORDER[index] + 1] = stream % 8
+					stream //= 8
+					stream_bits -= 3
+				end
+
+				local length_tree, length_bits = huffman_tree(code_lengths)
+
+				local code_count = hlit + hdist
+				local symbol_lengths = table.create(code_count, 0)
+
+				local index = 1
+				while index <= code_count do
+					local repeats = 1
+					local value = 0
+
+					if stream_bits < length_bits then
+						stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+						offset += 2
+						stream_bits += 16
+					end
+
+					local path = bit32.extract(stream, 0, length_bits)
+					local entry = buffer.readu16(length_tree, path * 2)
+					local length = entry % 0x10
+					stream = bit32.rshift(stream, length)
+					stream_bits -= length
+
+					local symbol = (entry - length) // 0x10
+					if symbol <= 15 then
+						value = symbol
+					elseif symbol <= 16 then
+						if stream_bits < 2 then
+							stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+							offset += 2
+							stream_bits += 16
+						end
+
+						repeats = stream % 4 + 3
+						stream //= 4
+						stream_bits -= 2
+						value = symbol_lengths[index - 1]
+					elseif symbol == 17 then
+						if stream_bits < 3 then
+							stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+							offset += 2
+							stream_bits += 16
+						end
+
+						repeats = stream % 8 + 3
+						stream //= 8
+						stream_bits -= 3
+					elseif symbol == 18 then
+						if stream_bits < 7 then
+							stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+							offset += 2
+							stream_bits += 16
+						end
+
+						repeats = stream % 128 + 11
+						stream //= 128
+						stream_bits -= 7
+					end
+
+					for _ = 1, repeats do
+						symbol_lengths[index] = value
+						index += 1
+					end
+				end
+
+				lit_tree, lit_bits = huffman_tree(table.move(symbol_lengths, 1, hlit, 1, table.create(hlit, 0)))
+				dist_tree, dist_bits = huffman_tree(table.move(symbol_lengths, hlit + 1, code_count, 1, table.create(hdist, 0)))
+			end
+
+			while true do
+				if stream_bits < lit_bits then
+					stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+					offset += 2
+					stream_bits += 16
+				end
+
+				local path = bit32.extract(stream, 0, lit_bits)
+				local entry = buffer.readu16(lit_tree, path * 2)
+				local length = entry % 0x10
+
+				if length == 0 then
+					return nil, decompress_error("invalid_block", "invalid huffman code")
+				end
+
+				stream = bit32.rshift(stream, length)
+				stream_bits -= length
+
+				local symbol = (entry - length) // 0x10
+				if symbol < 256 then
+					buffer.writeu8(out, cursor, symbol)
+					cursor += 1
+				elseif symbol > 256 then
+					local len_index = symbol - 256
+					local len_extra = LEN_EXTRA[len_index]
+
+					if stream_bits < len_extra then
+						stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+						offset += 2
+						stream_bits += 16
+					end
+
+					local len = LEN_BASE[len_index]
+					if len_extra > 0 then
+						len += bit32.extract(stream, 0, len_extra)
+						stream = bit32.rshift(stream, len_extra)
+						stream_bits -= len_extra
+					end
+
+					if stream_bits < dist_bits then
+						stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+						offset += 2
+						stream_bits += 16
+					end
+
+					path = bit32.extract(stream, 0, dist_bits)
+					entry = buffer.readu16(dist_tree, path * 2)
+					length = entry % 0x10
+					stream = bit32.rshift(stream, length)
+					stream_bits -= length
+
+					local dist_index = (entry - length) // 0x10 + 1
+					local dist_extra = DIST_EXTRA[dist_index]
+
+					if stream_bits < dist_extra then
+						stream += bit32.lshift(buffer.readu16(source, offset), stream_bits)
+						offset += 2
+						stream_bits += 16
+					end
+
+					local dist = DIST_BASE[dist_index]
+					if dist_extra > 0 then
+						dist += bit32.extract(stream, 0, dist_extra)
+						stream = bit32.rshift(stream, dist_extra)
+						stream_bits -= dist_extra
+					end
+
+					if dist == 1 then
+						buffer.fill(out, cursor, buffer.readu8(out, cursor - 1), len)
+						cursor += len
+					elseif len > dist then
+						local position = cursor - dist
+
+						while len > 0 do
+							local size = math.min(dist, len)
+							buffer.copy(out, cursor, out, position, size)
+							cursor += size
+							len -= size
+							dist += size
+						end
+					else
+						buffer.copy(out, cursor, out, cursor - dist, len)
+						cursor += len
+					end
+				else
+					break
+				end
+			end
+		else
+			return nil, decompress_error("invalid_block", "block type 3 is unsupported")
+		end
+
+		if bfinal == 1 then break end
+	end
+
+	return out, ok()
+end
+
+local function decompress(source: buffer, out_length: number): (buffer?, DecompressError)
+	local length = buffer.len(source)
+
+	if length < 8 then
+		return nil, decompress_error("unexpected_eof", "EOF while reading zlib header")
+	elseif length % 2 ~= 0 then
+		return nil, decompress_error("invalid_length", "(unreachable) zlib data must be 2-padded to prevent bit stream errors")
+	end
+
+	local cmf = buffer.readu8(source, 0)
+
+	local cm = cmf % 0x10
+	if cm ~= 8 then
+		return nil, decompress_error("unsupported", `unsupported zlib compression method: {cm}`)
+	end
+
+	local ci = bit32.extract(cmf, 4, 4)
+	local window_size = bit32.lshift(1, ci + 8)
+	if ci > 7 then
+		return nil, decompress_error("invalid_header", `invalid zlib window size: expected <32KiB, got {window_size // 1024}KiB`)
+	end
+
+	local flg = buffer.readu8(source, 1)
+	if (cmf * 0x100 + flg) % 0x1F ~= 0 then
+		return nil, decompress_error("invalid_header", "invalid zlib header checksum")
+	end
+
+	if bit32.extract(flg, 5, 1) == 1 then
+		return nil, decompress_error("invalid_header", "zlib preset dictionary is not allowed")
+	end
+
+	return inflate_blocks(source, out_length)
+end
+
+local function compress()
+	-- not implemented
+end
+
+return table.freeze {
+	decompress = decompress,
+	compress = compress,
+}
+
+]========]
+sources.PNGTypes = [========[
+-- Picguin types; origin {"repo": "wizevaxel/picguin", "commit": "c9c10f5639720d7dedc7955052026d6636b3d5b0"}
+-- Adapted module resolution and table exports for the standalone bundle.
+--[[
+MIT License
+
+Copyright (c) 2026 wizeväxel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+]]
+--!strict
+--!optimize 2
+
+export type Error<Code> = {
+	code: "ok",
+	message: "",
+} | {
+	code: Code,
+	message: string,
+}
+
+export type ColorSpace = "truecolor" | "grayscale" | "indexed"
+
+export type DisposeOperation = "none" | "background" | "previous"
+export type BlendOperation = "source" | "over"
+
+export type CriticalChunk =
+	| "IHDR" | "PLTE" | "IDAT" | "IEND"
+export type AncillaryChunk =
+	| "tRNS" | "cHRM" | "gAMA" | "iCCP"
+	| "sBIT" | "sRGB" | "cICP" | "mDCV"
+	| "cLLI" | "tEXt" | "zTXt" | "iTXt"
+	| "bKGD" | "pHYs" | "sPLT" | "eXIf"
+	| "tIME" | "acTL" | "fcTL" | "fdAT"
+export type Chunk = CriticalChunk | AncillaryChunk
+
+return {}
 
 ]========]
 sources.Bootstrap = [========[
@@ -44823,9 +47022,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.82: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.83: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.82 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.83 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")

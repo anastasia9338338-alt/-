@@ -28,6 +28,9 @@ local function new(class, props)
     for key, value in pairs(props) do object[key] = value end
     return object
 end
+function Appearance:BindTexture(node,value)
+    if type(value)=='string'then node.Image=value else node.ImageContent=value end
+end
 function Appearance:Track(connection)
     self.Connections[#self.Connections+1] = connection
     return connection
@@ -121,7 +124,8 @@ function Appearance:SetSource(kind, value)
                 if self.PreviewTexture then self.PreviewTexture:Destroy();self.PreviewTexture=nil end
                 if data and self.Context.MakeTexture then
                     local ok,image,content=pcall(self.Context.MakeTexture,data.Pixels,data.Width,data.Height)
-                    if ok then self.PreviewTexture=image;self.PreviewImages.Frame.ImageContent=content end
+                    if not valid()then if ok and image then image:Destroy()end;return end
+                    if ok then self.PreviewTexture=image;self:BindTexture(self.PreviewImages.Frame,content) end
                 end
                 if not data then self:SetStatus(kind,why or'Обработка рамки недоступна: показан округлый контур.')
                 else self:SetStatus(kind,data.Removed>0 and'Сетка удалена. Рамка подготовлена.'or'Рамка подготовлена.')end
@@ -135,7 +139,7 @@ function Appearance:SetSource(kind, value)
             self:Apply()
         end
         if kind=='Frame'and self.Context.PrepareFrame then self.Context.PrepareFrame(asset,self.Config.RemoveGrid,valid,display)
-        elseif kind=='Frame'then display(nil,'EditableImage недоступен: рамка показана округлым контуром.')
+        elseif kind=='Frame'then display(nil,'Обработка картинки недоступна.')
         else display()end
     end
     if source:match('^rbxthumb://')or source:match('^rbxasset://')then accept(source)
@@ -178,7 +182,7 @@ function Appearance:Apply()
             local ok,image,content=pcall(self.Context.RasterFrame,self.Assets.Frame.Data,size.X,size.Y,t,radius,c.FrameEdge)
             if self.Closed or generation~=self.FrameGeneration then if ok and image then image:Destroy()end;return end
             if ok and image then
-                local previous=self.FrameTexture;self.FrameTexture=image;self.FramePicture.ImageContent=content
+                local previous=self.FrameTexture;self.FrameTexture=image;self:BindTexture(self.FramePicture,content)
                 self.FrameUnavailable=false;self.Fallback.Visible=false;self.FramePicture.Visible=true
                 if previous then previous:Destroy()end
             else self.FrameUnavailable=true;self.Fallback.Visible=true;self.FramePicture.Visible=false;self:SetStatus('Frame','Рендер рамки недоступен: '..tostring(image))end
@@ -236,7 +240,7 @@ function Appearance:BuildUI(tab)
             box:AddToggle('AstralGUIFrameMatchTheme',{Text='Точно под цвет GUI',Default=false,Callback=changed})
             box:AddSlider('AstralGUIFrameWidth',{Text='Ширина рамки',Default=14,Min=2,Max=80,Rounding=0,Suffix=' px',Compact=true,Callback=changed})
             box:AddSlider('AstralGUIFrameEdge',{Text='Область краёв фото',Default=22,Min=5,Max=45,Rounding=0,Suffix=' %',Compact=true,Callback=changed})
-            box:AddLabel('Рамка находится снаружи окна. Сетка удаляется при обработке картинки; середина и углы вырезаются по форме GUI.',true)
+            box:AddLabel('Рамка выводится из PNG-файла без доступа к EditableImage. Середина остаётся прозрачной; контур повторяет закругления GUI.',true)
         end
         box:AddButton({Text='Убрать картинку',Func=function()self.Library.Options['AstralGUI'..kind..'URL']:SetValue('')end})
         self.Status[kind]=box:AddLabel('Вставь ссылку под превью.',true)

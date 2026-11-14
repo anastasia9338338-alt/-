@@ -31,8 +31,10 @@ if GUIAppearance then
  check(a.Layer.Parent==window.MainFrame.Parent and a.Layer.Position.X.Offset<window.MainFrame.AbsolutePosition.X,'Frame still overlays content instead of surrounding window')
  check(window.MainFrame.Size==originalSize,'Frame changes window/content dimensions')
  check(a.FrameTexture and not a.FrameTexture.Destroyed,'Rounded frame texture missing')
- local tex=a.FrameTexture;local mid=(math.floor(tex.Size.Y/2)*tex.Size.X+math.floor(tex.Size.X/2))*4
- check(buffer.readu8(tex.Pixels,mid+3)==0 and buffer.readu8(tex.Pixels,3)==0,'Frame has an opaque center or square outer corners')
+ local tex=a.FrameTexture;check(tex.Filename and isfile(tex.Filename),'Frame still depends on EditableImage')
+ local parsed=requireModule('PNGDecode').Decode(buffer.fromstring(readfile(tex.Filename)));local rendered=parsed.cel(0,'rgba8').bitmap
+ local mid=(math.floor(parsed.height/2)*parsed.width+math.floor(parsed.width/2))*4
+ check(buffer.readu8(rendered,mid+3)==0 and buffer.readu8(rendered,3)==0,'Frame has an opaque center or square outer corners')
  local current=a.FrameTexture;window.MainFrame.Size=UDim2.fromOffset(760,610);window.MainFrame:GetPropertyChangedSignal('AbsoluteSize'):Fire();advance(.2)
  check(current.Destroyed and a.FrameTexture~=current,'Resize leaks old frame texture')
  opt.AstralGUIFrameWidth:SetValue(60);advance(.2);check(window.MainFrame.Size.X.Offset==760,'Wide frame squeezes window')
@@ -68,7 +70,9 @@ if GUIAppearance then
  opt.AstralGUIFont:SetValue('Original');opt.AstralGUITextScale:SetValue(1)
  tog.AstralGUIFunctionIcons:SetValue(false);tog.AstralGUISeparators:SetValue(false)
  opt.AstralGUIBackgroundURL:SetValue('https://images.example/pending.png');local pending=requests[#requests]
- local connections=table.clone(a.Connections);a:Dispose();pending.Done('rbxasset://late.png')
+ local frameFilename=a.FrameTexture and a.FrameTexture.Filename;local previewFilename=a.PreviewTexture and a.PreviewTexture.Filename
+ local connections=table.clone(a.Connections);a:Dispose();
+ check((not frameFilename or not isfile(frameFilename))and(not previewFilename or not isfile(previewFilename)),'Generated frame PNG survives unload');pending.Done('rbxasset://late.png')
  check(not a.Background.Parent and not a.Layer.Parent,'Artwork survives unload')
  for _,c in ipairs(connections)do check(not c.Connected,'Artwork listener survives unload')end
  check(not surface.Image.Parent,'Floating artwork survives unload')

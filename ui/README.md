@@ -1,5 +1,9 @@
-The standalone bundle contains the actual runtime modules. These files mirror the GUI artwork, style, native shop and teleport controllers for review.
+The standalone bundle is authoritative. These files mirror its UI/frame controllers and vendored codecs.
 
-FrameArtwork handles client-side RGBA checker detection, transparency preservation and rounded external frame rasterization. GUIAppearance owns requests, previews, editable-image lifetime and sibling artwork for detached panels. GUIStyle exposes persisted font/text, function icons, dividers, slider and alpha controls. GameShopStyle reskins the existing MenuGui/Menu without replacing inventory logic or layout. TeleportMenu retains its travel/loop/respawn behavior and uses the current charcoal style.
+GameShopStyle lays out only native inventory pages. Shared menu geometry is restored when leaving the inventory; Settings/HSV descendants are never traversed. Native button paths, callbacks and image assets are retained.
 
-EditableImage access is required for pixel processing. An unavailable API yields a rounded outline and status instead of drawing a checkerboard. Automated checks use Luau CLI and a mocked engine; no live Roblox visual validation is claimed.
+FrameImageFiles decodes local PNG/JPEG data, encodes a rounded RGBA frame as PNG, registers a normal custom asset and owns file lifetime. GUIAppearance accepts file URIs as well as native image content. Native EditableImage is only a fallback. PNGDecode/Inflate/CRC/Types are adapted Picguin sources with their full MIT notices. JPEGDecode retains the lua-img-ascii MIT notice and records Astral modifications.
+
+The integration harness denies EditableImage; Pillow independently checks decoded pixels and encoded PNG output. Native GUI/game-shop behavior is exercised in an engine mock, not a live Roblox renderer.
+
+Codec checks use the exact Bootstrap module loader, including its table-return contract. The PNG exports are wrapped as tables for this loader; decoding algorithms retain their upstream license notices.

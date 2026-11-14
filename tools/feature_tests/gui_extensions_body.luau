@@ -44,35 +44,3 @@ local ok=pcall(Art.Texture,buffer.create(4),1,1,{CreateEditableImage=function()r
 assert(not ok and failed.Destroyed,'ImageContent failure leaks image')
 print('PASS: checker pixel removal, transparent PNG/photo preservation, rounded resizing and image failure cleanup')
 
-local playerGui=Instance.new('Folder');playerGui.Name='PlayerGui'
-local gui=Instance.new('ScreenGui',playerGui);gui.Name='MenuGui'
-local menu=Instance.new('Frame',gui);menu.Name='Menu';menu.Size=UDim2.fromOffset(400,300);menu.Position=UDim2.fromOffset(70,90);menu.Visible=false
-local grid=Instance.new('ScrollingFrame',menu);grid.Name='YourToys';grid.ScrollBarThickness=8
-local layout=Instance.new('UIGridLayout',grid);layout.CellSize=UDim2.fromOffset(32,32)
-local item=Instance.new('ImageButton',grid);item.Name='Rocket';item.Image='rbxassetid://rocket';item.LayoutOrder=17
-local favorite=Instance.new('ImageButton',item);favorite.Name='Favorite';favorite.Image='rbxassetid://star'
-local category=Instance.new('ImageButton',menu);category.Name='Balls';category.Image='rbxassetid://balls'
-local caption=Instance.new('TextLabel',menu);caption.Text='Your Toys'
-local clicks=0;item.Activated:Connect(function()clicks+=1 end);favorite.Activated:Connect(function()clicks+=10 end)
-local oldColor,oldFont,oldSize,oldPos=menu.BackgroundColor3,caption.FontFace,menu.Size,menu.Position
-local library={Toggles={}};local group={}
-function group:AddToggle(id,info)local t={Value=info.Default};function t:SetValue(v)self.Value=v;info.Callback(v)end;library.Toggles[id]=t;return t end
-function group:AddLabel(text)return{SetText=function(self,v)self.Text=v end,Text=text}end
-local controller=Shop.Install({Library=library,Tab={AddRightGroupbox=function()return group end},PlayerGui=playerGui,Defer=task.defer});controller:Sync()
-assert(controller.Menu==menu and menu.BackgroundColor3:ToHex()=='3d3f42'and menu:FindFirstChildOfClass('UICorner').CornerRadius.Offset==20,'Native rounded gray shop missing')
-assert(menu.Size==oldSize and menu.Position==oldPos and not menu.Visible and item.Parent==grid and item.LayoutOrder==17 and layout.Parent==grid,'Native shop geometry changed')
-assert(item.Image=='rbxassetid://rocket'and favorite.Image=='rbxassetid://star'and category.Image=='rbxassetid://balls'and favorite.BackgroundTransparency==1,'Native images/favorites changed')
-item.Activated:Fire();favorite.Activated:Fire();assert(clicks==11,'Native actions lost')
-local streamed=Instance.new('ImageButton',grid);streamed.Name='NewToy';menu.DescendantAdded:Fire(streamed);advance(.02)
-assert(streamed:FindFirstChildOfClass('UICorner'),'Streamed item unstyled')
-library.Toggles.AstralGUIShopStyle:SetValue(false)
-assert(menu.BackgroundColor3==oldColor and caption.FontFace==oldFont and grid.ScrollBarThickness==8 and not item:FindFirstChildOfClass('UICorner')and not menu:FindFirstChildOfClass('UICorner'),'Disable failed to restore native shop')
-library.Toggles.AstralGUIShopStyle:SetValue(true);local previousConnection=controller.MenuConnection;gui:Destroy()
-local replacement=Instance.new('ScreenGui',playerGui);replacement.Name='MenuGui';local nextMenu=Instance.new('Frame',replacement);nextMenu.Name='Menu'
-playerGui.DescendantAdded:Fire(nextMenu);advance(.02)
-assert(controller.Menu==nextMenu and not previousConnection.Connected and nextMenu.BackgroundColor3:ToHex()=='3d3f42','Replacement/respawn shop unstyled')
-local connections=table.clone(controller.Connections);controller:Dispose()
-for _,c in ipairs(connections)do assert(not c.Connected,'Shop observer survives unload')end
-assert(not nextMenu:FindFirstChildOfClass('UICorner'),'Shop decoration survives unload')
-playerGui.DescendantAdded:Fire(nextMenu);advance(.02);assert(controller.Menu==nil,'Shop restyles after unload')
-print('PASS: native shop actions, images, layout, streamed items, disable restoration, respawn and unload')

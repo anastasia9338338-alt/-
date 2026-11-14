@@ -43,8 +43,13 @@ def run_feature_checks(modules,runner,folder):
             ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
-    if 'GameShopStyle'in modules and 'FrameArtwork'in modules:
-        run('gui_extensions',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Art=(function()\n'+modules['FrameArtwork']+'\nend)()\nlocal Shop=(function()\n'+modules['GameShopStyle']+'\nend)()\n'+read('gui_extensions_body.luau'))
+    if 'GameShopStyle'in modules:
+        run('game_shop483',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Shop=(function()\n'+modules['GameShopStyle']+'\nend)()\n'+read('game_shop483_body.luau'))
+    if 'FrameArtwork'in modules:
+        run('frame_artwork',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Art=(function()\n'+modules['FrameArtwork']+'\nend)()\n'+read('gui_extensions_body.luau'))
+    if 'FrameImageFiles'in modules:
+        from frame_codec_checks import run_codec_checks
+        run_codec_checks(modules,runner,folder)
     if 'GUIAppearance'in modules:
         main=modules['Main']
         assert main.index('GUI = v19:AddTab')>main.index('Settings = v19:AddTab')
