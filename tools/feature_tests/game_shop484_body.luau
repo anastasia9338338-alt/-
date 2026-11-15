@@ -26,7 +26,7 @@ local gui=add(playerGui,'ScreenGui','MenuGui')
 local menu=add(gui,'Frame','Menu');menu.Size=UDim2.fromOffset(900,650);menu.Position=UDim2.fromScale(.5,.5);menu.AnchorPoint=Vector2.new(.5,.5);menu.ZIndex=3
 local originalMenuSize,originalPosition,originalAnchor=menu.Size,menu.Position,menu.AnchorPoint
 local nativeScale=add(menu,'UIScale','NativeScale');nativeScale.Scale=1
-local pages=Instance.new('Folder',menu);pages.Name='TabContents'
+local pages=Instance.new('Folder',menu);pages.Name='TabContents';if pages:IsA('GuiObject')then pages.Size=UDim2.fromScale(1,1)end
 local toys=add(pages,'Frame','Toys');toys.Visible=false;toys.Size=UDim2.fromScale(1,1)
 local list=add(toys,'ScrollingFrame','Contents');local grid=add(list,'UIGridLayout','Grid');grid.CellSize=UDim2.fromOffset(100,100)
 local toy=add(list,'ImageButton','Chair');toy.Image='rbxassetid://star';toy.ImageTransparency=1;toy.ImageRectOffset=Vector2.new(20,30)
@@ -44,9 +44,16 @@ local footer=add(gui,'Frame','BottomBar');local caption=add(footer,'TextLabel','
 local count=add(footer,'TextLabel','Count');count.Text='5/100';local nativeBar=add(footer,'Frame','Progress');local footerStroke=add(nativeBar,'UIStroke','Border');footerStroke.Transparency=0
 local shop=add(pages,'Frame','ToyShop');shop.Visible=false;shop.Size=UDim2.fromScale(1,1)
 local shopTitle=add(shop,'TextLabel','Title');shopTitle.Text='Магазин игрушек';shopTitle.TextScaled=true;shopTitle.TextStrokeTransparency=0
-local shopList=add(shop,'ScrollingFrame','Contents');local shopGrid=add(shopList,'UIGridLayout','Cards');shopGrid.CellSize=UDim2.fromOffset(100,100)
+local shopItems=add(shop,'Frame','Contents');shopItems.Size=UDim2.fromScale(1,1)
+local decoyScroll=add(shopItems,'ScrollingFrame','CoinDetails');decoyScroll.Size=UDim2.fromScale(.5,1)
+add(decoyScroll,'UIGridLayout','CostGrid');local coinDummy=add(decoyScroll,'ImageLabel','Coin');coinDummy.Image='rbxassetid://coin'
+local shopList=add(shopItems,'ScrollingFrame','Products');shopList.Size=UDim2.fromScale(.5,1);local shopGrid=add(shopList,'UIGridLayout','Cards');shopGrid.CellSize=UDim2.fromOffset(100,100)
 local card=add(shopList,'ImageButton','Product');card.Image='rbxassetid://product';local price=add(card,'TextLabel','Price');price.Text='5000';price.TextSize=90;price.TextScaled=true
 local name=add(card,'TextLabel','Name');name.Text='Toy';name.TextScaled=true;name.TextSize=70
+local priceIcon=add(card,'ImageLabel','CoinCost');priceIcon.Image='rbxassetid://coin';priceIcon.Size=UDim2.fromOffset(100,100)
+local originalPriceIconSize=priceIcon.Size
+local englishTitle=add(shop,'TextLabel','CaptionCopy');englishTitle.Text='The Toy Shop';englishTitle.TextStrokeTransparency=0
+local close=add(menu,'TextButton','Close');close.Text='X';close.Visible=true
 local settings=add(pages,'Frame','Settings');settings.Visible=false;settings.Size=UDim2.fromScale(1,1)
 local settingsTitle=add(settings,'TextLabel','Title');settingsTitle.Text='Настройки';settingsTitle.TextScaled=true
 local picker=add(settings,'Frame','ColorPicker');picker.Size=UDim2.fromOffset(500,260);picker.Position=UDim2.fromOffset(150,90)
@@ -58,6 +65,7 @@ local settingsFraction=add(picker,'TextLabel','Fraction');settingsFraction.Text=
 local presetGrid=add(picker,'UIGridLayout','ColorPresets');presetGrid.CellSize=UDim2.fromOffset(40,40)
 local presetCellSize=presetGrid.CellSize
 local destroy=add(pages,'Frame','ToyDestroy');destroy.Visible=false;destroy.Size=UDim2.fromScale(1,1)
+local cleanupCaption=add(destroy,'TextLabel','CaptionCopy');cleanupCaption.Text='Put Toys Away';cleanupCaption.TextStrokeTransparency=0
 local destroyButton=add(destroy,'TextButton','DestroySelected');destroyButton.Text='Delete';destroyButton.Position=UDim2.fromOffset(100,100);destroyButton.Size=UDim2.fromOffset(180,50)
 local currency=add(pages,'Frame','Coins');currency.Visible=false;currency.Size=UDim2.fromScale(1,1)
 local currencyFooter=add(currency,'Frame','Footer');local footerAction=add(currencyFooter,'TextButton','CurrencyAction');footerAction.Text='Purchase';footerAction.TextTransparency=0
@@ -111,6 +119,11 @@ check(price.TextScaled==false and price.TextSize<25 and price.Size.Y.Offset<25,'
 check(name.TextScaled==false and name.Position.Y.Offset>price.Position.Y.Offset,'Paid card name/price rows overlap')
 check(shopTitle.TextTransparency==1 and shopTitle.TextStrokeTransparency==1,'Native Russian Shop heading leaks')
 check(shopGrid.CellSize.Y.Offset>shopGrid.CellSize.X.Offset,'Paid card has no reserved text region')
+check(controller.Current.List==shopList and math.abs(shopList.Size.X.Offset-controller.Plan.Grid.W)<1e-5,'Purchases use wrong half-width scrolling viewport')
+check(priceIcon.Size.X.Offset<=8*controller.Plan.Scale and priceIcon.Position.Y.Offset>=controller.Plan.Cell,'Currency icon covers toy preview')
+check(englishTitle.TextTransparency==1 and englishTitle.TextStrokeTransparency==1,'The Toy Shop native caption remains above our title')
+check(not close.Visible,'Native menu close cross remains visible')
+
 check(not controller.Panels.Limit.Node.Visible,'Inventory-only footer is rendered on purchase page')
 card.Activated:Fire()
 local huePosition,hueSize=hue.Position,hue.Size
@@ -119,11 +132,12 @@ check(price.TextScaled==true and price.TextSize==90,'Previous paid card modifica
 check(controller.TextCopies.YourToysTitle.Text=='Settings'and settingsTitle.TextTransparency==1,'Settings retains old giant title/theme')
 check(settingsFraction.TextTransparency==0,'Settings fraction was mistaken for an inventory count')
 check(hue.Text=='160'and hue.Position==huePosition and hue.Size==hueSize and gradient.Color==originalGradient and swatch.BackgroundColor3==originalSwatch and presetGrid.CellSize==presetCellSize,'HSV geometry/values/gradient were flattened')
-check(settings:FindFirstChild('AstralPanelScale')~=nil and settings.Position.X.Offset+1e-5>=controller.Plan.Body.X,'Settings content not proportionally contained')
+check(settings:FindFirstChild('AstralPanelScale')~=nil and controller.Current.ContentBounds and settings.AstralPanelScale.Scale>math.min(controller.Plan.Body.W/controller.Current.NativeSize.X,controller.Plan.Body.H/controller.Current.NativeSize.Y),'Settings useful content remains tiny inside an almost empty native page')
 local settingsScale=settings:FindFirstChild('AstralPanelScale')
 switch(destroy)
 check(not settingsScale.Parent and hue.Position==huePosition and hue.Text=='160','Settings content/scale leaks into cleanup page')
 check(controller.TextCopies.YourToysTitle.Text=='Toy Cleanup','ToyDestroy remains unstyled')
+check(cleanupCaption.TextTransparency==1 and cleanupCaption.TextStrokeTransparency==1,'Put Toys Away native caption remains visible')
 destroyButton.Activated:Fire()
 switch(currency);check(footerAction.TextTransparency==0,'Arbitrary native Footer action is mistaken for Toy Limit');check(controller.TextCopies.YourToysTitle.Text=='Coins','Unknown native page not discovered/styled');buy.Activated:Fire()
 check(clicks==1111 and card.Parent==shopList and hue.Parent==picker,'Original game handlers/paths lost')
@@ -131,6 +145,7 @@ switch(toys);check(grid.CellSize.X.Offset==inventoryWidth,'Inventory changes siz
 count.Text='6/100';controller:Find();check(controller.TextCopies.ToyLimitCount.Text=='6/100','Footer count stale')
 for _,p in ipairs(all)do p.Visible=false end;controller:Find()
 check(not controller.Layer.Visible and caption.TextTransparency==0 and caption.TextStrokeTransparency==0,'Closing native menu does not restore sibling localized footer')
+check(close.Visible and englishTitle.TextTransparency==0 and cleanupCaption.TextTransparency==0 and priceIcon.Size==originalPriceIconSize,'Disable/close does not restore native heading/cross/price artwork')
 check(menu.Size==originalMenuSize and nativeScale.Scale==1 and title.TextTransparency==0,'Closing changes ordinary menu geometry')
 local before=hue.Position;controller:SetEnabled(false);check(not controller.Layer and hue.Position==before,'Disable leaves theme/native content changes')
 controller:SetEnabled(true);switch(toys)

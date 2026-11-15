@@ -132,6 +132,8 @@ def run_feature_checks(modules,runner,folder):
         assert 'tbl12.SNO(root,.65,valid,true)'in native_context,'Kick acquisition still accepts a stale owner marker without physical ownership'
         assert 'IntervalSeconds=function()'in native_context and 'KickInterval:CycleSeconds()'in native_context,'Loop MS is not connected to full-cycle timing'
         assert modules['Main'].count('tbl12.KickInterval:BuildUI(')==1,'Loop MS settings are missing or duplicated'
+        assert 'tbl12.KickInterval:BuildUI(v21)'in modules['Main'] and 'AddRightGroupbox("Loop MS"'not in modules['Main'],'Loop MS moved outside Kick Settings'
+        assert 'Pulsed=true'in modules['Main'] and ':IsPhysicallyHolding(player)'in modules['Main'],'Pulse profile lacks physical airborne hold integration'
         run('kick_channel',read('kick_mock.luau')+loop_source+read('kick_channel_body.luau'))
         run('kick_handoff',read('kick_mock.luau')+loop_source+read('kick_handoff_body.luau'))
         run('kick_eki',read('kick_mock.luau')+loop_source+read('kick_eki_body.luau'))

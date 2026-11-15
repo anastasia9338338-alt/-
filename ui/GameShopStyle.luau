@@ -200,6 +200,21 @@ local function rootScale(node,stop)
  end
  return scale
 end
+function Shop:CollectionGrid(root)
+ local best,score=nil,-1
+ for _,node in ipairs(descendants(root))do if node:IsA('UIGridLayout')then
+  local count,known,interactive=0,0,0
+  for _,child in ipairs(children(node.Parent))do if gui(child)then
+   count+=1
+   if button(child)or child:FindFirstChildWhichIsA('ImageButton',true)or child:FindFirstChildWhichIsA('TextButton',true)then interactive+=1 end
+   local name=self.Context.ResolveItem and self.Context.ResolveItem(child)or child.Name
+   if self.Context.Catalog and self.Context.Catalog[name]then known+=1 end
+  end end
+  local value=count+known*1000+interactive*100
+  if value>score then best=node;score=value end
+ end end
+ return best
+end
 function Shop:Discover()
  local seen={};for _,r in ipairs(self.Pages)do seen[r.Node]=true end
  for _,page in ipairs(children(self.Contents))do
@@ -207,8 +222,7 @@ function Shop:Discover()
   local decoration=name:find('footer',1,true)or name:find('limit',1,true)or name:find('background',1,true)or name=='header'
   if gui(page)and not decoration and not seen[page]then
    local items=page:FindFirstChild('Contents',true)
-   local grid
-   for _,v in ipairs(descendants(items or page))do if v:IsA('UIGridLayout')then grid=grid or v end end
+   local grid=self:CollectionGrid(items or page)
    local view=items and(items:IsA('ScrollingFrame')and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)or(gui(items)and items))
    if name=='settings'or name=='options'or name=='configuration'or name:find('color',1,true)then grid=nil end
    local record={Node=page,List=view or page,Items=items or page,Grid=grid,Kind=grid and'grid'or'panel'}
@@ -219,18 +233,36 @@ function Shop:Discover()
  -- Contents and its layout can stream after the page root was discovered.
  for _,record in ipairs(self.Pages)do
   local items=record.Node:FindFirstChild('Contents',true)
-  local grid
-  for _,v in ipairs(descendants(items or record.Node))do if v:IsA('UIGridLayout')then grid=grid or v end end
+  local grid=self:CollectionGrid(items or record.Node)
   local name=fold(record.Node.Name)
   if name=='settings'or name=='options'or name=='configuration'or name:find('color',1,true)then grid=nil end
   record.Items=items or record.Node;record.Grid=grid;record.Kind=grid and'grid'or'panel'
   record.List=items and(items:IsA('ScrollingFrame')and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)or(gui(items)and items))or record.Node
+  if grid then
+   local ancestor=grid.Parent
+   while ancestor and ancestor~=record.Node do
+    if ancestor:IsA('ScrollingFrame')then record.List=ancestor;break end
+    ancestor=ancestor.Parent
+   end
+  end
  end
 end
 local function textValue(v)
  local result=tostring(v.Text or'')
  for _,key in ipairs({'ContentText','LocalizedText'})do local ok,value=pcall(function()return v[key]end);if ok and type(value)=='string'and value~=''then result..=' '..value end end
  return fold(result)
+end
+local headerWords={thetoyshop=true,toyshop=true,yourtoys=true,puttoysaway=true,toycleanup=true,settings=true,
+ ["вашиигрушки"]=true,["магазинигрушек"]=true,["магазин"]=true,["настройки"]=true}
+local function nativeHeading(node)
+ for _,property in ipairs({'Text','ContentText','LocalizedText'})do
+  local ok,value=pcall(function()return node[property]end)
+  if ok and type(value)=='string'then
+   value=fold(value):gsub('<[^>]*>',''):gsub('%s+',''):gsub('[%p]','')
+   if headerWords[value]then return true end
+  end
+ end
+ return false
 end
 local function footer(v,stop)
  local n=v
@@ -382,13 +414,11 @@ function Shop:Grid(record)
  local plan=self.Plan;local list=record.List
  -- Contents is not necessarily the actual collection: the native inventory
  -- also places its grid under a ScrollingFrame and an inner canvas Frame.
- local grid;local score=-1
- for _,node in ipairs(descendants(record.Items))do
-  if node:IsA('UIGridLayout')then
-   local count,known=0,0;for _,child in ipairs(children(node.Parent))do if gui(child)then count+=1;if self.Context.Catalog and self.Context.Catalog[child.Name]then known+=1 end end end
-   count+=known*1000
-   if count>score then grid=node;score=count end
-  end
+ local grid=self:CollectionGrid(record.Items)
+ if grid then
+  local ancestor=grid.Parent
+  while ancestor and ancestor~=record.Node do if ancestor:IsA('ScrollingFrame')then list=ancestor;break end;ancestor=ancestor.Parent end
+  record.Grid=grid;record.List=list
  end
  local holder=grid and grid.Parent or list
  if not gui(holder)then return end
@@ -447,7 +477,15 @@ function Shop:Grid(record)
     if favorite(v)and(button(v)or v:IsA('ImageLabel')or v:IsA('TextLabel'))then
      self:Write(v,'Visible',false,nil,false)
     elseif v:IsA('ImageLabel')or v:IsA('ImageButton')or v:IsA('ViewportFrame')or v:IsA('Frame')then
-     self:Rect(v,{X=0,Y=0,W=plan.Cell,H=v:IsA('Frame')and rowHeight or plan.Cell})
+     local currency=false;local ancestor=v
+     while ancestor and ancestor~=cell do
+      local name=fold(ancestor.Name)
+      if name:find('coin',1,true)or name:find('price',1,true)or name:find('cost',1,true)or name:find('currency',1,true)or name:find('robux',1,true)then currency=true;break end
+      ancestor=ancestor.Parent
+     end
+     if paid and currency and(v:IsA('ImageLabel')or v:IsA('ImageButton'))then
+      self:Rect(v,{X=plan.Cell-8*plan.Scale,Y=plan.Cell+2*plan.Scale,W=7*plan.Scale,H=7*plan.Scale})
+     else self:Rect(v,{X=0,Y=0,W=plan.Cell,H=v:IsA('Frame')and rowHeight or plan.Cell})end
     end
    end
   end
@@ -457,9 +495,10 @@ end
 function Shop:PanelContent(record)
  local plan=self.Plan;local page=record.Node;local size=record.NativeSize
  self:Normalize(page,'page')
- local fit=math.min(plan.Body.W/math.max(size.X,1),plan.Body.H/math.max(size.Y,1))
- self:Rect(page,{X=plan.Body.X+(plan.Body.W-size.X*fit)*.5,Y=plan.Body.Y+(plan.Body.H-size.Y*fit)*.5,W=size.X,H=size.Y},'page')
- self:Write(page,'ClipsDescendants',true,'page',true);self:Write(page,'BackgroundTransparency',1,'page',true)
+ local bounds=record.ContentBounds or{X=0,Y=0,W=size.X,H=size.Y}
+ local fit=math.min(plan.Body.W/math.max(bounds.W,1),plan.Body.H/math.max(bounds.H,1))
+ self:Rect(page,{X=plan.Body.X+(plan.Body.W-bounds.W*fit)*.5-bounds.X*fit,Y=plan.Body.Y+(plan.Body.H-bounds.H*fit)*.5-bounds.Y*fit,W=size.X,H=size.Y},'page')
+ self:Write(page,'ClipsDescendants',false,'page',true);self:Write(page,'BackgroundTransparency',1,'page',true)
  local scale=page:FindFirstChildOfClass('UIScale')
  if not scale then scale=Instance.new('UIScale');scale.Name='AstralPanelScale';scale.Parent=page;self.Created[scale]='page' end
  self:Write(scale,'Scale',fit,'page',true)
@@ -557,11 +596,13 @@ function Shop:Page(record)
  self:Grid(record)
  elseif not record.Quick then self:PanelContent(record)end
  local controls=self:Controls(record)
- -- Suppress duplicate native heading shadows, preserving card labels.
- for _,node in ipairs(descendants(self.Menu))do
-  if(node:IsA('TextLabel')or node:IsA('TextButton'))and not(self.Quick and self.Quick:Owns(node))and(under(node,record.Node)or not under(node,self.Contents))and not(record.Grid and under(node,record.Items))then
-   local name=fold(node.Name);local value=fold(node.Text or'')
-   if name=='title'or name=='heading'or name=='header'or value=='ваши игрушки'or value=='магазин игрушек'or value=='магазин'or value=='your toys'or value=='toy shop'or value=='настройки'then self:HideText(node,'page')end
+ -- Hide every original page title, including localized shadow copies.
+ local nativeRoot=self.GuiRoot or self.Menu
+ for _,node in ipairs(descendants(nativeRoot))do
+  if(node:IsA('TextLabel')or node:IsA('TextButton'))and not under(node,self.Layer)and not(self.Quick and self.Quick:Owns(node))then
+   local name=fold(node.Name)
+   local scoped=under(node,record.Node)or not under(node,self.Contents)
+   if scoped and(nativeHeading(node)or(not(record.Grid and under(node,record.Items))and(name=='title'or name=='heading'or name=='header')))then self:HideText(node,'shared')end
   end
  end
  if controls.Title then
@@ -595,8 +636,14 @@ function Shop:Page(record)
  self.ShowLimit=record.Quick or(record.Grid~=nil and record.Node.Name:lower()=='toys')
  self:Footer(record)
 
- local close=find(self.Menu,{'Close','CloseButton','Exit','X'})
- if gui(close)then self:Rect(close,{X=326*plan.Scale,Y=0,W=18*plan.Scale,H=18*plan.Scale},'shared');if close:IsA('TextButton')then self:Text(close,14*plan.Scale,'shared')end end
+ local top=self.Menu.AbsolutePosition;local width=self.Menu.AbsoluteSize.X
+ for _,node in ipairs(descendants(self.GuiRoot or self.Menu))do
+  if gui(node)and not under(node,self.Layer)and not(self.Quick and self.Quick:Owns(node))then
+   local name=fold(node.Name);local label=(node:IsA('TextButton')or node:IsA('TextLabel'))and fold(node.Text or'')or''
+   local atTop=node.AbsolutePosition.Y<top.Y+plan.Body.Y*(self.MenuScale or 1)and node.AbsolutePosition.X>top.X+width*.7
+   if name=='close'or name=='closebutton'or name=='exit'or(atTop and(name=='x'or label=='x'or label=='×'))then self:Write(node,'Visible',false,'shared',true)end
+  end
+ end
 
  if self.Quick then self.Quick:RefreshOwned(self.Pages);if record.Quick then self.Quick:Render(plan)end end
  self:Draw();self:RefreshIcons();self:StartIcons()
@@ -628,6 +675,19 @@ function Shop:Find()
    local scale=rootScale(active.Node,guiRoot)
    local size=active.Node.AbsoluteSize/scale
    active.NativeSize=Vector2.new(math.max(size.X,1),math.max(size.Y,1))
+  end
+  if active.Node.Name:lower()=='settings'and not active.ContentBounds then
+   local lo=Vector2.new(math.huge,math.huge);local hi=Vector2.new(-math.huge,-math.huge)
+   local origin=active.Node.AbsolutePosition;local scale=rootScale(active.Node,guiRoot)
+   for _,node in ipairs(descendants(active.Node))do
+    local candidate=button(node)or node:IsA('TextBox')
+    if node:IsA('UIGradient')and gui(node.Parent)then node=node.Parent;candidate=true end
+    if candidate and visible(node,active.Node)and not nativeHeading(node)then
+     local pos=(node.AbsolutePosition-origin)/scale;local box=node.AbsoluteSize/scale
+     if box.X>0 and box.Y>0 then lo=Vector2.new(math.min(lo.X,pos.X),math.min(lo.Y,pos.Y));hi=Vector2.new(math.max(hi.X,pos.X+box.X),math.max(hi.Y,pos.Y+box.Y))end
+    end
+   end
+   if lo.X<hi.X and lo.Y<hi.Y then active.ContentBounds={X=lo.X-8,Y=lo.Y-8,W=hi.X-lo.X+16,H=hi.Y-lo.Y+16}end
   end
   local camera=self.Context.Workspace and self.Context.Workspace.CurrentCamera
   local viewport=camera and camera.ViewportSize or Vector2.new(900,585)

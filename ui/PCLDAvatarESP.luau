@@ -1,5 +1,6 @@
--- A visual-only avatar at the exact native Box PCLD frame. Source body sizes
--- are copied 1:1; Humanoid simulation and every contact/query are disabled.
+-- Avatars are rendered in one GUI ViewportFrame/WorldModel, never Workspace.
+-- The view shares the real camera and exact native Box frame; no physical copy
+-- can collide with the live character, even if a collision flag is re-enabled.
 local Avatars={};Avatars.__index=Avatars
 local V=Vector3.new
 local bodyNames={Head=true,Torso=true,UpperTorso=true,LowerTorso=true,['Left Arm']=true,['Right Arm']=true,['Left Leg']=true,['Right Leg']=true,
@@ -61,18 +62,63 @@ local function restFrames(character,root)
 end
 function Avatars.Install(ctx)
  local self=setmetatable({Context=ctx,Mode='Box',Records={},Elapsed=0,Limit=150,Status='Box'},Avatars)
- self.Container=Instance.new('Folder');self.Container.Name='AstralPCLDAvatars';self.Container.Parent=ctx.Workspace
  self.Connection=ctx.RunService.Heartbeat:Connect(function(dt)
   if self.Closed then return end
   self.Elapsed+=dt or 0;if self.Elapsed<.2 then return end;self.Elapsed=0
   local ok,why=pcall(self.Refresh,self)
   if not ok then self.LastError=tostring(why);self:Clear();self.Status='Avatar PCLD: '..self.LastError end
  end)
+ local watched,cameraSignal=pcall(function()return ctx.Workspace:GetPropertyChangedSignal('CurrentCamera')end)
+ if watched and cameraSignal then self.CameraConnection=cameraSignal:Connect(function()self:SyncCamera()end)end
  return self
+end
+function Avatars:SyncCamera()
+ if not self.Viewport or not self.Viewport.Parent then return end
+ local camera=self.Context.Workspace.CurrentCamera
+ self.Viewport.CurrentCamera=camera
+ self.Viewport.Visible=camera~=nil and self:Active()
+end
+function Avatars:SurfaceReady()
+ return alive(self.Gui)and alive(self.Viewport)and alive(self.Container)
+  and self.Viewport.Parent==self.Gui and self.Container.Parent==self.Viewport
+  and self.Gui~=self.Context.Workspace and not self.Gui:IsDescendantOf(self.Context.Workspace)
+  and self.Viewport.CurrentCamera~=nil
+end
+function Avatars:EnsureSurface()
+ if self:SurfaceReady()then return true end
+ local ctx=self.Context;local parent=ctx.GuiParent
+ if not parent and ctx.Player and ctx.Player.FindFirstChildOfClass then parent=ctx.Player:FindFirstChildOfClass('PlayerGui')end
+ if not parent or parent==ctx.Workspace or parent:IsDescendantOf(ctx.Workspace)then
+  self.Status='Avatar PCLD unavailable: GUI parent missing; Box fallback';return false
+ end
+ self:Clear()
+ if self.Gui then self.Gui:Destroy()end
+ local gui
+ local ok,why=pcall(function()
+  gui=Instance.new('ScreenGui');gui.Name='AstralPCLDViewport';gui.ResetOnSpawn=false
+  gui.IgnoreGuiInset=true;gui.DisplayOrder=ctx.DisplayOrder or 0
+  gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
+  pcall(function()gui.ScreenInsets=Enum.ScreenInsets.None;gui.ClipToDeviceSafeArea=false end)
+  local viewport=Instance.new('ViewportFrame');viewport.Name='PCLDAvatars'
+  viewport.BackgroundTransparency=1;viewport.BorderSizePixel=0;viewport.Active=false
+  viewport.Size=UDim2.fromScale(1,1);viewport.Position=UDim2.fromOffset(0,0)
+  viewport.Ambient=Color3.new(1,1,1);viewport.LightColor=Color3.new(1,1,1)
+  viewport.LightDirection=Vector3.new(-1,-1,-1);viewport.Parent=gui
+  local world=Instance.new('WorldModel');world.Name='AstralPCLDAvatars';world.Parent=viewport
+  gui.Parent=parent
+  self.Gui,self.Viewport,self.Container=gui,viewport,world
+  self:SyncCamera()
+ end)
+ if not ok then
+  if gui then gui:Destroy()end
+  self.Gui,self.Viewport,self.Container=nil,nil,nil;self.LastError=tostring(why)
+  self.Status='Avatar PCLD unavailable: '..self.LastError..'; Box fallback';return false
+ end
+ return self:SurfaceReady()
 end
 function Avatars:Active()return not self.Closed and self.Mode=='Avatar'and self.Context.Enabled()end
 function Avatars:Has(detector)
- if not self:Active()then return false end
+ if not self:Active()or not self:SurfaceReady()then return false end
  for _,r in pairs(self.Records)do if r.Detector==detector and alive(r.Model)and not r.Dirty then return true end end
  return false
 end
@@ -84,6 +130,7 @@ function Avatars:Clear()
  local list={};for p in pairs(self.Records)do list[#list+1]=p end
  for _,p in ipairs(list)do self:Remove(p)end
  if self.RenderConnection then self.RenderConnection:Disconnect();self.RenderConnection=nil end
+ if self.Viewport then self.Viewport.Visible=false end
 end
 function Avatars:SetMode(value)
  if value~='Box'and value~='Avatar'then return false end
@@ -187,6 +234,7 @@ function Avatars:Build(player,character,root,detector)
 end
 function Avatars:Refresh()
  if not self:Active()then self:Clear();return end
+ if not self:EnsureSurface()then self:Clear();return end
  local keep={};local built=0;local count=0
  -- LocalPlayer is deliberately included, just like the native detector boxes.
  for _,player in ipairs(self.Context.Players:GetPlayers())do
@@ -210,10 +258,14 @@ function Avatars:Refresh()
 end
 function Avatars:Render(detector)
  if not self:Active()then self:Clear();return end
+ if not self:SurfaceReady()then self:Clear();return end
+ self:SyncCamera()
  local conf=self.Context.Config()
- -- Skin and colored Highlight are two layers. Split their alpha so their
- -- combined transparency is the same value used by ordinary Box PCLD.
- local alpha=math.sqrt(transparency(conf.FillTransparency))
+ -- One whole-view alpha matches Box transparency. Keep original skin/decal
+ -- alpha within the WorldModel, avoiding multiple overlapping ghost layers.
+ self.Viewport.ImageTransparency=transparency(conf.FillTransparency)
+ self.Viewport.ImageColor3=conf.FillColor
+ self.Viewport.Visible=true
  for player,r in pairs(self.Records)do if not detector or detector==r.Detector then
   local character,root,h=self.Context.Character(player)
   if character~=r.Character or root~=r.Root or not h or h.Health<=0 or not alive(r.Detector)or self.Context.Waiting(r.Detector)then self:Remove(player)
@@ -223,20 +275,22 @@ function Avatars:Render(detector)
     -- No fit-to-box scale and no second interpolation/prediction pass.
     for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then
      p.Part.CFrame=frame*p.Offset
-     local value=p.Source==r.RigRoot and 1 or 1-(1-transparency(p.Source.Transparency))*(1-alpha)
+     local value=p.Source==r.RigRoot and 1 or transparency(p.Source.Transparency)
      if p.Part.Transparency~=value then p.Part.Transparency=value end
     end end
     for _,s in ipairs(r.Surfaces)do if s.Part.Parent then
      local original=s.Source and s.Source.Parent and transparency(s.Source.Transparency)or s.Transparency
-     s.Part.Transparency=1-(1-original)*(1-alpha)
+     s.Part.Transparency=original
     end end
     r.Highlight.FillColor=conf.FillColor;r.Highlight.OutlineColor=conf.OutlineColor
-    r.Highlight.FillTransparency=alpha;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
+    r.Highlight.FillTransparency=1;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
    else r.Highlight.Enabled=false end
   end
  end end
 end
 function Avatars:Dispose()
- if self.Closed then return end;self.Closed=true;self:Clear();self.Connection:Disconnect();self.Container:Destroy()
+ if self.Closed then return end;self.Closed=true;self:Clear();self.Connection:Disconnect()
+ if self.CameraConnection then self.CameraConnection:Disconnect();self.CameraConnection=nil end
+ if self.Gui then self.Gui:Destroy()end
 end
 return Avatars

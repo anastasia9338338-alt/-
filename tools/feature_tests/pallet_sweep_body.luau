@@ -140,3 +140,106 @@ do
  check(entry.Done and f.Pallet.Passes==1 and(entry.SweepPasses or 0)==0,'Modern integration changed one-shot source marker-loss termination')
  f.Pallet:Dispose()
 end
+-- Production gravity and solver substeps are independent of the observation
+-- rate. Only integration generates Touched: CFrame staging stays separated.
+local function gravitational(options)
+ options=options or{}
+ local f,root,receiver=controlled(options)
+ local g=options.Gravity or 196.2
+ f.Pallet.Context.Gravity=function()return g end
+ if options.Thin then receiver.Size=Vector3.new(2,.02,2);f.Sound.Size=Vector3.new(2,.05,2)end
+ local integrate=f.Sim.Physics
+ f.Sim.Physics=function(dt)
+  local steps=math.max(1,math.ceil(dt*480));local step=dt/steps
+  for _=1,steps do
+   if f.Data.Owned and not f.Data.Blocked and f.Main.Parent then
+    local velocity=f.Main.AssemblyLinearVelocity-Vector3.new(0,g*step,0)
+    f.Main.AssemblyLinearVelocity=velocity;f.Sound.AssemblyLinearVelocity=velocity
+   end
+   integrate(step)
+  end
+ end
+ if options.Moving then f.Sim.Before=function(dt)
+  local shift=Vector3.new(dt*9,0,0)
+  receiver.Position=receiver.Position+shift;root.Position=root.Position+shift
+  -- The hold controller can reposition a limb without reporting matching
+  -- assembly velocity. Feedback must follow current receiver geometry.
+  receiver.AssemblyLinearVelocity=Vector3.zero
+ end end
+ return f,root,receiver
+end
+for _,fps in ipairs({15,20,60,240,1000})do
+ local f,root,receiver=gravitational({Thin=true})
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ f.Sim:Run(1.5,fps)
+ check((entry.PhysicalEntries or 0)>=4 and(entry.PhysicalExits or 0)>=4,'Thin receiver stalls under gravity at '..fps..' FPS')
+ check((entry.ReceiverContacts or 0)>0,'Gravity regression manufactured a physical entry without solver contact')
+ check(f.Target.Flag.Value==false and f.Pallet.Confirmed==0,'Gravity feedback manufactured game ragdoll acceptance')
+ f.Pallet:Dispose()
+end
+do
+ local f=gravitational({Moving=true});local entry=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ f.Sim:Run(2,60)
+ check((entry.PhysicalEntries or 0)>=20 and(entry.PhysicalExits or 0)>=20,'Pallet fails to follow receiver moved by hold controller')
+ check((entry.ReusedExitFrames or 0)>0,'Every normal strike still pays a redundant fresh staging frame')
+ local entries,passes=entry.PhysicalEntries,entry.Passes
+ check(entries<=60 and passes<=60,'Alternating sweep bypassed 30/s global attempt cap')
+ print(string.format('INFO: 2s local gravity/moving-receiver integration: %d physical entries, %d bounded attempts; not server kick timing',entries,passes))
+ f.Pallet:Dispose()
+end
+do
+ local f=gravitational({Rate=5});local entry=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ f.Sim:Run(2,60)
+ check((entry.SweepPasses or 0)<=10,'Low-rate waiting generated excess normal strike attempts')
+ local observed=entry.ReceiverContacts or 0
+ check(observed<=(entry.SweepPasses or 0),'Board fell back through the receiver while waiting for a slower rate')
+ f.Pallet:Cancel(f.Target.Character);local contacts=entry.ReceiverContacts or 0;f.Sim:Run(.5,60)
+ check((entry.ReceiverContacts or 0)==contacts,'Cancelled board kept falling through receiver under gravity')
+ f.Pallet:Dispose()
+end
+print('PASS: gravity/thin-trigger feedback, real Touched latch, moving hold receiver, reused physical exit and slow-rate isolation (mocked; no server speed proof)')
+
+-- Requested pulse sequence is conditional on real fixture touch delivery,
+-- independently observed game ragdoll state and an airborne/physical hold.
+local function pulsed(accepted,held,already)
+ local f=gravitational();f.Data.GameAccept=accepted;f.Data.Held=held
+ f.Target.Flag.Value=already==true
+ f.Pallet.Context.Held=function(character)return character==f.Target.Character and f.Data.Held end
+ f.Pallet.Context.PingSeconds=function()return .05 end
+ f.Pallet:SetPulsed(true);f.Pallet:SetPulsePause(.15);f.Pallet:SetPulseBurst(3);f.Pallet:SetPulseRecovery(.4)
+ return f
+end
+for _,fps in ipairs({20,60,240})do
+ local f=pulsed(true,true,false);local e=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ f.Sim:Run(2.8,fps)
+ local hits=f.Data.Crossings
+ check(#hits>=5,'Pulse sequence never reached a real bounded series at '..fps)
+ check(hits[2].At-hits[1].At>=.15-1/fps-1e-5,'Second isolated hit has no configured pause')
+ check(hits[3].At-hits[2].At>=.15-1/fps-1e-5,'Series starts without the second-hit pause')
+ check(hits[4].At-hits[3].At<.15+2/fps and hits[5].At-hits[4].At<.15+2/fps,'Bounded burst is still paced like isolated hits')
+ if hits[6]then check(hits[6].At-hits[5].At>=.4-1/fps-1e-5,'After-burst recovery setting is ignored')end
+ check(f.Data.GameReactions>=2 and(e.ReceiverContacts or 0)>=5,'Pulse logic invented observed game reactions or contacts')
+ f.Data.Held=false;local passes=e.Passes;f.Sim:Run(.5,fps)
+ check(e.Passes==passes and not e.Pulse,'Loss of physical airborne hold keeps a pending series')
+ f.Data.Held=true;f.Sim:Run(.4,fps);check(e.Pulse~=nil,'Recovered hold never starts a fresh pulse')
+ f.Pallet:Cancel(f.Target.Character);passes=e.Passes;f.Sim:Run(.5,fps);check(e.Passes==passes,'Pulse continues after cancellation')
+ f.Pallet:Dispose()
+end
+do
+ local f=pulsed(false,true,false);local e=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(2,60)
+ check((e.ReceiverContacts or 0)>0 and f.Data.GameReactions==0,'Missing-game-reaction fixture did not produce independent local touch input')
+ check(not e.Pulse or e.Pulse.Phase~='burst','No game ragdoll reaction still triggers a burst')
+ check((e.SweepPasses or 0)<=6,'Unacknowledged hits degrade to a permanent continuous stream')
+ f.Pallet:Dispose()
+end
+do
+ local f=pulsed(false,false,false);local e=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.5,60)
+ check((e.Passes or 0)==0,'Grounded/unowned hold starts strikes')
+ f.Pallet:Dispose()
+end
+do
+ local f=pulsed(false,true,true);local e=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(1.5,60)
+ check((e.ReceiverContacts or 0)>=4 and f.Data.GameReactions==0 and e.Reaction.Rises==0,'Existing ragdoll state becomes invented fresh game reactions')
+ f.Pallet:Dispose()
+end
+print('PASS: state-aware isolated hits, pause/second hit/bounded burst/recovery, actual contacts, airborne hold, missing-reaction retries and cancellation (mocked; no server kick prediction)')

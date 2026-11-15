@@ -25,15 +25,27 @@ do
  function group:AddToggle(id,info)local t={Value=info.Default};function t:SetValue(v)self.Value=v;info.Callback(v)end;controls[id]=t;return t end
  function group:AddDependencyBox()return self end
  function group:SetupDependencies()end
- function group:AddDropdown(id,info)local t={};function t:SetValue(v)info.Callback(v)end;controls[id]=t;return t end
+ function group:AddDropdown(id,info)local t={Value=info.Default};function t:SetValue(v)self.Value=v;info.Callback(v)end;controls[id]=t;return t end
  function group:AddSlider(id,info)local t={Value=info.Default};function t:SetValue(v)self.Value=v;info.Callback(v)end;controls[id]=t;return t end
  function group:AddLabel(value)local t={Text=value};function t:SetText(v)self.Text=v end;return t end
  interval:BuildUI(group)
- check(controls.KickLoopIntervalEnabled and not controls.KickLoopIntervalSource and not controls.KickLoopIntervalMs,'Loop MS controls are missing or expose unrelated manual tuning')
+ check(controls.KickLoopIntervalEnabled and controls.KickLoopIntervalSource and controls.KickLoopIntervalMs and controls.KickLoopPingScale,'Loop MS lacks its adjustable settings')
  controls.KickLoopIntervalEnabled:SetValue(true)
  check(interval.Enabled and interval.Label.Text:find('cycle: 100 ms',1,true),'UI toggle is disconnected from full-cycle timing')
  interval:SetMode('Manual');interval:SetManual(400);check(interval:CycleSeconds()==.4,'Manual backend compatibility is disconnected')
- controls.KickLoopIntervalEnabled:SetValue(false);controls.KickLoopIntervalEnabled:SetValue(true);check(interval.Mode=='Ping'and interval:CycleSeconds()==.1,'UI activation does not select actual internet timing')
+ controls.KickLoopIntervalEnabled:SetValue(false);controls.KickLoopIntervalEnabled:SetValue(true);check(interval.Mode=='Manual'and interval:CycleSeconds()==.4,'Enabling silently overwrites the selected mode')
+ controls.KickLoopIntervalMs:SetValue(375);check(interval:CycleSeconds()==.375 and interval.Label.Text:find('Manual cycle: 375 ms',1,true),'Manual UI slider does not control the full cycle')
+ controls.KickLoopIntervalSource:SetValue('Ping');controls.KickLoopPingScale:SetValue(1.5)
+ check(interval.Mode=='Ping'and interval:CycleSeconds()==.15 and interval.Label.Text:find('Ping: 100 ms',1,true),'Automatic ping multiplier UI is disconnected')
+ controls.KickLoopIntervalEnabled:SetValue(false);check(interval:CycleSeconds()==nil and interval.PingScale==1.5,'Disabling resets settings or retains timing')
+ controls.KickLoopIntervalEnabled:SetValue(true);check(interval:CycleSeconds()==.15,'Ping tuning does not survive re-enabling')
+ interval:SetPingScale(0/0);interval:SetPingScale(math.huge);check(interval.PingScale==1.5,'Nonfinite ping multiplier corrupts timing')
+ interval:SetPingScale(20);check(interval.PingScale==3 and interval:CycleSeconds()==.3,'Ping multiplier exceeds its bound')
+ interval:SetPingScale(0);check(interval.PingScale==.25 and interval:CycleSeconds()==.025,'Minimum multiplier produces a zero duration')
+ interval:SetPingScale(1)
+ controls.KickLoopIntervalSource:SetValue('Manual');controls.KickLoopIntervalMs:SetValue(2000)
+ check(interval.ManualMs==1000 and interval:CycleSeconds()==1,'Manual period exceeds its bounded maximum')
+ interval:SetMode('Invalid');check(interval.Mode=='Manual','Invalid mode silently changes active timing')
  interval:Dispose()
 end
 do
@@ -124,4 +136,4 @@ do
  data.Enabled=false;sim:Run(.03,240);local count=#data.Events;sim:Run(.6,240);check(#data.Events==count,'Disabled timing sends delayed callbacks')
  sim.After=nil;loop:Dispose();interval:Dispose()
 end
-print('PASS: '..checks..' Loop MS full-cycle ping/manual timing, dynamic samples, frame bounds, UI wiring, hold independence, cancellation and respawn checks (mocked; no server kick speed proof)')
+print('PASS: '..checks..' Loop MS full-cycle adjustable ping/manual timing, dynamic samples, frame bounds, settings persistence, hold independence, cancellation and respawn checks (mocked; no server kick speed proof)')

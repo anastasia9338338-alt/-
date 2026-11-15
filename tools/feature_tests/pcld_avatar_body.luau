@@ -1,3 +1,5 @@
+-- Viewport dimensions are GUI values; the geometry fixture otherwise uses only Vector3.
+UDim2={fromScale=function(x,y)return{X={Scale=x,Offset=0},Y={Scale=y,Offset=0}}end,fromOffset=function(x,y)return{X={Scale=0,Offset=x},Y={Scale=0,Offset=y}}end}
 local checks=0;local function check(v,m)assert(v,m);checks+=1 end
 local oldIsA=Proxy.IsA
 function Proxy:IsA(class)
@@ -56,10 +58,11 @@ local function avatar(world,name,x)
  return {Name=name,Character=c,Root=r,Humanoid=h,Detector=detector},head
 end
 local function fixture()
- local world=newNode('Folder','Workspace');local me=avatar(world,'Local',0);local other,head=avatar(world,'Other',10)
+ local world=newNode('Folder','Workspace');local guiRoot=newNode('Folder','CoreGui');world.CurrentCamera=add(world,'Camera','Camera');world.CurrentCamera.FieldOfView=70
+ local me=avatar(world,'Local',0);local other,head=avatar(world,'Other',10)
  local d={Enabled=true,Waiting=false,Players={me,other}};local beat,render=signal(),signal()
  local conf={FillColor=Color3.fromRGB(80,20,100),OutlineColor=Color3.fromRGB(230,50,130),FillTransparency=.6,OutlineTransparency=.1}
- local a=Avatars.Install({Workspace=world,RunService={Heartbeat=beat,RenderStepped=render},Player=me,ExternalRender=true,
+ local a=Avatars.Install({Workspace=world,GuiParent=guiRoot,DisplayOrder=988,RunService={Heartbeat=beat,RenderStepped=render},Player=me,ExternalRender=true,
   Players={GetPlayers=function()return d.Players end},Enabled=function()return d.Enabled end,
   Character=function(p)return p.Character,p.Character and p.Root,p.Character and p.Humanoid end,
   Detector=function(p)return p.Detector end,Waiting=function()return d.Waiting end,Frame=function(p)return d.Frame or p.CFrame end,Config=function()return conf end})
@@ -71,11 +74,21 @@ do
  check(me.Character.Archivable==false and other.Character.Archivable==false,'Archivable changed')
  for _,part in ipairs(r.Parts)do check(part.Part.Size==part.Source.Size,'A skin part/accessory differs from its source size')end
  local clone=r.Model;check(clone.Shirt.ShirtTemplate=='rbxassetid://original-clothing'and clone.Head.Color==head.Color,'Skin appearance lost')
+ check(a.Container:IsA('WorldModel')and a.Container.Parent==a.Viewport and a.Viewport.Parent==a.Gui,'Avatar is not isolated in a GUI WorldModel')
+ check(not clone:IsDescendantOf(w)and not a.Gui:IsDescendantOf(w),'Visual BaseParts remain inside Workspace physics')
+ check(a.Viewport.Active==false and a.Viewport.BackgroundTransparency==1 and a.Gui.IgnoreGuiInset==true and a.Gui.ClipToDeviceSafeArea==false,'Viewport blocks game input or mismatches full camera area')
+ check(a.Gui.DisplayOrder==988 and a.Viewport.CurrentCamera==w.CurrentCamera,'Shared camera or behind-Astral layer is wrong')
+ local firstCamera=w.CurrentCamera;local realPose=firstCamera.CFrame
+ firstCamera.CFrame=CFrame.new(10,9,-30);firstCamera.FieldOfView=95
+ check(a.Viewport.CurrentCamera.CFrame==firstCamera.CFrame and a.Viewport.CurrentCamera.FieldOfView==95,'Shared camera drifts while native detector is stationary')
+ local nextCamera=add(w,'Camera','ReplacementCamera');nextCamera.FieldOfView=75;w.CurrentCamera=nextCamera
+ check(a.Viewport.CurrentCamera==nextCamera and firstCamera.CFrame~=realPose,'Camera replacement is not propagated without moving live camera')
+
  check(not clone:FindFirstChild('ExternalVisualWeld',true),'External WeldConstraint remains and can connect visual to live assembly')
  check(not clone:FindFirstChild('LiveReference',true)and not clone:FindFirstChild('InheritedSelection',true)and not clone:FindFirstChild('InheritedForce',true),'Clone retains external references or active inherited contents')
  check(other.Character.Torso.ExternalVisualWeld.Part1.Parent==w and other.Character.Torso.ExternalVisualWeld.Enabled,'Source external weld was modified')
- check(math.abs(clone.Torso.Transparency*clone.PCLDColors.FillTransparency-conf.FillTransparency)<1e-6 and clone.HumanoidRootPart.Transparency==1,'Visible clone skin is opaque instead of a ghost')
- check(math.abs(clone.Head.face.Transparency-(.2+.8*math.sqrt(conf.FillTransparency)))<1e-6,'Face decal stays opaque over ghost skin')
+ check(a.Viewport.ImageTransparency==conf.FillTransparency and clone.Torso.Transparency==0 and clone.HumanoidRootPart.Transparency==1,'Single viewport alpha does not match ordinary Box transparency')
+ check(clone.Head.face.Transparency==.2,'Viewport changes original face appearance before applying one ghost alpha')
  for _,v in ipairs(clone:GetDescendants())do for key,value in pairs(v._props)do
   if key~='Parent'and type(value)=='table'and value._class then check(value==clone or value:IsDescendantOf(clone),'Clone retains a live external object reference in '..v.Name..'.'..key)end
  end end
@@ -99,13 +112,13 @@ do
  check(not injected.Parent,'Engine-added physical content survives on visual clone')
  check(r.Highlight.FillColor==conf.FillColor and r.Highlight.OutlineColor==conf.OutlineColor,'Silhouette colors ignored')
  conf.FillTransparency=.85;a:Render()
- check(math.abs(clone.Torso.Transparency*clone.PCLDColors.FillTransparency-.85)<1e-6 and math.abs(clone.Head.face.Transparency-(.2+.8*math.sqrt(.85)))<1e-6,'Transparency settings do not update body and decals')
+ check(a.Viewport.ImageTransparency==.85 and clone.Torso.Transparency==0 and clone.Head.face.Transparency==.2,'Viewport transparency setting does not update as a single layer')
  check(head.Transparency==0 and head.face.Transparency==.2,'Ghost transparency changed live source appearance')
  head.face.Transparency=1;head.Transparency=1;a:Render()
  check(clone.Head.Transparency==1 and clone.Head.face.Transparency==1,'Originally hidden skin or decals became visible')
  head.face.Transparency=.2;head.Transparency=0
  conf.FillTransparency=0;a:Render()
- check(clone.Torso.Transparency==0 and clone.PCLDColors.FillTransparency==0,'User opacity=0 does not remain explicit')
+ check(clone.Torso.Transparency==0 and a.Viewport.ImageTransparency==0 and clone.PCLDColors.FillTransparency==1,'User opacity=0 does not remain explicit')
  conf.FillTransparency=.6;a:Render()
  local pos=clone.Head.CFrame;local realRoot=other.Root.CFrame;local sensorFrame=other.Detector.CFrame
  head.CFrame=CFrame.new(900,900,900);other.Root.CFrame=CFrame.new(-300,-300,-300);render:Fire(1/60);a:Render()
@@ -120,7 +133,7 @@ do
  d.Waiting=false;beat:Fire(.2);check(a.Records[me]and a.Records[other],'Ready detectors do not return')
  other.Character=nil;beat:Fire(.2);check(not a.Records[other]and a.Records[me],'Respawn leaves ghost or removes other player')
  a:SetMode('Box');check(next(a.Records)==nil and not a.RenderConnection,'Mode switch leaks copy/callback');a:Dispose()
- check(not beat.Connections[1].Connected and not a.Container.Parent,'Avatar dispose leaks')
+ check(not beat.Connections[1].Connected and not a.Container.Parent and not a.Gui.Parent,'Avatar dispose leaks')
 end
 do
  local a,d,w,me,other,head,beat=fixture()
@@ -162,4 +175,19 @@ do
  check((visual.Model.Head.Position-fixed).Magnitude==0,'Independent render callback moves avatar outside native PCLD update')
  a:Dispose()
 end
-print('PASS: '..checks..' 1:1 PCLD size, inert humanoid/collision guards, external-weld stripping, ghost skin/decals, same-frame native motion and lifecycle checks (mocked)')
+-- If the GUI cannot be created, leave native Box available. Never fall back
+-- to physical clone geometry in Workspace.
+do
+ local a,d,w,me,other,head=fixture();a.Context.GuiParent=w
+ a:SetMode('Avatar');check(next(a.Records)==nil and not a:Has(me.Detector),'Invalid GUI parent silently creates Workspace ghost physics')
+ a:Dispose()
+end
+do
+ local a,d,w,me=fixture();local factory=Instance.new
+ Instance.new=function(class,...)if class=='ViewportFrame'then error('viewport unavailable')end;return factory(class,...)end
+ a:SetMode('Avatar');Instance.new=factory
+ check(next(a.Records)==nil and not a:Has(me.Detector)and not a.Container,'Failed viewport creates a workspace fallback')
+ check(not a.Gui and a.LastError:find('viewport unavailable',1,true),'Viewport failure is hidden')
+ a:Dispose()
+end
+print('PASS: '..checks..' 1:1 PCLD size, GUI-only WorldModel isolation, single viewport alpha, camera replacement, inert clones, same-frame motion and fallback/lifecycle checks (mocked)')

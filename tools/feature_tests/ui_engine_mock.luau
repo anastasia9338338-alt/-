@@ -96,7 +96,8 @@ mt.__index=function(n,k)
     if k=="Parent"then return rawget(n,"_parent")end
     if k=="AbsoluteSize"then
         if n.ClassName=="ScreenGui"then return viewport end
-        local parent=n.Parent and n.Parent.AbsoluteSize or viewport;local size=n.Size or UDim2.fromOffset(100,30)
+        local ancestor=n.Parent;while ancestor and ancestor.ClassName~='ScreenGui'and not ancestor:IsA('GuiObject')do ancestor=ancestor.Parent end
+        local parent=ancestor and ancestor.AbsoluteSize or viewport;local size=n.Size or UDim2.fromOffset(100,30)
         return Vector2.new(math.max(0,parent.X*size.X.Scale+size.X.Offset),math.max(0,parent.Y*size.Y.Scale+size.Y.Offset))
     end
     if k=="AbsoluteCanvasSize"then
@@ -104,7 +105,7 @@ mt.__index=function(n,k)
         return Vector2.new(size.X.Scale*frame.X+size.X.Offset,size.Y.Scale*frame.Y+size.Y.Offset)
     end
     if k=="AbsolutePosition"then
-        local parent=n.Parent;local origin=parent and parent.AbsolutePosition or Vector2.zero
+        local parent=n.Parent;while parent and parent.ClassName~='ScreenGui'and not parent:IsA('GuiObject')do parent=parent.Parent end;local origin=parent and parent.AbsolutePosition or Vector2.zero
         local size=parent and parent.AbsoluteSize or viewport;local pos=n.Position or UDim2.new();local anchor=n.AnchorPoint or Vector2.zero
         return origin+Vector2.new(pos.X.Scale*size.X+pos.X.Offset-anchor.X*n.AbsoluteSize.X,pos.Y.Scale*size.Y+pos.Y.Offset-anchor.Y*n.AbsoluteSize.Y)
     end
