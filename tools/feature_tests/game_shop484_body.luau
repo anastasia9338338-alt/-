@@ -23,9 +23,19 @@ local globalFavorite=Instance.new('ImageButton',categories);globalFavorite.Name=
 local nav=Instance.new('Frame',menu);nav.Name='Tabs';local navLayout=Instance.new('UIListLayout',nav)
 local navButtons={}
 for i=1,6 do local button=Instance.new('ImageButton',nav);button.Name='Nav'..i;button.Image='rbxassetid://nav'..i;button.ImageTransparency=0;navButtons[i]=button end
+local detachedChat=Instance.new('ImageButton',menu);detachedChat.Name='ChatButton';detachedChat.Image='rbxassetid://chat';detachedChat.Visible=true
 local footer=Instance.new('Frame',toys);footer.Name='ToyLimit';footer.Visible=true
 local limitLabel=Instance.new('TextLabel',footer);limitLabel.Text='Лимит игрушек'
 local count=Instance.new('TextLabel',footer);count.Text='5/100'
+-- Shared sibling captions/artwork are outside both the active page and its
+-- Contents. They must not leak around the compact footer/sidebar.
+local sharedFooter=Instance.new('Frame',pages);sharedFooter.Name='SharedFooter'
+local duplicateLimit=Instance.new('TextLabel',sharedFooter);duplicateLimit.Text='Лимит игрушек'
+local tallSidebar=Instance.new('ImageLabel',nav);tallSidebar.Name='Background';tallSidebar.Image='rbxassetid://sidebar-panel';tallSidebar.Size=UDim2.fromOffset(25,181)
+local rowBackground=Instance.new('ImageLabel',navButtons[1]);rowBackground.Name='SelectedBackground';rowBackground.Image='rbxassetid://panel';rowBackground.Size=UDim2.fromScale(1,1)
+local sharedStar=Instance.new('ImageButton',menu);sharedStar.Name='Favorites';sharedStar.Image='rbxassetid://shared-star';sharedStar.Visible=false
+-- The native global star is a sibling of TabContents in this game variant.
+globalFavorite.Name='Category7';globalFavorite.Parent=nil
 local sourceSize,scaleValue=menu.Size,nativeScale.Scale
 local library={Toggles={},ScreenGui=Instance.new('ScreenGui')};local box={}
 function box:AddToggle(id,info)local t={Value=info.Default};function t:SetValue(v)self.Value=v;info.Callback(v)end;library.Toggles[id]=t;return t end
@@ -42,15 +52,21 @@ local star=Instance.new('ImageButton',item);star.Name='StarButton';star.Image='r
 local clicks=0;item.Activated:Connect(function()clicks+=1 end);star.Activated:Connect(function()clicks+=10 end);categoryButtons[1].Activated:Connect(function()clicks+=100 end)
 menu.DescendantAdded:Fire(list);settings.Visible=false;toys.Visible=true;advance(.03)
 assert(not controller.LastError,controller.LastError)
+assert(duplicateLimit.TextTransparency==1,'Shared translated Toy Limit caption leaks beside replacement')
+assert(rowBackground.ImageTransparency==1,'Selected-row panel retains square native backing')
+assert(tallSidebar.ImageTransparency==1,'Tall narrow native artwork covers rounded sidebar')
+assert(controller.Panels.Sidebar.Corner.CornerRadius.Offset==11,'Sidebar reference radius differs')
+assert(detachedChat.Position.Y.Offset>nav.Position.Y.Offset and detachedChat.Visible,'Real chat tab outside named Tabs is cropped or missing')
+assert(sharedStar.Visible and controller.HasFavorite and controller.TextCopies.FavoritesStar.Text=='☆','Shared top-right favorite or hollow star missing')
 assert(controller.Active and controller.Layer.Visible,'Folder TabContents or streamed Contents disables the shop')
-assert(menu.Size.X.Offset==364 and menu.Size.Y.Offset==272 and nativeScale.Scale==1,'Reference window dimensions not applied')
+assert(menu.Size.X.Offset==346 and menu.Size.Y.Offset==274 and nativeScale.Scale==1,'Reference window dimensions not applied')
 assert(grid.FillDirectionMaxCells==10 and math.abs(grid.CellSize.X.Offset-30.3)<.01 and grid.CellPadding.X.Offset==1,'Reference item density differs')
-assert(controller.Panels.Title.Node.Position.X.Offset==44 and controller.Panels.Title.Node.Size.X.Offset==177,'Left header pill has wrong rectangle')
-assert(controller.Panels.Categories.Node.Position.X.Offset==224 and controller.Panels.Body.Node.Position.Y.Offset==47,'Header or inventory body differs from reference')
+assert(controller.Panels.Title.Node.Position.X.Offset==27 and controller.Panels.Title.Node.Size.X.Offset==179,'Left header pill has wrong rectangle')
+assert(controller.Panels.Categories.Node.Position.X.Offset==210 and controller.Panels.Body.Node.Position.Y.Offset==40,'Header or inventory body differs from reference')
 assert(controller.TextCopies.YourToysTitle.Text=='Your Toys'and controller.TextCopies.YourToysTitle.TextScaled==false and controller.TextCopies.YourToysTitle.TextSize==8,'Native TextScaled expands the compact title')
 assert(title.Text=='Ваши игрушки'and title.TextTransparency==1,'Native localized title text was replaced instead of cosmetically hidden')
-assert(navButtons[1].Size.Y.Offset<31 and nav.Size.X.Offset==30,'Sidebar icon inherited whole-window height')
-assert(categories.Position.X.Offset==224 and categoryButtons[1].Position.X.Offset==0 and catLayout.FillDirection==Enum.FillDirection.Horizontal,'Category layout overrides absolute button placement')
+assert(navButtons[1].Size.Y.Offset<31 and nav.Size.X.Offset==25,'Sidebar icon inherited whole-window height')
+assert(categories.Position.X.Offset==210 and categoryButtons[1].Position.X.Offset==0 and catLayout.FillDirection==Enum.FillDirection.Horizontal,'Category layout overrides absolute button placement')
 assert(categoryButtons[1].ImageTransparency==1 and controller.IconCopies[categoryButtons[1]].ImageColor3:ToHex()=='f5f5f5','Active green native category is not rendered as a white icon')
 local nativeButton=categoryButtons[1];local originalPosition=nativeButton.Position
 nativeButton.Position=UDim2.fromOffset(30,0);render:Fire()
@@ -60,12 +76,16 @@ nativeButton.Position=originalPosition;render:Fire()
 assert(item.Parent==list and star.Parent==item and star.Visible and item.Image=='rbxassetid://chair','Native inventory controls/images changed')
 assert(#list:GetChildren()==2,'Decorations pollute native toy collection enumeration')
 item.Activated:Fire();star.Activated:Fire();categoryButtons[1].Activated:Fire();assert(clicks==111,'Native buttons stopped executing their handlers')
-assert(controller.TextCopies.ToyLimitCount.Text=='5/100'and footer.Visible and limitLabel.TextTransparency==1 and footer.Size.Y.Offset==16,'Native giant footer remains visible')
+assert(controller.TextCopies.ToyLimitCount.Text=='5/100'and footer.Visible and limitLabel.TextTransparency==1 and footer.Size.Y.Offset==17,'Native giant footer remains visible')
 count.Text='6/100';advance(.03);assert(controller.TextCopies.ToyLimitCount.Text=='6/100','Inventory count stopped updating')
 -- Native controller writes after our initial install must be observed and repaired.
 menu.Size=UDim2.fromScale(.96,.96);grid.CellSize=UDim2.fromOffset(100,100);advance(.03)
-assert(menu.Size.X.Offset==364 and grid.CellSize.X.Offset<31,'Late game layout code restores the old inventory')
+assert(menu.Size.X.Offset==346 and grid.CellSize.X.Offset<31,'Late game layout code restores the old inventory')
+local addedCorner=nav:FindFirstChild('AstralShopCorner');assert(addedCorner,'Native sidebar corner was not fitted')
+local starCorner=sharedStar:FindFirstChild('AstralShopCorner');assert(starCorner,'Shared favorite corner not fitted')
 toys.Visible=false;settings.Visible=true;advance(.03)
+assert(not starCorner.Parent,'Shared top-right favorite corner survives inventory close')
+assert(not addedCorner.Parent and duplicateLimit.TextTransparency==0 and tallSidebar.ImageTransparency==0,'Leaving inventory leaks native corner or shared caption/artwork overrides')
 assert(menu.Size==sourceSize and nativeScale.Scale==scaleValue and not controller.Layer.Visible,'Settings retains shop dimensions or background')
 assert(hue.Text=='160'and hue.TextSize==40 and title.TextTransparency==0 and footer.Visible,'Native Settings or original toy visuals not restored')
 settings.Visible=false;toys.Visible=true;advance(.03);library.Toggles.AstralGUIShopStyle:SetValue(false)
@@ -91,7 +111,7 @@ for i=1,30 do
  local minimum=Instance.new('UISizeConstraint',cell);minimum.MinSize=Vector2.new(100,100);minimum.MaxSize=Vector2.new(500,500)
  local wrapper=Instance.new('Frame',cell);wrapper.Name='Thumbnail';wrapper.Size=UDim2.fromOffset(100,100)
  local image=Instance.new(i%2==0 and'ViewportFrame'or'ImageLabel',wrapper);image.Size=UDim2.fromOffset(120,120);image.Position=UDim2.fromOffset(-10,-10)
- local favorite=Instance.new('ImageButton',cell);favorite.Name='StarButton';favorite.Visible=false
+ local favorite=Instance.new(i%2==0 and'ImageLabel'or'ImageButton',cell);favorite.Name='StarButton';favorite.Image='rbxassetid://star';favorite.Visible=false;favorite.ImageTransparency=1
  nestedCells[i]={Cell=cell,Minimum=minimum,Wrapper=wrapper,Image=image,Favorite=favorite}
 end
 local oldHeader=Instance.new('ImageLabel',nextMenu);oldHeader.Name='Background';oldHeader.Size=UDim2.fromOffset(600,70);oldHeader.Image='rbxassetid://panel'
@@ -108,7 +128,7 @@ assert(nestedGrid.CellSize.X.Offset*10+nestedGrid.CellPadding.X.Offset*9<=usable
 for i,r in ipairs(nestedCells)do
  assert(r.Cell.AbsoluteSize.X<31 and r.Minimum.MinSize==Vector2.zero,'Native minimum constraint keeps a toy oversized')
  assert(r.Wrapper.AbsoluteSize.X<31 and r.Image.AbsoluteSize.X<31 and r.Image.Position.X.Offset==0,'Actual thumbnail still overflows the compact native cell')
- assert(r.Cell.ClipsDescendants and r.Favorite.Visible and r.Favorite.Size.X.Offset==11,'Tile clipping/favorite geometry is missing')
+ assert(r.Cell.ClipsDescendants and r.Favorite.Visible and r.Favorite.ImageTransparency==0 and r.Favorite.Size.X.Offset==11,'Tile clipping/favorite geometry is missing')
  assert(r.Cell.Parent==canvas and r.Cell.LayoutOrder==i,'Toy order or original callback parent changed')
 end
 assert(oldHeader.BackgroundTransparency==1 and oldHeader.ImageTransparency==1 and oldFooter.ImageTransparency==1,'Old native header/footer panel covers the rounded reference skin')

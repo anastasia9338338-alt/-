@@ -1,5 +1,5 @@
--- Request/observation tests only. A server kick is not represented by this fake
--- transport; the last command in each 50ms batch is the visible owner state.
+-- Local scheduling only; this transport never represents a server kick.
+-- RemoteEvents are delivered in order, not collapsed into a property update.
 do
  local s={}
  check(Handoff.CanGrab(s,0,0,nil),'Initial grab was blocked')
@@ -57,12 +57,11 @@ if Loop then
   sim.Before=function(dt)ar.Position+=Vector3.new(4*dt,0,0)end
   sim.After=function()
    if sim.Now+1e-7>=nextBatch then
-    local last=wire[#wire]
-    if last then
-     local was=owner;owner=last=='grab'
+    for _,command in ipairs(wire)do
+     local was=owner;owner=command=='grab'
      if was and not owner then exposedReleases+=1 end
-     table.clear(wire)
     end
+    table.clear(wire)
     nextBatch=nextBatch+batchSeconds
    end
    check((session.Position.Position-(ar.Position+Vector3.new(0,15,0))).Magnitude<1e-6,'Handoff gate stopped the existing hold from following its actor')
@@ -92,15 +91,15 @@ if Loop then
   check(fast>=legacy,'Observed-state path became slower at '..fps..' FPS')
   local native=setup(fps,false,false,'Native');check(native>legacy*1.5,'Source-frame cadence failed to remove acknowledgement bottleneck')
  end
- -- Fixed alternating commands can collapse into the same final command in
- -- every network batch. Count exposed owner transitions rather than equating
- -- request count with useful acquisition/release cycles.
- for _,batch in ipairs({.1,.2})do
-  local oldRequests,oldEdges=setup(60,false,false,'Native',batch,true)
-  local requests,edges=setup(60,false,false,true,batch)
-  check(oldEdges==0 and edges>=5,'Acknowledged phases failed to escape native frame/batch aliasing')
-  check(requests<oldRequests,'Transport recovery relied on increasing request traffic')
-  print(string.format('INFO: simulated %.0fms batches / 2s: native %d requests, %d release edges; observed %d requests, %d release edges',batch*1000,oldRequests,oldEdges,requests,edges))
+ -- Native SetNetworkOwner/DestroyGrabLine are separate ordered RemoteEvents.
+ -- Batching delivery must not erase every intermediate call in the test.
+ for _,batch in ipairs({.05,.1,.2})do
+  local nativeRequests,nativeReleases=setup(60,false,false,'Native',batch)
+  local observedRequests=setup(60,false,false,true,batch)
+  check(nativeReleases>=50,'Ordered native release callbacks vanished in delayed delivery')
+  check(nativeRequests>=55 and nativeRequests<=61,'Native phase gained an RTT-sized request delay')
+  check(nativeRequests>observedRequests,'Acknowledgement gate silently replaced native cadence')
+  print(string.format('INFO: ordered %.0fms RemoteEvent delivery / 2s: native %d requests; acknowledgement-gated %d requests (not server kicks)',batch*1000,nativeRequests,observedRequests))
  end
 end
 -- A stale owner marker cannot acknowledge an acquisition before actual local
@@ -137,5 +136,20 @@ do
  check(not s.LastHandoff.Observed and s.LastHandoff.Native,'Unobserved native phase was reported as acknowledgement')
  Handoff.Released(s,11,1/60,.5,'Native')
  check(not Handoff.CanGrab(s,11,1,false)and Handoff.CanGrab(s,12,2/60,nil),'Native re-grab ignored frame separation')
+end
+-- DestroyGrabLine does not promise a replicated PartOwner change next frame.
+-- That marker must not impose an RTT/deadline wait on the source native cycle.
+do
+ local session={}
+ for frame=1,120 do
+  local now=frame/60
+  if frame%2==1 then
+   check(Handoff.CanGrab(session,frame,now,true),'Persistent marker throttled native re-grab')
+   Handoff.Grabbed(session,frame,now,.5,'Native')
+  else
+   check(Handoff.CanRelease(session,frame,now,true),'Native release waited for an unrelated marker clock')
+   Handoff.Released(session,frame,now,.5,'Native')
+  end
+ end
 end
 print('PASS: '..checks..' ownership phase, timeout, batched transport, interval and hold tests (mocked; no server kicks)')

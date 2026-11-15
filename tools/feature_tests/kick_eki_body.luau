@@ -155,4 +155,42 @@ for _,pause in ipairs({'busy','acquiring','distant'})do
  f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
  check(f.State.ApplyCalls==2 and f.Session.EKI,'Paused reacquisition failed after a fresh settling frame: '..pause)
 end
+-- Native RNO deliberately removes the grab/owner marker. Once the initial
+-- capture was acknowledged, continuing physical ownership keeps EKI valid.
+-- Marker replication alone must neither initialize nor tear down this capture.
+do
+ local f=ekiFixture(nil);local marker,physics=true,true
+ f.Loop.Context.NativePhases=true
+ f.Loop.Context.Owned=function()return marker and physics end
+ f.Loop.Context.NetworkOwned=function()return physics end
+ f.Update();check(f.Session.EKI,'Native capture did not establish EKI')
+ marker=false;f.State.Now=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.Session.EKI and f.State.ResetCalls==0 and f.State.ApplyCalls==2,'Intentional native marker release tore down a physically held EKI')
+ physics=false;f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(not f.Session.EKI and not f.Session.CaptureAcknowledged and not f.Session.CapturedFrame,'Actual ownership loss retained EKI or capture acknowledgement')
+ physics=true;f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(not f.Session.EKI and f.State.ApplyCalls==2,'Physical-only reacquisition reused an expired capture')
+ marker=true;f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(not f.Session.EKI,'Native reacquisition skipped its new capture frame')
+ marker=false;f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.Session.EKI and f.State.ApplyCalls==3,'Native capture readiness followed the marker instead of actual simulation ownership')
+ f.Loop:Remove(f.Player)
+ check(f.State.Stored==nil and f.Loop.Sessions[f.Player]==nil,'Native continuity path failed cancellation cleanup')
+end
+do
+ local f=ekiFixture(nil);f.Loop.Context.NativePhases=true;f.Session.CapturedFrame=nil
+ f.Loop.Context.Owned=function()return false end
+ f.Update();f.Loop.Frame+=1;f.State.Now=1/60;f.Update()
+ check(f.State.ApplyCalls==0 and not f.Session.CaptureAcknowledged,'Never-acknowledged native target was considered captured')
+end
+do
+ local f=ekiFixture(nil);f.Loop.Context.NativePhases=true;f.Update()
+ local elsewhere=f.Root.Position+Vector3.new(0,15,0)
+ f.Loop.Frame+=1;f.State.Now=1/60;f.Loop:Update(f.Session,elsewhere,f.State.Now,.1)
+ check(not f.Session.EKI and not f.Session.CapturedFrame,'Leaving the hold position preserved stale EKI settling readiness')
+ f.Loop.Frame+=1;f.State.Now+=1/60;f.Update()
+ check(not f.Session.EKI and f.State.ApplyCalls==1,'Returning to hold skipped a fresh physics frame')
+ f.Loop.Frame+=1;f.State.Now+=1/60;f.Update()
+ check(f.Session.EKI and f.State.ApplyCalls==2,'Stable return to hold did not resume native EKI')
+end
 print('PASS: '..checks..' local EKI dirty-state, snapshot, failed-reset and cleanup retry checks (mocked; no server disconnect)')
