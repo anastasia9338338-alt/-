@@ -86,7 +86,7 @@ local NumberSequence,NumberSequenceKeypoint={new=seq},{new=seq}
 
 local Node={}
 local signals={InputBegan=true,InputEnded=true,InputChanged=true,MouseEnter=true,MouseLeave=true,MouseButton1Click=true,MouseButton2Click=true,
-    MouseButton1Up=true,MouseButton1Down=true,MouseButton2Up=true,Focused=true,FocusLost=true,Changed=true,ChildAdded=true,ChildRemoved=true,DescendantAdded=true,Ended=true,Destroying=true}
+    MouseButton1Up=true,MouseButton1Down=true,MouseButton2Up=true,Focused=true,FocusLost=true,Changed=true,ChildAdded=true,ChildRemoved=true,DescendantAdded=true,DescendantRemoving=true,Ended=true,Destroying=true}
 local viewport=Vector2.new(1280,900)
 local mt={}
 mt.__index=function(n,k)

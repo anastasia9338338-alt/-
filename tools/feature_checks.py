@@ -44,10 +44,10 @@ def run_feature_checks(modules,runner,folder):
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
     if 'GameShopStyle'in modules:
-        run('game_shop484',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Layout=(function()\n'+modules['ShopLayout']+'\nend)()\nlocal Shop=(function(...)\n'+modules['GameShopStyle']+'\nend)(function(name)assert(name=="ShopLayout");return Layout end)\n'+read('game_shop484_body.luau'))
+        run('game_shop484',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Layout=(function()\n'+modules['ShopLayout']+'\nend)()\nlocal Quick=(function()\n'+modules['ShopQuickSpawn']+'\nend)()\nlocal Shop=(function(...)\n'+modules['GameShopStyle']+'\nend)(function(name)if name=="ShopQuickSpawn"then return Quick end;assert(name=="ShopLayout");return Layout end)\n'+read('game_shop484_body.luau'))
     if 'ShopLayout'in modules:
         frame_case=read('game_shop484_body.luau').replace("local pages=Instance.new('Folder',menu)","local pages=Instance.new('Frame',menu)")
-        run('game_shop484_frame',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Layout=(function()\n'+modules['ShopLayout']+'\nend)()\nlocal Shop=(function(...)\n'+modules['GameShopStyle']+'\nend)(function(name)assert(name=="ShopLayout");return Layout end)\n'+frame_case)
+        run('game_shop484_frame',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Layout=(function()\n'+modules['ShopLayout']+'\nend)()\nlocal Quick=(function()\n'+modules['ShopQuickSpawn']+'\nend)()\nlocal Shop=(function(...)\n'+modules['GameShopStyle']+'\nend)(function(name)if name=="ShopQuickSpawn"then return Quick end;assert(name=="ShopLayout");return Layout end)\n'+frame_case)
     if 'FrameArtwork'in modules:
         run('frame_artwork',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Art=(function()\n'+modules['FrameArtwork']+'\nend)()\n'+read('gui_extensions_body.luau'))
     if 'FrameImageFiles'in modules:
@@ -111,6 +111,11 @@ def run_feature_checks(modules,runner,folder):
         program+='local Pallet=(function(...)\n'+modules['PalletRagdoll']+'\nend)(function(name)if name=="Resonance29Ragdoll"then return Source elseif name=="PalletOwnership"then return Ownership elseif name=="PalletReaction"then return Reaction elseif name=="PalletStroke"then return Stroke elseif name=="PalletCadence"then return Cadence end;error(name)end)\n'
         program+=read('kick_body.luau'if 'PalletStroke'in modules else 'native_pallet_body.luau')
         run('kick',program)
+        query_start=modules['Main'].index('ReceiverOverlaps=function(part,receiver)')
+        query_end=modules['Main'].index('\n                    MarkerOwned=',query_start)
+        receiver_query=modules['Main'][query_start+len('ReceiverOverlaps='):query_end].strip().rstrip(',')
+        sweep_prefix=program[:program.index(read('kick_body.luau'if 'PalletStroke'in modules else 'native_pallet_body.luau'))]
+        run('pallet_sweep',sweep_prefix+read('pallet_receiver_query_prefix.luau')+'\nlocal ActualReceiverOverlaps='+receiver_query+'\n'+read('pallet_sweep_body.luau'))
         run('pallet_reaction',read('model_mock.luau')+'\nlocal Reaction=(function()\n'+modules['PalletReaction']+'\nend)()\n'+read('pallet_reaction_body.luau'))
         if 'PalletCadence'in modules:
             run('pallet_cadence','local Cadence=(function()\n'+modules['PalletCadence']+'\nend)()\n'+read('pallet_cadence_body.luau'))

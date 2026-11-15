@@ -1,4 +1,4 @@
--- Astral v4.86 | Reference shop chrome and native ownership cadence restoration.
+-- Astral v4.87 | Shared game menu profiles, readable purchase cards and responsive sizing.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -20897,7 +20897,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.86 | FTAP")
+                                warn("Astral v4.87 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -24232,6 +24232,33 @@ end
                         for _,other in ipairs(part:GetTouchingParts())do if other:IsDescendantOf(character)then return true end end
                         local query=OverlapParams.new();query.FilterType=Enum.RaycastFilterType.Include;query.FilterDescendantsInstances={character};query.RespectCanCollide=false
                         return #workspace:GetPartsInPart(part,query)>0
+                    end,
+                    ReceiverOverlaps=function(part,receiver)
+                        if not part or not part.Parent or not receiver or not receiver.Parent or part.CanQuery~=true then return nil end
+                        -- Query the receiver's shape for the owned pallet. The
+                        -- receiver may be CanQuery=false while CanTouch=true.
+                        local physics=game:GetService("PhysicsService")
+                        local group=part.CollisionGroup
+                        local read,collidable=pcall(physics.CollisionGroupsAreCollidable,physics,group,group)
+                        if not read then return nil end
+                        if not collidable then
+                            local listed,groups=pcall(physics.GetRegisteredCollisionGroups,physics)
+                            if not listed then return nil end
+                            group=nil
+                            for _,entry in ipairs(groups)do
+                                local name=entry.name or entry.Name
+                                if name then
+                                    local ok,allowed=pcall(physics.CollisionGroupsAreCollidable,physics,name,part.CollisionGroup)
+                                    if ok and allowed then group=name;break end
+                                end
+                            end
+                            if not group then return nil end
+                        end
+                        local query=OverlapParams.new();query.FilterType=Enum.RaycastFilterType.Include
+                        query.FilterDescendantsInstances={part};query.RespectCanCollide=false;query.CollisionGroup=group
+                        local ok,parts=pcall(workspace.GetPartsInPart,workspace,receiver,query)
+                        if not ok then return nil end
+                        return #parts>0
                     end,
                     MarkerOwned=tbl12.IsPartOwner,PhysicsOwned=tbl12.IsNetworkOwner,Grab=tbl12.Grab,
                     OwnershipBusy=function()return tbl7.States.Owning==true end,
@@ -37864,7 +37891,16 @@ Escape Timer: %*]]
             lib:OnUnload(function()tbl12.GUIStyle:Dispose()end)
             local playerUI=localPlayer:FindFirstChild("PlayerGui")
             if playerUI then
-                tbl12.GameShopStyle=requireModule("GameShopStyle").Install({Library=lib,Tab=tbl15.GUI,PlayerGui=playerUI,Defer=task.defer,Workspace=workspace,RunService=RunService})
+                tbl12.GameShopStyle=requireModule("GameShopStyle").Install({Library=lib,Tab=tbl15.GUI,PlayerGui=playerUI,Defer=task.defer,Workspace=workspace,RunService=RunService,
+                    Input=UserInputService,Options=options,Clock=os.clock,SpawnThread=task.spawn,
+                    Catalog=requireModule("AssetCatalog").Items,ResolveItem=requireModule("AssetCatalog").ResolveId,
+                    Encode=function(value)return HttpService:JSONEncode(value)end,Decode=function(value)return HttpService:JSONDecode(value)end,
+                    SpawnQuick=function(name,valid)
+                        if flag11 or not valid()then return end
+                        local allowed=requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)
+                        if not allowed then return end
+                        return tbl12.SpawnToy(name,nil,1,false,valid)
+                    end})
                 lib:OnUnload(function()tbl12.GameShopStyle:Dispose()end)
             end
         end
@@ -37890,7 +37926,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.86",true)
+            box:AddLabel("Astral v4.87",true)
         end
 
         do
@@ -44815,6 +44851,7 @@ sources.GameShopStyle = [========[
 -- siblings of Menu, never extra children of the game's Contents item collection.
 local requireModule=...
 local Layout=requireModule('ShopLayout')
+local Quick=requireModule('ShopQuickSpawn')
 local Shop={};Shop.__index=Shop
 local C=Color3.fromRGB
 local function fold(text)
@@ -44865,6 +44902,7 @@ function Shop.Install(ctx)
  local box=ctx.Tab:AddRightGroupbox('Игровой магазин','shopping-bag')
  box:AddToggle('AstralGUIShopStyle',{Text='Магазин по референсу',Default=true,Callback=function(v)self:SetEnabled(v)end})
  self.Status=box:AddLabel('Открой Your Toys в игровом меню.',true)
+ if ctx.Input and ctx.SpawnQuick then self.Quick=Quick.Install(self,ctx)end
  self.Connections[#self.Connections+1]=ctx.PlayerGui.DescendantAdded:Connect(function(v)
   if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu'or v.Name=='TabContents'or self.Menu and under(v,self.Menu))then self:Queue()end
  end)
@@ -44872,7 +44910,7 @@ function Shop.Install(ctx)
  return self
 end
 function Shop:Queue()
- if self.Closed or not self.Enabled or self.Queued then return end;self.Queued=true
+ if self.Closed or self.Applying or not self.Enabled or self.Queued then return end;self.Queued=true
  self.Context.Defer(function()self.Queued=false;if not self.Closed and self.Enabled then self:Find()end end)
 end
 function Shop:Watch(node,property)
@@ -44880,7 +44918,7 @@ function Shop:Watch(node,property)
  if map[property]then return end
  map[property]=node:GetPropertyChangedSignal(property):Connect(function()
   if self.Closed or self.Applying or not self.Enabled then return end
-  self:Queue()
+  if self.FooterNodes and self.FooterNodes[node]then self.FooterDirty=true else self.Dirty=true end;self:Queue()
  end)
 end
 function Shop:Write(node,key,value,scope,maintain)
@@ -44888,7 +44926,7 @@ function Shop:Write(node,key,value,scope,maintain)
  if not r then r={Scope=scope or'page',Properties={}};self.Records[node]=r end
  local p=r.Properties[key];if not p then p={Original=node[key]};r.Properties[key]=p end
  if node[key]~=value then node[key]=value end;p.Forced=value
- if maintain then self:Watch(node,key)end
+ if maintain and not self.ItemStyling then self:Watch(node,key)end
 end
 function Shop:Restore(scope)
  for node,r in pairs(self.Records)do if not scope or r.Scope==scope then
@@ -44930,7 +44968,7 @@ function Shop:Normalize(node,scope)
    self:Write(p,'BackgroundTransparency',1,scope,true);self:Write(p,'ClipsDescendants',false,scope)
    local stroke=p:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,scope)end
   end
-  for _,scale in ipairs(children(p))do if scale:IsA('UIScale')then self:Write(scale,'Scale',1,scope,true)end end
+  if p~=self.Menu then for _,scale in ipairs(children(p))do if scale:IsA('UIScale')then self:Write(scale,'Scale',1,scope,true)end end end
   if p==self.Menu then break end;p=p.Parent
  end
 end
@@ -44940,9 +44978,9 @@ function Shop:Surface()
  while parent and not parent:IsA('ScreenGui')do parent=parent.Parent end
  parent=parent or self.Menu.Parent
  local layer=Instance.new('Frame');layer.Name='AstralGameShopSkin';layer.BackgroundTransparency=1;layer.BorderSizePixel=0;layer.Active=false;layer.Visible=false;layer.Parent=parent
- self.Layer=layer;self.Panels={};self.IconCopies={};self.IconMeta={};self.TextCopies={}
+ self.Layer=layer;self.LayerScale=Instance.new('UIScale');self.LayerScale.Parent=layer;self.Panels={};self.IconCopies={};self.IconMeta={};self.TextCopies={}
  for _,name in ipairs({'Sidebar','Title','Categories','Favorite','Body','Limit'})do
-  local panel=Instance.new('Frame');panel.Name=name;panel.BorderSizePixel=0;panel.Active=false;panel.BackgroundColor3=C(51,53,55);panel.BackgroundTransparency=name=='Body'and .4 or .24;panel.Parent=layer
+  local panel=Instance.new('Frame');panel.Name=name;panel.BorderSizePixel=0;panel.Active=false;panel.BackgroundColor3=C(51,53,55);panel.BackgroundTransparency=name=='Body'and .18 or .24;panel.Parent=layer
   local corner=Instance.new('UICorner');corner.Parent=panel;self.Panels[name]={Node=panel,Corner=corner}
  end
 end
@@ -44952,16 +44990,17 @@ function Shop:Draw()
  if not ok or not origin then origin=Vector2.zero end
  local position=self.Menu.AbsolutePosition
  self.Layer.Position=UDim2.fromOffset(position.X-origin.X,position.Y-origin.Y)
- self.Layer.Size=UDim2.fromOffset(self.Plan.Width,self.Plan.Height);self.Layer.ZIndex=self.Menu.ZIndex-1;self.Layer.Visible=true
+ self.LayerScale.Scale=self.MenuScale or 1;self.Layer.Size=UDim2.fromOffset(self.Plan.Width,self.Plan.Height);self.Layer.ZIndex=self.Menu.ZIndex-1;self.Layer.Visible=true
  for name,panel in pairs(self.Panels)do
   local r=self.Plan[name];panel.Node.Position=UDim2.fromOffset(r.X,r.Y);panel.Node.Size=UDim2.fromOffset(r.W,r.H)
   panel.Corner.CornerRadius=UDim.new(0,r.Radius);panel.Node.ZIndex=self.Menu.ZIndex-1
-  panel.Node.Visible=name~='Favorite'or self.HasFavorite
+  panel.Node.Visible=(name~='Favorite'or self.HasFavorite)and(name~='Categories'or self.HasCategories)and(name~='Limit'or self.ShowLimit)
  end
 end
 function Shop:Bind(menu,contents)
  self:Detach();self.Menu=menu;self.Contents=contents
- self.Bound[#self.Bound+1]=menu.DescendantAdded:Connect(function()self:Queue()end)
+ self.Bound[#self.Bound+1]=menu.DescendantAdded:Connect(function(v)if not(self.Quick and self.Quick:Owns(v))then self.Dirty=true;self:Queue()end end)
+ self.Bound[#self.Bound+1]=menu.DescendantRemoving:Connect(function(v)if not self.Applying and not(self.Quick and self.Quick:Owns(v))then self.Dirty=true;self:Queue()end end)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()if self.Active and self.Plan and live(self.Layer)then self:Draw()end end)
  self.Bound[#self.Bound+1]=menu.Destroying:Connect(function()
@@ -44969,35 +45008,74 @@ function Shop:Bind(menu,contents)
  end)
  self:Watch(menu,'Size')
 end
+local function rootScale(node,stop)
+ local scale=1
+ while node and node~=stop do
+  for _,v in ipairs(children(node))do if v:IsA('UIScale')and v.Scale>0 then scale*=v.Scale end end
+  node=node.Parent
+ end
+ return scale
+end
 function Shop:Discover()
  local seen={};for _,r in ipairs(self.Pages)do seen[r.Node]=true end
- local list=children(self.Contents);for _,v in ipairs(descendants(self.Contents))do if v.Parent~=self.Contents then list[#list+1]=v end end
- for _,page in ipairs(list)do
-  local name=page.Name:lower()
-  if(name=='toys'or name=='toyshop'or name=='toystore'or name=='shop')and not seen[page]then
+ for _,page in ipairs(children(self.Contents))do
+  local name=fold(page.Name)
+  local decoration=name:find('footer',1,true)or name:find('limit',1,true)or name:find('background',1,true)or name=='header'
+  if gui(page)and not decoration and not seen[page]then
    local items=page:FindFirstChild('Contents',true)
-   if items then
-    local view=items:IsA('ScrollingFrame')and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)or(gui(items)and items)
-    if view then
-     self.Pages[#self.Pages+1]={Node=page,List=view,Items=items}
-     local p=view;while p and p~=self.Menu.Parent do if gui(p)then self:Watch(p,'Visible')end;if p==self.Menu then break end;p=p.Parent end
-    end
-   end
+   local grid
+   for _,v in ipairs(descendants(items or page))do if v:IsA('UIGridLayout')then grid=grid or v end end
+   local view=items and(items:IsA('ScrollingFrame')and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)or(gui(items)and items))
+   if name=='settings'or name=='options'or name=='configuration'or name:find('color',1,true)then grid=nil end
+   local record={Node=page,List=view or page,Items=items or page,Grid=grid,Kind=grid and'grid'or'panel'}
+   self.Pages[#self.Pages+1]=record
+   self:Watch(page,'Visible')
   end
  end
+ -- Contents and its layout can stream after the page root was discovered.
+ for _,record in ipairs(self.Pages)do
+  local items=record.Node:FindFirstChild('Contents',true)
+  local grid
+  for _,v in ipairs(descendants(items or record.Node))do if v:IsA('UIGridLayout')then grid=grid or v end end
+  local name=fold(record.Node.Name)
+  if name=='settings'or name=='options'or name=='configuration'or name:find('color',1,true)then grid=nil end
+  record.Items=items or record.Node;record.Grid=grid;record.Kind=grid and'grid'or'panel'
+  record.List=items and(items:IsA('ScrollingFrame')and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)or(gui(items)and items))or record.Node
+ end
+end
+local function textValue(v)
+ local result=tostring(v.Text or'')
+ for _,key in ipairs({'ContentText','LocalizedText'})do local ok,value=pcall(function()return v[key]end);if ok and type(value)=='string'and value~=''then result..=' '..value end end
+ return fold(result)
+end
+local function footer(v,stop)
+ local n=v
+ while n and n~=stop do
+  local name=fold(n.Name):gsub('[%s_%-]','')
+  if name:find('toylimit',1,true)or name:find('toyslimit',1,true)or name:find('toycount',1,true)or name:find('footer',1,true)then return n end
+  n=n.Parent
+ end
+ return nil
+end
+function Shop:HideText(node,scope)
+ self:Write(node,'TextTransparency',1,scope,true);self:Write(node,'TextStrokeTransparency',1,scope,true)
+end
+function Shop:ResetArtwork()
+ for _,map in ipairs({self.IconCopies or{},self.TextCopies or{},self.CardCopies or{}})do for _,v in pairs(map)do if v.Parent then v:Destroy()end end end
+ self.IconCopies={};self.IconMeta={};self.TextCopies={};self.CardCopies={}
 end
 function Shop:Controls(record)
  local title,categories,favorite,limit,sidebar
  local buttons={}
  for _,node in ipairs(descendants(self.Menu))do
-  if gui(node)and not under(node,record.Items)then
+  if gui(node)and not(record.Grid and under(node,record.Items))then
    local inPage=under(node,record.Node)
    local shared=not under(node,self.Contents)
    local name=node.Name:lower()
    if inPage or shared then
     if node:IsA('TextLabel')or node:IsA('TextButton')then
      local text=fold(node.Text)
-     if text:find('your toys',1,true)or text:find('ваши игруш',1,true)or name=='title'or name=='heading'then title=title or node
+     if text:find('your toys',1,true)or text:find('ваши игруш',1,true)or text=='shop'or text:find('магазин',1,true)or name=='title'or name=='heading'or name=='header'or name:find('pagetitle',1,true)then title=title or node
      elseif text:find('лимит игруш',1,true)or text:find('toy limit',1,true)or name:find('toylimit',1,true)then limit=limit or node end
     end
     if(node:IsA('Frame')or node:IsA('ScrollingFrame')or node:IsA('Folder'))and(name:find('categor',1,true)or name=='filters')then categories=categories or node end
@@ -45060,7 +45138,7 @@ function Shop:RefreshIcons()
   local meta=self.IconMeta[visual]
   image.Visible=meta~=nil and not meta.Hidden and live(visual)~=nil and visible(visual,self.Menu)
   if image.Visible then
-   local button=meta.Button;local pos=button.AbsolutePosition-origin;local size=button.AbsoluteSize;local desired=meta.Desired
+   local button=meta.Button;local scale=self.MenuScale or 1;local pos=(button.AbsolutePosition-origin)/scale;local size=button.AbsoluteSize/scale;local desired=meta.Desired
    local cx,cy=desired.X+desired.W*.5,desired.Y+desired.H*.5
    -- Follow native automatic layouts when their true hit rectangle differs.
    -- The displayed icon always stays inside the original clickable control.
@@ -45131,7 +45209,9 @@ function Shop:Grid(record)
  if not gui(holder)then return end
  local cells={};for _,node in ipairs(children(holder))do if gui(node)then cells[#cells+1]=node end end
  local count=0;for _,cell in ipairs(cells)do if cell.Visible then count+=1 end end
- local height=math.max(plan.Grid.H,math.ceil(count/plan.Columns)*(plan.Cell+plan.Gap)-plan.Gap)
+ local paid=record.Node.Name:lower()~='toys'
+ local rowHeight=plan.Cell+(paid and 14*plan.Scale or 0)
+ local height=math.max(plan.Grid.H,math.ceil(count/plan.Columns)*(rowHeight+plan.Gap)-plan.Gap)
  -- Every coordinate space between viewport and grid must have the same usable
  -- width. Changing CellSize alone left the old narrow inner canvas in place.
  local node=holder
@@ -45150,7 +45230,7 @@ function Shop:Grid(record)
   self:Write(list,'CanvasSize',UDim2.fromOffset(0,height),nil,true)
  end
  if grid then
-  self:Write(grid,'CellSize',UDim2.fromOffset(plan.Cell,plan.Cell),nil,true)
+  self:Write(grid,'CellSize',UDim2.fromOffset(plan.Cell,rowHeight),nil,true)
   self:Write(grid,'CellPadding',UDim2.fromOffset(plan.Gap,plan.Gap),nil,true)
   self:Write(grid,'FillDirection',Enum.FillDirection.Horizontal,nil,true)
   self:Write(grid,'FillDirectionMaxCells',plan.Columns,nil,true)
@@ -45161,38 +45241,104 @@ function Shop:Grid(record)
  local function favorite(v)
   return favoriteName(v)
  end
+ self.ItemStyling=true
  for _,cell in ipairs(cells)do
-  self:Rect(cell,{X=0,Y=0,W=plan.Cell,H=plan.Cell})
+  self:Rect(cell,{X=0,Y=0,W=plan.Cell,H=rowHeight})
   self:Write(cell,'ClipsDescendants',true,nil,true);self:Watch(cell,'Visible')
+  local texts={}
+  for _,v in ipairs(descendants(cell))do if(v:IsA('TextLabel')or v:IsA('TextButton'))and not favoriteName(v)and v.Text~=''then texts[#texts+1]=v end end
+  if cell:IsA('TextButton')and cell.Text~=''then self:Text(cell,7*plan.Scale);self:Write(cell,'TextYAlignment',Enum.TextYAlignment.Bottom,nil,true)end
+  for i,v in ipairs(texts)do
+   self:Text(v,math.max(7,7*plan.Scale));self:Write(v,'ClipsDescendants',true,nil,true)
+   self:Rect(v,{X=0,Y=paid and plan.Cell+(i-1)*7*plan.Scale or math.max(0,plan.Cell-8*plan.Scale),W=plan.Cell,H=7*plan.Scale})
+   self:Write(v,'TextXAlignment',Enum.TextXAlignment.Center,nil,true);self:Write(v,'TextStrokeTransparency',1,nil,true)
+   self:Write(v,'ZIndex',math.max(cell.ZIndex or 1,3)+2,nil,true)
+  end
   -- A fixed-size image/ViewportFrame inside a correctly sized grid cell still
   -- renders the old 100-pixel toy. Fit the visual subtree, not just CellSize.
   for _,v in ipairs(descendants(cell))do
    if v:IsA('UIScale')then self:Write(v,'Scale',1,nil,true)
    elseif gui(v)then
     if favorite(v)and(button(v)or v:IsA('ImageLabel')or v:IsA('TextLabel'))then
-     self:Write(v,'Visible',true,nil,true);self:Write(v,'AnchorPoint',Vector2.new(1,1),nil,true)
-     self:Write(v,'Position',UDim2.new(1,-1,1,-1),nil,true);self:Write(v,'Size',UDim2.fromOffset(11*plan.Scale,11*plan.Scale),nil,true)
-     if v:IsA('ImageLabel')or v:IsA('ImageButton')then self:Write(v,'ImageTransparency',0,nil,true)end
-     if v:IsA('TextLabel')or v:IsA('TextButton')then self:Write(v,'TextTransparency',0,nil,true);self:Write(v,'TextScaled',false,nil,true);self:Write(v,'TextSize',11*plan.Scale,nil,true)end
+     self:Write(v,'Visible',false,nil,false)
     elseif v:IsA('ImageLabel')or v:IsA('ImageButton')or v:IsA('ViewportFrame')or v:IsA('Frame')then
-     self:Rect(v,{X=0,Y=0,W=plan.Cell,H=plan.Cell})
-     self:Write(v,'Size',UDim2.fromScale(1,1),nil,true)
+     self:Rect(v,{X=0,Y=0,W=plan.Cell,H=v:IsA('Frame')and rowHeight or plan.Cell})
     end
    end
   end
  end
+ self.ItemStyling=false
+end
+function Shop:PanelContent(record)
+ local plan=self.Plan;local page=record.Node;local size=record.NativeSize
+ self:Normalize(page,'page')
+ local fit=math.min(plan.Body.W/math.max(size.X,1),plan.Body.H/math.max(size.Y,1))
+ self:Rect(page,{X=plan.Body.X+(plan.Body.W-size.X*fit)*.5,Y=plan.Body.Y+(plan.Body.H-size.Y*fit)*.5,W=size.X,H=size.Y},'page')
+ self:Write(page,'ClipsDescendants',true,'page',true);self:Write(page,'BackgroundTransparency',1,'page',true)
+ local scale=page:FindFirstChildOfClass('UIScale')
+ if not scale then scale=Instance.new('UIScale');scale.Name='AstralPanelScale';scale.Parent=page;self.Created[scale]='page' end
+ self:Write(scale,'Scale',fit,'page',true)
+ for _,v in ipairs(descendants(page))do
+  if gui(v)then
+   if v:IsA('Frame')or v:IsA('ScrollingFrame')then self:Write(v,'BackgroundTransparency',1,'page',true)
+   elseif v:IsA('TextBox')or button(v)then
+    if v:IsA('TextBox')then self:Write(v,'BackgroundColor3',C(51,53,55),'page')end;self:Write(v,'BackgroundTransparency',.18,'page')
+    self:Round(v,5,'page')
+   end
+   if v:IsA('TextLabel')or v:IsA('TextButton')or v:IsA('TextBox')then
+    local t=tostring(v.Text or'')
+    if not t:match('^[RGBHSV]$')then self:Write(v,'TextColor3',C(245,245,245),'page')end
+   end
+  end
+ end
+end
+function Shop:Footer(record)
+ local count='';local root=self.GuiRoot or self.Menu.Parent
+ for _,v in ipairs(descendants(root))do if not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))then
+  local text=textValue(v)
+  local footerRoot=footer(v,root)
+  local isFooter=footerRoot or text:find('лимит игруш',1,true)or text:find('toy limit',1,true)or text:find('toys limit',1,true)
+  if isFooter then
+   self.FooterNodes=self.FooterNodes or{};self.FooterNodes[v]=true
+   if v.Text:match('^%s*%d+%s*/%s*%d+%s*$')then count=v.Text end
+   self:HideText(v,'shared');self:Watch(v,'Text');self:Watch(v,'AutoLocalize');self:Watch(v,'ContentText')
+   if footerRoot then for _,piece in ipairs(descendants(footerRoot))do if piece:IsA('UIStroke')then self:Write(piece,'Transparency',1,'shared',true)end;if gui(piece)then
+    self:Write(piece,'BackgroundTransparency',1,'shared',true)
+    if piece:IsA('ImageLabel')then self:Write(piece,'ImageTransparency',1,'shared',true)end
+   end end end
+   local p=v.Parent
+   if gui(p)and p~=self.Menu and p~=record.Node then self:Write(p,'BackgroundTransparency',1,'shared',true);if p:IsA('ImageLabel')then self:Write(p,'ImageTransparency',1,'shared',true)end end
+  end
+ end end
+ if count~=''then self.LastCount=count else count=self.LastCount or''end
+ if self.ShowLimit then
+  self:Label('ToyLimitLabel','Toy Limit',self.Plan.LimitText,math.max(7,6*self.Plan.Scale))
+  self:Label('ToyLimitCount',count,{X=self.Plan.Limit.X+self.Plan.Limit.W-38*self.Plan.Scale,Y=self.Plan.Limit.Y+3*self.Plan.Scale,W=31*self.Plan.Scale,H=10*self.Plan.Scale},math.max(7,6*self.Plan.Scale),true)
+  local panel=self.Panels.Limit.Node;panel.ClipsDescendants=true
+  local label=self.TextCopies.ToyLimitLabel;label.Parent=panel;label.Position=UDim2.fromOffset(7*self.Plan.Scale,0);label.Size=UDim2.new(.6,0,1,0)
+  local value=self.TextCopies.ToyLimitCount;value.Parent=panel;value.AnchorPoint=Vector2.new(1,.5);value.Position=UDim2.new(1,-7*self.Plan.Scale,.5,0);value.Size=UDim2.new(.38,-7*self.Plan.Scale,1,0)
+ end
 end
 function Shop:Page(record)
+ self.LayoutPasses=(self.LayoutPasses or 0)+1
  local plan=self.Plan;local list=record.List;self:Surface()
+ for _,v in ipairs(descendants(self.Menu))do if gui(v)and not under(v,self.Contents)then
+  self:Write(v,'BackgroundTransparency',1,'shared',true);self:Write(v,'BorderSizePixel',0,'shared')
+  if v:IsA('ImageLabel')then
+   local p=v.Parent;local glyph=false;while p and p~=self.Menu do if button(p)then glyph=true;break end;p=p.Parent end
+   if not glyph or fold(v.Name):find('background',1,true)then self:Write(v,'ImageTransparency',1,'shared',true)end
+  end
+ end end
  for _,image in pairs(self.IconCopies)do image.Visible=false end
  for _,label in pairs(self.TextCopies)do label.Visible=false end
- self:Normalize(list,'shared');self:Rect(list,plan.Body)
+ if record.Grid then
+ self:Normalize(list,'page');self:Rect(list,plan.Body)
  self:Write(list,'BackgroundTransparency',1,nil,true);self:Write(list,'BorderSizePixel',0);self:Write(list,'ClipsDescendants',true)
  if list:IsA('ScrollingFrame')then self:Write(list,'ScrollBarThickness',0);self:Write(list,'ScrollingDirection',Enum.ScrollingDirection.Y);self:Write(list,'AutomaticCanvasSize',Enum.AutomaticSize.Y)end
  -- Remove native panel fills throughout this page. Their old sibling header
  -- and footer backgrounds otherwise cover the smaller rounded skin.
- for _,v in ipairs(descendants(self.Menu))do if gui(v)then
-  local scope=under(v,record.Items)and'page'or'shared'
+ for _,v in ipairs(descendants(self.Menu))do if gui(v)and(under(v,record.Node)or not under(v,self.Contents))then
+  local scope=under(v,record.Node)and'page'or'shared'
   self:Write(v,'BackgroundTransparency',1,scope,true);self:Write(v,'BorderSizePixel',0,scope)
   local stroke=v:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,scope,true)end
   if under(v,record.Items)and(v:IsA('ImageLabel')or v:IsA('ImageButton'))then
@@ -45208,11 +45354,27 @@ function Shop:Page(record)
   end
  end end
  self:Grid(record)
+ elseif not record.Quick then self:PanelContent(record)end
  local controls=self:Controls(record)
- if controls.Title then
-  self:Normalize(controls.Title,'shared');self:Write(controls.Title,'TextTransparency',1,'shared',true);self:Write(controls.Title,'BackgroundTransparency',1,'shared',true)
+ -- Suppress duplicate native heading shadows, preserving card labels.
+ for _,node in ipairs(descendants(self.Menu))do
+  if(node:IsA('TextLabel')or node:IsA('TextButton'))and not(self.Quick and self.Quick:Owns(node))and(under(node,record.Node)or not under(node,self.Contents))and not(record.Grid and under(node,record.Items))then
+   local name=fold(node.Name);local value=fold(node.Text or'')
+   if name=='title'or name=='heading'or name=='header'or value=='ваши игрушки'or value=='магазин игрушек'or value=='магазин'or value=='your toys'or value=='toy shop'or value=='настройки'then self:HideText(node,'page')end
+  end
  end
- self:Label('YourToysTitle',record.Node.Name:lower()=='toys'and'Your Toys'or'Toy Shop',plan.TitleText,plan.TitleSize)
+ if controls.Title then
+  self:HideText(controls.Title,'page');self:Write(controls.Title,'BackgroundTransparency',1,'shared',true)
+ end
+ local titles={toys='Your Toys',toyshop='Toy Shop',shop='Shop',settings='Settings',toydestroy='Toy Cleanup',astralquickspawnpage='Быстрый спавн'}
+ self:Label('YourToysTitle',titles[record.Node.Name:lower()]or record.Node.Name,plan.TitleText,plan.TitleSize)
+ self.HasCategories=record.Grid~=nil and #controls.CategoryButtons>0
+ if not record.Grid then
+  if controls.Categories and gui(controls.Categories)and not under(controls.Categories,record.Node)then self:Write(controls.Categories,'Visible',false,'shared',true)end
+  for _,node in ipairs(controls.CategoryButtons)do if not under(node,record.Node)then self:Write(node,'Visible',false,'shared',true)end end
+  if controls.Favorite and not under(controls.Favorite,record.Node)then self:Write(controls.Favorite,'Visible',false,'shared',true)end
+  controls.CategoryButtons={};controls.Favorite=nil
+ end
 
  self.HasFavorite=controls.Favorite~=nil
  local categoryButtons={};for _,v in ipairs(controls.CategoryButtons)do if v~=controls.Favorite then categoryButtons[#categoryButtons+1]=v end end
@@ -45235,85 +45397,76 @@ function Shop:Page(record)
   self:Label('FavoritesStar','☆',{X=plan.Favorite.X,Y=plan.Favorite.Y,W=plan.Favorite.W,H=plan.Favorite.H},18*plan.Scale)
   self.TextCopies.FavoritesStar.TextXAlignment=Enum.TextXAlignment.Center
  end
- self:Group(controls.Sidebar,controls.Nav,plan.Sidebar,'column','shared',record.Node)
- self:Label('ToyLimitLabel','Toy Limit',plan.LimitText,math.max(6,6*plan.Scale))
- local count=''
- if controls.Limit then
-  local caption=controls.Limit;local root=caption.Parent
-  while root and root~=record.Node and root~=self.Menu and not under(record.List,root)do
-   local parent=root.Parent
-   if not parent or parent==record.Node or parent==self.Menu or under(record.List,parent)then break end
-   root=parent
-  end
-  local dedicated=root and gui(root)and root~=record.Node and root~=self.Menu and not under(record.List,root)
-  if dedicated then
-   for _,v in ipairs(descendants(root))do if v:IsA('ImageButton')or v:IsA('TextButton')or v:IsA('TextBox')then dedicated=false;break end end
-  end
-  if dedicated then self:Normalize(root,'shared');self:Rect(root,plan.Limit,'shared')end
-  self:Write(caption,'TextTransparency',1,'shared',true);self:Write(caption,'BackgroundTransparency',1,'shared')
-  for _,v in ipairs(descendants(root or record.Node))do
-   if v~=caption and (v:IsA('TextLabel')or v:IsA('TextButton'))and v.Text:match('%d+%s*/%s*%d+')then
-    count=v.Text;self:Watch(v,'Text');self:Write(v,'TextTransparency',1,'shared',true)
-   end
-   if dedicated and gui(v)then
-    self:Write(v,'BackgroundTransparency',1,'shared')
-    if v:IsA('ImageLabel')then self:Write(v,'ImageTransparency',1,'shared')end
-   end
-  end
-  if dedicated then self:Write(root,'BackgroundTransparency',1,'shared')end
- end
-
- -- Localized footer labels can be shared siblings of the active page, and
- -- multiple shadow/outline labels may contain the same caption. Suppress all
- -- of them while keeping their text/callbacks and restoring them on close.
- for _,v in ipairs(descendants(self.Menu))do if not under(v,record.Items)and(v:IsA('TextLabel')or v:IsA('TextButton'))then
-  local text=fold(v.Text)
-  if text:find('лимит игруш',1,true)or text:find('toy limit',1,true)or favoriteName(v)and text=='☆'then self:Write(v,'TextTransparency',1,'shared',true)end
-  if v.Text:match('^%s*%d+%s*/%s*%d+%s*$')then
-   if visible(v,self.Menu)then count=v.Text end
-   self:Watch(v,'Text');self:Write(v,'TextTransparency',1,'shared',true)
-  end
- end end
- self:Label('ToyLimitCount',count,{X=plan.Limit.X+plan.Limit.W-38*plan.Scale,Y=plan.Limit.Y+3*plan.Scale,W=31*plan.Scale,H=10*plan.Scale},math.max(6,6*plan.Scale),true)
+ if self.Quick then self.Quick:Mount(self.Menu,self.Contents);self.Quick:ConnectTabs(controls.Sidebar)end
+ local side=plan.Sidebar
+ if self.Quick then side={X=side.X,Y=side.Y,W=side.W,H=side.H*#controls.Sidebar/(#controls.Sidebar+1),Radius=side.Radius}end
+ self:Group(controls.Sidebar,controls.Nav,side,'column','shared',record.Node)
+ if self.Quick then self.Quick:LayoutClock(plan,#controls.Sidebar+1)end
+ self.ShowLimit=record.Quick or(record.Grid~=nil and record.Node.Name:lower()=='toys')
+ self:Footer(record)
 
  local close=find(self.Menu,{'Close','CloseButton','Exit','X'})
  if gui(close)then self:Rect(close,{X=326*plan.Scale,Y=0,W=18*plan.Scale,H=18*plan.Scale},'shared');if close:IsA('TextButton')then self:Text(close,14*plan.Scale,'shared')end end
 
+ if self.Quick then self.Quick:RefreshOwned(self.Pages);if record.Quick then self.Quick:Render(plan)end end
  self:Draw();self:RefreshIcons();self:StartIcons()
 end
 function Shop:Find()
  if self.Closed or not self.Enabled or self.Applying then return end
  self.Applying=true
  local ok,why=pcall(function()
-  local guiRoot=self.Context.PlayerGui:FindFirstChild('MenuGui');local menu=guiRoot and guiRoot:FindFirstChild('Menu')
+  local guiRoot=self.Context.PlayerGui:FindFirstChild('MenuGui');local menu=guiRoot and guiRoot:FindFirstChild('Menu',true)
   local contents=menu and menu:FindFirstChild('TabContents')
   if not gui(menu)or not contents then if self.Menu then self:Detach()end;self.Status:SetText('Ожидание игрового меню.');return end
   if self.Menu~=menu or self.Contents~=contents then self:Bind(menu,contents)end
+  self.GuiRoot=guiRoot
   self:Discover();local active
-  for _,r in ipairs(self.Pages)do if live(r.List)and visible(r.List,self.Menu)then active=r;break end end
-  if not active then self.Active=false;if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end;if self.Layer then self.Layer.Visible=false end;self:Restore('shared');self.Status:SetText('Открой Your Toys в игровом меню.');return end
+  if self.Quick and self.Quick.Open and menu.Visible then active=self.Quick.Record end
+  if not active then for _,record in ipairs(self.Pages)do if live(record.Node)and visible(record.Node,self.Menu)then active=record;break end end end
+  if active~=self.Current then
+   self:Restore();self:ResetArtwork();self.Current=active;self.Dirty=true
+  end
+  if not active then
+   if self.Quick then self.Quick:CloseForMenu()end
+   self.Active=false;if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
+   if self.Layer then self.Layer.Visible=false end;self:Restore();self.Status:SetText('Открой игровое меню.');return
+  end
   self.Active=true
+  self.MenuScale=1
+  local bounds=menu.AbsoluteSize
+  if not active.NativeSize then
+   local scale=rootScale(active.Node,guiRoot)
+   local size=active.Node.AbsoluteSize/scale
+   active.NativeSize=Vector2.new(math.max(size.X,1),math.max(size.Y,1))
+  end
   local camera=self.Context.Workspace and self.Context.Workspace.CurrentCamera
   local viewport=camera and camera.ViewportSize or Vector2.new(900,585)
-  self.Plan=Layout.Build(viewport.X,viewport.Y)
+  local plan=Layout.Build(viewport.X,viewport.Y)
+  if not self.Dirty and self.Plan and self.Plan.Width==plan.Width and self.Plan.Height==plan.Height and self.LastMenuScale==rootScale(menu,guiRoot)then
+   self.MenuScale=self.LastMenuScale
+   self:Footer(active);self:Draw();return
+  end
+  self.Plan=plan
   for _,scale in ipairs(children(menu))do if scale:IsA('UIScale')then self:Write(scale,'Scale',1,'shared',true)end end
-  self:Write(menu,'AnchorPoint',Vector2.new(.5,.5),'shared',true);self:Write(menu,'Position',UDim2.fromScale(.5,.5),'shared',true)
-  self:Write(menu,'AutomaticSize',Enum.AutomaticSize.None,'shared',true);self:Write(menu,'Size',UDim2.fromOffset(self.Plan.Width,self.Plan.Height),'shared',true);self:Write(menu,'BackgroundTransparency',1,'shared',true)
-  self:Write(menu,'BorderSizePixel',0,'shared')
+  self.MenuScale=rootScale(menu,guiRoot)
+  self:Write(menu,'Size',UDim2.fromOffset(plan.Width,plan.Height),'shared',true)
+  self:Write(menu,'Position',UDim2.fromScale(.5,.5),'shared',true);self:Write(menu,'AnchorPoint',Vector2.new(.5,.5),'shared',true)
+  -- Preserve the game's exact window bounds, anchors, position and UIScale.
+  self:Write(menu,'BackgroundTransparency',1,'shared',true);self:Write(menu,'BorderSizePixel',0,'shared')
   local stroke=menu:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,'shared')end
-  local aspect=menu:FindFirstChildOfClass('UIAspectRatioConstraint');if aspect then self:Write(aspect,'AspectRatio',Layout.Width/Layout.Height,'shared',true)end
-  self:Page(active);self.Status:SetText('Your Toys: оформление по референсу включено.')
+  self:Page(active);self.LastMenuScale=self.MenuScale;self.Dirty=false;self.Status:SetText(active.Node.Name..': единое оформление включено.')
  end)
- self.Applying=false
+ self.ItemStyling=false;self.Applying=false
  if not ok then self.LastError=tostring(why);self.Status:SetText('Магазин: '..self.LastError)end
 end
 function Shop:Detach()
+ if self.Quick then self.Quick:Detach()end
  local applying=self.Applying;self.Applying=true
  if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
  for _,c in ipairs(self.Bound)do c:Disconnect()end;self.Bound={}
  for _,map in pairs(self.Watches)do for _,c in pairs(map)do c:Disconnect()end end;self.Watches={}
  self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self.Layer:Destroy();self.Layer=nil end
- self.Pages={};self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
+ self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
 end
 function Shop:SetEnabled(value)
  if self.Closed then return end;self.Enabled=value==true
@@ -45321,7 +45474,7 @@ function Shop:SetEnabled(value)
 end
 function Shop:Sync()local t=self.Context.Library.Toggles.AstralGUIShopStyle;self:SetEnabled(t and t.Value)end
 function Shop:Dispose()
- if self.Closed then return end;self.Closed=true;self.Enabled=false;self:Detach();for _,c in ipairs(self.Connections)do c:Disconnect()end
+ if self.Closed then return end;self.Closed=true;self.Enabled=false;self:Detach();if self.Quick then self.Quick:Dispose()end;for _,c in ipairs(self.Connections)do c:Disconnect()end
 end
 return Shop
 
@@ -47339,18 +47492,230 @@ return {}
 sources.ShopLayout = [========[
 -- Coordinates measured from the compact reference supplied for v4.86.
 local Layout={Width=346,Height=274}
-function Layout.Build(viewWidth,viewHeight)
- local scale=math.min(viewWidth/900,viewHeight/585,2)
- scale=math.max(.45,math.min(scale,(viewWidth-24)/346,(viewHeight-32)/274))
- local function rect(x,y,w,h,r)return{X=x*scale,Y=y*scale,W=w*scale,H=h*scale,Radius=(r or 0)*scale}end
- return{Scale=scale,Width=346*scale,Height=274*scale,Columns=10,
-  Sidebar=rect(0,69,25,181,11),Title=rect(27,20,179,18,9),Categories=rect(210,20,108,18,9),Favorite=rect(321,20,23,18,9),
-  Body=rect(27,40,317,207,8),Grid=rect(29,42,312,203),Limit=rect(64,250,238,17,8),
+function Layout.Build(viewWidth,viewHeight,nativeWidth,nativeHeight)
+ local base=math.min(viewWidth/900,viewHeight/585,2)
+ base=math.max(.45,math.min(base,(viewWidth-24)/346,(viewHeight-32)/274))
+ local width,height=346*base,274*base
+ local scale=math.min(width/346,height/274)
+ local sx,sy=width/346,height/274
+ local function rect(x,y,w,h,r)return{X=x*sx,Y=y*sy,W=w*sx,H=h*sy,Radius=(r or 0)*scale}end
+ return{Scale=scale,Width=width,Height=height,Columns=10,
+  Sidebar=rect(0,40,25,207,11),Title=rect(27,20,179,18,9),Categories=rect(210,20,108,18,9),Favorite=rect(321,20,23,18,9),
+  Body=rect(27,40,317,207,8),Grid=rect(34,47,303,193),Limit=rect(64,250,238,17,8),
   TitleText=rect(32,22,170,14),LimitText=rect(69,253,226,10),
-  Cell=(312-9)/10*scale,Gap=scale,TitleSize=math.max(8,8*scale),SmallSize=math.max(6,6*scale),IconSize=18*scale,
+  Cell=(303*sx-9*scale)/10,Gap=scale,TitleSize=math.max(8,8*scale),SmallSize=math.max(6,6*scale),IconSize=18*scale,
  }
 end
 return Layout
+
+]========]
+sources.ShopQuickSpawn = [========[
+-- Local inventory shortcuts. Only selected owned native inventory IDs can spawn;
+-- one shared input observer, bounded requests and the existing game spawn API.
+local Quick={};Quick.__index=Quick
+local function inside(node,root)return root and(node==root or node:IsDescendantOf(root))end
+local function create(class,parent,props)
+ local v=Instance.new(class);for k,value in pairs(props or{})do v[k]=value end;v.Parent=parent;return v
+end
+local function round(v,r)create('UICorner',v,{CornerRadius=UDim.new(0,r)})end
+local function text(parent,value,size)
+ return create('TextLabel',parent,{Text=value,TextSize=size or 9,FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=Color3.fromRGB(240,240,240),BackgroundTransparency=1,TextWrapped=false,TextTruncate=Enum.TextTruncate.AtEnd})
+end
+local modifiers={LeftControl='LCtrl',RightControl='RCtrl',LeftShift='LShift',RightShift='RShift',LeftAlt='LAlt',RightAlt='RAlt'}
+local codes={LCtrl='LeftControl',RCtrl='RightControl',LShift='LeftShift',RShift='RightShift',LAlt='LeftAlt',RAlt='RightAlt'}
+function Quick.Install(style,ctx)
+ local self=setmetatable({Style=style,Context=ctx,Owned={},Selected={},Keys={},Rows={},Connections={},Tabs={},Picking=nil,NextSpawn=0,Open=false},Quick)
+ local options=ctx.Options
+ if options and ctx.Encode and ctx.Decode then
+  local selected={Type='Input',Value='[]'}
+  function selected:SetValue(value)
+   local ok,data=pcall(ctx.Decode,value);if not ok or type(data)~='table'then return end
+   self.Value=value;table.clear(self.Owner.Selected)
+   for _,name in ipairs(data)do if type(name)=='string'then self.Owner.Selected[name]=true end end
+   self.Owner:Redraw()
+  end
+  selected.Owner=self;self.SelectionOption=selected;options.AstralShopQuickItems=selected
+ end
+ for name in pairs(ctx.Catalog or{})do self:KeyOption(name)end
+ self.Connections[#self.Connections+1]=ctx.Input.InputBegan:Connect(function(input,processed)self:Input(input,processed)end)
+ return self
+end
+function Quick:KeyOption(name)
+ if self.Keys[name]then return self.Keys[name]end
+ local q=self;local option={Type='KeyPicker',Value='None',Mode='Press',Modifiers={},Toggled=false}
+ function option:SetValue(data)
+  if type(data)~='table'then return end
+  local key=data[1];local valid=key=='None'
+  if type(key)=='string'then local ok,value=pcall(function()return Enum.KeyCode[key]end);valid=valid or(ok and value and key~='Unknown')end
+  if not valid then return end
+  self.Value=key;self.Mode='Press';self.Modifiers={}
+  for _,v in ipairs(type(data[3])=='table'and data[3]or{})do if codes[v]then table.insert(self.Modifiers,v)end end
+  q:Redraw()
+ end
+ function option:Update()q:Redraw()end
+ self.Keys[name]=option
+ if self.Context.Options then self.Context.Options['AstralShopQuickKey_'..name]=option end
+ return option
+end
+function Quick:Owns(node)return inside(node,self.Host)or inside(node,self.Clock)end
+function Quick:Mount(menu,contents)
+ if self.Host and self.Host.Parent==menu then return end
+ self:Detach()
+ self.Host=create('Frame',menu,{Name='AstralQuickSpawnPage',BackgroundTransparency=1,Visible=false,Size=UDim2.fromScale(1,1),ZIndex=menu.ZIndex+2})
+ self.Clock=create('TextButton',menu,{Name='AstralQuickClock',Text='◷',TextSize=21,FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=Color3.fromRGB(245,245,245),BackgroundColor3=Color3.fromRGB(51,53,55),BackgroundTransparency=.2,BorderSizePixel=0,ZIndex=menu.ZIndex+4})
+ round(self.Clock,7)
+ if self.Context.Library.GetIcon and self.Context.Library.ApplyLucideIcon then
+  local ok,icon=pcall(self.Context.Library.GetIcon,self.Context.Library,'clock')
+  if ok and icon then local image=create('ImageLabel',self.Clock,{Name='ClockIcon',BackgroundTransparency=1,ImageColor3=Color3.fromRGB(245,245,245),Size=UDim2.fromScale(.7,.7),Position=UDim2.fromScale(.15,.15),ZIndex=self.Clock.ZIndex+1});self.Context.Library:ApplyLucideIcon(image,icon);self.Clock.Text=''end
+ end
+ self.Record={Node=self.Host,List=self.Host,Items=self.Host,Kind='quick',Quick=true}
+ self.Connections[#self.Connections+1]=self.Clock.Activated:Connect(function()self:Toggle()end)
+end
+function Quick:ConnectTabs(nodes)
+ for _,node in ipairs(nodes)do if not self.Tabs[node]then
+  self.Tabs[node]=node.Activated:Connect(function()
+   if self.Open then self.Open=false;if self.Host then self.Host.Visible=false end;self:CancelPick();self.Style.Dirty=true;self.Style:Queue()end
+  end)
+ end end
+end
+function Quick:LayoutClock(plan,count)
+ if not self.Clock then return end
+ local r=plan.Sidebar;local h=r.H/math.max(count,1)
+ self.Clock.Position=UDim2.fromOffset(r.X,r.Y+r.H-h);self.Clock.Size=UDim2.fromOffset(r.W,h)
+ self.Clock.TextSize=math.min(r.W*.8,h*.8);self.Clock.Visible=true
+ self.Host.Size=UDim2.fromOffset(plan.Width,plan.Height)
+end
+function Quick:Toggle()
+ if self.Closed or not self.Host then return end
+ self:CancelPick();self.Open=not self.Open
+ self.Style.Applying=true
+ if self.Open then
+  self.Previous={}
+  for _,record in ipairs(self.Style.Pages)do self.Previous[record.Node]=record.Node.Visible;record.Node.Visible=false end
+ else
+  for node,value in pairs(self.Previous or{})do if node.Parent then node.Visible=value end end
+ end
+ self.Host.Visible=self.Open;self.Style.Applying=false;self.Style.Dirty=true;self.Style:Find()
+end
+function Quick:RefreshOwned(pages)
+ local owned={}
+ for _,record in ipairs(pages)do if record.Node.Name:lower()=='toys'and record.Grid and record.Grid.Parent then
+  for _,cell in ipairs(record.Grid.Parent:GetChildren())do if cell:IsA('GuiObject')then
+   local name=self.Context.ResolveItem and self.Context.ResolveItem(cell)or cell.Name
+   if type(name)=='string'and self.Context.Catalog and self.Context.Catalog[name]then
+    local image=(cell:IsA('ImageButton')or cell:IsA('ImageLabel'))and cell or cell:FindFirstChildWhichIsA('ImageLabel',true)or cell:FindFirstChildWhichIsA('ImageButton',true)
+    owned[name]={Name=name,Image=image and image.Image~=''and image.Image or self.Context.Catalog[name],Offset=image and image.ImageRectOffset,Rect=image and image.ImageRectSize}
+    self:KeyOption(name)
+   end
+  end end
+ end end
+ self.Owned=owned
+end
+function Quick:SaveSelection()
+ if self.SelectionOption then
+  local names={};for name in pairs(self.Selected)do table.insert(names,name)end;table.sort(names)
+  local ok,data=pcall(self.Context.Encode,names);if ok then self.SelectionOption.Value=data end
+ end
+end
+function Quick:CancelPick()
+ if self.Picking and self.Context.Library.IsPicking==true then self.Context.Library.IsPicking=false end
+ self.Picking=nil
+end
+function Quick:Select(name)
+ if not self.Owned[name]then return false end
+ self.Selected[name]=true;self.Choosing=false;self:SaveSelection();self:Redraw();return true
+end
+function Quick:Spawn(name)
+ local ctx=self.Context;local now=(ctx.Clock or os.clock)()
+ if self.Closed or not self.Style.Enabled or not self.Selected[name]or not self.Owned[name]or self.Busy or now<self.NextSpawn then return false end
+ self.Busy=true;self.NextSpawn=now+.25
+ local function valid()return not self.Closed and self.Style.Enabled and self.Selected[name]and self.Owned[name]~=nil end
+ (ctx.SpawnThread or task.spawn)(function()
+  local ok,why=pcall(ctx.SpawnQuick,name,valid);self.Busy=false
+  if not ok then self.LastError=tostring(why)end
+ end)
+ return true
+end
+function Quick:Input(input,processed)
+ if self.Closed then return end
+ local ctx=self.Context
+ if input.UserInputType~=Enum.UserInputType.Keyboard then return end
+ local name=input.KeyCode.Name
+ if self.Picking then
+  if ctx.Input:GetFocusedTextBox()then self:CancelPick();self:Redraw();return end
+  if modifiers[name]then return end
+  local selected=self.Picking;self:CancelPick()
+  if name~='Escape'then
+   local mods={};for key,code in pairs(codes)do if ctx.Input:IsKeyDown(Enum.KeyCode[code])then mods[#mods+1]=key end end
+   self:KeyOption(selected):SetValue({(name=='Backspace'or name=='Delete')and'None'or name,'Press',mods})
+  end
+  self:Redraw();return
+ end
+ if processed or ctx.Input:GetFocusedTextBox()or ctx.Library.IsPicking or not self.Style.Enabled then return end
+ for item in pairs(self.Selected)do
+  local bind=self.Keys[item]
+  if bind and bind.Value~='None'and bind.Value==name then
+   local held=true;for _,key in ipairs(bind.Modifiers)do if not ctx.Input:IsKeyDown(Enum.KeyCode[codes[key]])then held=false end end
+   if held then self:Spawn(item);return end
+  end
+ end
+end
+function Quick:Redraw()if self.Open and self.Style.Plan and self.Host then self:Render(self.Style.Plan)end end
+function Quick:Render(plan)
+ if not self.Host then return end
+ self.Rendering=true
+ for _,v in ipairs(self.Host:GetChildren())do v:Destroy()end
+ local s=plan.Scale;local r=plan.Grid
+ local add=create('TextButton',self.Host,{Name='AddItem',Text=self.Choosing and'Назад'or'+ Добавить предмет',TextSize=math.max(8,8*s),FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=Color3.fromRGB(240,240,240),BackgroundColor3=Color3.fromRGB(60,62,65),BackgroundTransparency=.1,BorderSizePixel=0,Position=UDim2.fromOffset(r.X,r.Y),Size=UDim2.fromOffset(r.W,18*s),ZIndex=self.Host.ZIndex+1})
+ round(add,5*s);add.Activated:Connect(function()self:CancelPick();self.Choosing=not self.Choosing;self:Redraw()end)
+ local list=create('ScrollingFrame',self.Host,{Name='QuickItems',Position=UDim2.fromOffset(r.X,r.Y+23*s),Size=UDim2.fromOffset(r.W,math.max(1,r.H-23*s)),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2*s,ScrollingDirection=Enum.ScrollingDirection.Y,ClipsDescendants=true,ZIndex=self.Host.ZIndex+1})
+ local names={};for name in pairs(self.Choosing and self.Owned or self.Selected)do if self.Owned[name]then table.insert(names,name)end end;table.sort(names)
+ local columns=math.max(1,math.floor(r.W/(42*s)));local w=(r.W-(columns-1)*4*s)/columns;local h=w+17*s
+ list.CanvasSize=UDim2.fromOffset(0,math.ceil(#names/columns)*(h+6*s));self.Rows={}
+ for index,name in ipairs(names)do
+  local item=self.Owned[name];local x=(index-1)%columns*(w+4*s);local y=math.floor((index-1)/columns)*(h+6*s)
+  local cell=create('Frame',list,{Name=name,BackgroundTransparency=1,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),ZIndex=list.ZIndex+1})
+  local image=create('ImageButton',cell,{Name='Item',Image=item.Image,ImageRectOffset=item.Offset or Vector2.zero,ImageRectSize=item.Rect or Vector2.zero,ScaleType=Enum.ScaleType.Fit,BackgroundTransparency=1,Size=UDim2.fromOffset(w,w),ZIndex=cell.ZIndex+1})
+  image.Activated:Connect(function()if self.Choosing then self:Select(name)else self:Spawn(name)end end)
+  if not self.Choosing then
+   local bind=create('TextButton',cell,{Name='Bind',Text=self.Picking==name and'…'or self:KeyOption(name).Value,TextSize=math.max(7,8*s),FontFace=Font.fromEnum(Enum.Font.Code),TextColor3=Color3.fromRGB(235,235,235),BackgroundColor3=Color3.fromRGB(50,52,55),BackgroundTransparency=.05,BorderSizePixel=0,Position=UDim2.fromOffset(0,w+2*s),Size=UDim2.fromOffset(w,14*s),TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=cell.ZIndex+2})
+   round(bind,4*s)
+   bind.Activated:Connect(function()if self.Context.Library.IsPicking and not self.Picking then return end;self:CancelPick();self.Picking=name;self.Context.Library.IsPicking=true;self:Redraw()end)
+   bind.MouseButton2Click:Connect(function()self:CancelPick();self:KeyOption(name):SetValue({'None','Press'})end)
+   image.MouseButton2Click:Connect(function()self:CancelPick();self.Selected[name]=nil;self:SaveSelection();self:Redraw()end)
+   self.Rows[name]={Image=image,Bind=bind,Cell=cell}
+  end
+ end
+ if #names==0 then local hint=text(self.Host,self.Choosing and'Нет доступных предметов'or'Добавьте предмет из своего инвентаря',math.max(7,8*s));hint.Position=UDim2.fromOffset(r.X,r.Y+25*s);hint.Size=UDim2.fromOffset(r.W,30*s);hint.TextWrapped=true;hint.ZIndex=self.Host.ZIndex+2 end
+ self.Rendering=false
+end
+function Quick:CloseForMenu()
+ self:CancelPick()
+ if not self.Open then return end
+ local applying=self.Style.Applying;self.Style.Applying=true
+ self.Open=false;if self.Host then self.Host.Visible=false end
+ for node,value in pairs(self.Previous or{})do if node.Parent then node.Visible=value end end
+ self.Style.Applying=applying
+end
+function Quick:Detach()
+ local applying=self.Style.Applying;self.Style.Applying=true
+ if self.Open then for node,value in pairs(self.Previous or{})do if node.Parent then node.Visible=value end end end
+ self:CancelPick();self.Open=false
+ self.Style.Applying=applying
+ for _,connection in pairs(self.Tabs)do connection:Disconnect()end;self.Tabs={}
+ if self.Host then self.Host:Destroy();self.Host=nil end
+ if self.Clock then self.Clock:Destroy();self.Clock=nil end
+ self.Record=nil
+end
+function Quick:Dispose()
+ if self.Closed then return end;self.Closed=true;self:Detach()
+ for _,connection in ipairs(self.Connections)do connection:Disconnect()end
+ if self.Context.Options then
+  if self.Context.Options.AstralShopQuickItems==self.SelectionOption then self.Context.Options.AstralShopQuickItems=nil end
+  for name,option in pairs(self.Keys)do if self.Context.Options['AstralShopQuickKey_'..name]==option then self.Context.Options['AstralShopQuickKey_'..name]=nil end end
+ end
+end
+return Quick
 
 ]========]
 sources.Bootstrap = [========[
@@ -47382,9 +47747,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.86: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.87: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.86 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.87 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -94980,6 +95345,14 @@ local Reaction=requireModule("PalletReaction")
 local Pallet={};Pallet.__index=Pallet
 local CANCELLED={}
 local function alive(part)return part and part.Parent and part:IsA("BasePart")end
+local function isolatedAssembly(part,model)
+    local assembly=part and(part.AssemblyRootPart or part)
+    if not alive(assembly)or not model or not assembly:IsDescendantOf(model)then return nil end
+    if assembly.GetConnectedParts then
+        for _,other in ipairs(assembly:GetConnectedParts(true))do if not other:IsDescendantOf(model)then return nil end end
+    end
+    return assembly
+end
 local function state(character)
     local h=character and character.Parent and character:FindFirstChildOfClass("Humanoid")
     local value=h and h.Health>0 and h:FindFirstChild("Ragdolled")
@@ -94995,7 +95368,7 @@ function Pallet.Install(context)
     self.FrameSignal=available and physics or context.RunService.Heartbeat
     local postAvailable,postPhysics=pcall(function()return context.RunService.PostSimulation end)
     self.PhysicsSignal=postAvailable and postPhysics or context.RunService.Heartbeat
-    self.PhysicsConnection=self.PhysicsSignal:Connect(function()self.PhysicsFrame+=1 end)
+    self.PhysicsConnection=self.PhysicsSignal:Connect(function(dt)self.PhysicsFrame+=1;if type(dt)=="number"and dt==dt and dt>0 then self.PhysicsDt=math.clamp(dt,1/240,.1)end end)
     self.Ownership=Ownership.new({Clock=context.Clock,Signal=self.FrameSignal,
         MarkerOwned=context.MarkerOwned or context.Owned,PhysicsOwned=context.PhysicsOwned or context.Owned,
         Grab=context.Grab or function()end,Busy=context.OwnershipBusy,Approach=context.Acquire,
@@ -95033,6 +95406,7 @@ function Pallet.Install(context)
         Repeating=function()return self:ContinuousValid(self.Active)end,
         Rearm=function(part,character,current,deadline)return self:Rearm(part,character,current,deadline)end,
         WaitRepeat=function(current,deadline)return self:WaitRepeat(current,deadline)end,
+        ContinuousStrike=context.ReceiverOverlaps and function(part,main,character,current,deadline)return self:ContinuousStrike(part,main,character,current,deadline)end or nil,
         CanContact=function(part)return valid()and alive(part)and not part.Anchored and context.Owned(part)end,
         BeginStrike=function(character)
             self.StrikeAttempts+=1
@@ -95147,13 +95521,108 @@ function Pallet:Rearm(part,character,current,sliceDeadline)
     end
     return finish(false)
 end
+-- Physical maintained-contact path. CFrame writes only stage the pallet away
+-- from the receiver; they never count as contacts or game acknowledgements.
+local function finiteVector(v)return v and v.X==v.X and v.Y==v.Y and v.Z==v.Z and v.Magnitude<1e7 end
+local function verticalHalf(part)
+ local cf,size=part.CFrame,part.Size
+ return (math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z)*.5
+end
+function Pallet:ContinuousStrike(part,main,character,current,sliceDeadline)
+ local ctx=self.Context;local entry=self.Active
+ local function allowed()
+  return current()and self:EntryValid(entry)and alive(part)and alive(main)and not part.Anchored and not main.Anchored
+   and part.Parent==self.Model and main.Parent==self.Model and ctx.Owned(part)
+ end
+ if not allowed()then return false end
+ local receiver,kind,reason=Reaction.Resolve(character)
+ if not alive(receiver)or receiver.CanTouch~=true then entry.ContactPhase='receiver unavailable';self.Status=reason or 'Waiting for ragdoll receiver';return false end
+ local assembly=isolatedAssembly(part,self.Model)
+ if not assembly then entry.ContactPhase='external assembly';return false end
+ -- Queryability belongs to our owned board, never the remote character.
+ if self.QueryOriginal==nil then self.QueryOriginal=part.CanQuery end
+ part.CanQuery=true
+ local function queried()
+  local ok,value=pcall(ctx.ReceiverOverlaps,part,receiver)
+  if not ok or type(value)~='boolean'then self.LastError='Pallet receiver query: '..tostring(value);entry.ContactPhase='query failed';return nil end
+  return value
+ end
+ local function stillReceiver()
+  local actual=Reaction.Resolve(character)
+  return allowed()and actual==receiver and receiver.CanTouch==true and isolatedAssembly(part,self.Model)==assembly
+ end
+ local function stop()
+  if alive(part)and not part.Anchored and ctx.Owned(part)and isolatedAssembly(part,self.Model)==assembly then
+   assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=Vector3.zero
+   part.AssemblyLinearVelocity=Vector3.zero;part.AssemblyAngularVelocity=Vector3.zero
+  end
+ end
+ local function nextPhysics(frame,deadline)
+  repeat
+   if not stillReceiver()or ctx.Clock()>=deadline then return false end
+   self:WaitPhysics()
+  until self.PhysicsFrame>frame
+  return stillReceiver()and ctx.Clock()<deadline
+ end
+ -- Keep the configured wall-time cap even across target/slice changes.
+ while self.LastPlacedAt and ctx.Clock()+1e-7<self.LastPlacedAt+self.IntervalSeconds do
+  if not nextPhysics(self.PhysicsFrame,sliceDeadline)then return false end
+ end
+ if not stillReceiver()or ctx.Clock()>=sliceDeadline then return false end
+ local lift=main:FindFirstChild('RagdollBP')
+ if lift then lift.MaxForce=Vector3.zero end
+ local half=verticalHalf(part)+verticalHalf(receiver)
+ local travel=half+.75
+ local destination=receiver.Position-Vector3.new(0,travel,0)
+ if not finiteVector(destination)or not finiteVector(receiver.AssemblyLinearVelocity)then return false end
+ stop()
+ assembly.CFrame=assembly.CFrame+(destination-part.Position)
+ self.LastTransformPart=part;self.LastTransformFrame=self.PhysicsFrame
+ entry.ContactPhase='staged below receiver';entry.Receiver=receiver;entry.ReceiverKind=kind
+ local stagedFrame=self.PhysicsFrame
+ if not nextPhysics(stagedFrame,sliceDeadline)then stop();return false end
+ local overlapping=queried()
+ if overlapping~=false then stop();return false end
+ entry.Clearances=(entry.Clearances or 0)+1
+ -- Advance through the receiver with actual solver movement. Match its
+ -- translation so a held/moving target does not leave the vertical path.
+ local dt=math.clamp(self.PhysicsDt or 1/60,1/240,.1)
+ local speed=math.clamp(travel/math.max(dt,1/60),12,80)
+ local velocity=receiver.AssemblyLinearVelocity+Vector3.new(0,speed,0)
+ if not finiteVector(velocity)then return false end
+ self.StrikeAttempts+=1;entry.StrikeAttempts=(entry.StrikeAttempts or 0)+1
+ entry.Attempt=entry.Reaction:StartAttempt();self:ShowPallet()
+ assembly.AssemblyAngularVelocity=Vector3.zero;assembly.AssemblyLinearVelocity=velocity
+ part.AssemblyAngularVelocity=Vector3.zero;part.AssemblyLinearVelocity=velocity
+ self.Passes+=1;entry.Passes=(entry.Passes or 0)+1;entry.SweepPasses=(entry.SweepPasses or 0)+1
+ self.LastPassAt=ctx.Clock();entry.PlacedPart=part;entry.PlacedAt=ctx.Clock();entry.PlacedFrame=self.PhysicsFrame
+ self.LastPlacedPart=part;self.LastPlacedAt=entry.PlacedAt;self.LastPlacedFrame=self.PhysicsFrame
+ entry.ContactPhase='physical entry pending';self.Status='Physical pallet sweep through ragdoll receiver'
+ local deadline=math.min(sliceDeadline,ctx.Clock()+.2)
+ local entered=false
+ while nextPhysics(self.PhysicsFrame,deadline)do
+  overlapping=queried()
+  if overlapping==nil then stop();return false end
+  if overlapping then
+   if not entered then
+    entered=true;entry.EntryFrame=self.PhysicsFrame;entry.EntryAt=ctx.Clock();entry.ContactPhase='physical overlap observed'
+    entry.PhysicalEntries=(entry.PhysicalEntries or 0)+1
+   end
+  elseif entered then
+   entry.ExitFrame=self.PhysicsFrame;entry.ContactPhase='physical exit observed'
+   entry.PhysicalExits=(entry.PhysicalExits or 0)+1;stop();return true
+  end
+ end
+ stop();entry.ContactPhase=entered and 'exit not observed before bound'or 'entry not observed before bound'
+ return false
+end
 function Pallet:Park()
     local sound=self.Sound
     local main=self.Model and self.Model:FindFirstChild("Main")
     local mover=main and main:FindFirstChild("RagdollBP")
     if mover then mover.MaxForce=Vector3.zero end
     if not alive(sound)or sound.Anchored or not self.Context.Owned(sound)then return end
-    local assembly=sound.AssemblyRootPart or sound
+    local assembly=isolatedAssembly(sound,self.Model);if not assembly then return end
     assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=Vector3.zero
     sound.AssemblyLinearVelocity=Vector3.zero;sound.AssemblyAngularVelocity=Vector3.zero;sound.Velocity=Vector3.zero
     local position=self.Context.ParkPosition and self.Context.ParkPosition()
@@ -95183,6 +95652,8 @@ end
 function Pallet:ForgetModel()
     for p,value in pairs(self.Visuals or{})do if p.Parent and p.LocalTransparencyModifier==.45 then p.LocalTransparencyModifier=value end end
     self.Visuals=nil
+    if self.Sound and self.Sound.Parent and self.QueryOriginal~=nil and self.Sound.CanQuery==true then self.Sound.CanQuery=self.QueryOriginal end
+    self.QueryOriginal=nil
     if self.TouchConnection then self.TouchConnection:Disconnect();self.TouchConnection=nil end
     if self.Model and self.Context.Reserve then self.Context.Reserve(self.Model,false)end
     self.Model=nil;self.Sound=nil
@@ -95357,13 +95828,13 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=6,Mechanism='Frame-gated local retries; physical exit required; not server hit acknowledgements',
+    local info={Version=7,Mechanism=self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
         LocalRetryRateLimit=self.ContactRate,LocalRetryInterval=self.IntervalSeconds,Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
         local value=state(entry.Character)
         info.Entries[#info.Entries+1]={Character=entry.Character.Name,Receiver=entry.Receiver and entry.Receiver.Name,
-            ReceiverKind=entry.ReceiverKind,ContactPhase=entry.ContactPhase,VerifiedClearances=entry.Clearances or 0,PlacementAttempts=entry.StrikeAttempts or 0,SourcePlacements=entry.Passes or 0,
+            ReceiverKind=entry.ReceiverKind,ContactPhase=entry.ContactPhase,VerifiedClearances=entry.Clearances or 0,PlacementAttempts=entry.StrikeAttempts or 0,SourcePlacements=(entry.Passes or 0)-(entry.SweepPasses or 0),PhysicalSweepAttempts=entry.SweepPasses or 0,PhysicalEntries=entry.PhysicalEntries or 0,PhysicalExits=entry.PhysicalExits or 0,
             LocalRetryWaitSeconds=entry.RetryWaitSeconds or 0,LocalRearmWaitSeconds=entry.RearmWaitSeconds or 0,LastPlacementAt=entry.PlacedAt,
             LocalReceiverContacts=entry.ReceiverContacts or 0,
             ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.LastStateReason,
@@ -96395,24 +96866,30 @@ function Native.new(context)
    if completedState()then break end
    if sound.Anchored or main.Anchored or(context.CanContact and not context.CanContact(sound))then break end
    if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
-   -- Maintained contacts must leave the target before a new placement. A
-   -- second CFrame write while still overlapping is not another touch entry.
-   if repeating()and context.Rearm and not context.Rearm(sound,character,current,sliceDeadline)then break end
-   if repeating()and context.Clock()>=sliceDeadline then break end
-   if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
-   -- Park clears this force, so re-enable the original lift for each real
-   -- attempt. Preserve Position on SoundPart rather than substituting an
-   -- AssemblyRootPart transform or an invented crossing/impulse sequence.
-   if context.BeginStrike then context.BeginStrike(character)end
-   if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
-   mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
-   sound.Position=torso.Position
-   sound.Velocity=Vector3.new(0,-10,0)
-   if context.Record then context.Record(sound,character)end -- placement telemetry only
-   if repeating()and context.WaitRepeat then
-    if not context.WaitRepeat(current,sliceDeadline)then break end
-   else context.Wait(.1)end
-   if not current()or completedState()or not head:FindFirstChild('PartOwner')or context.Clock()-started>.5 then break end
+   if repeating()and context.ContinuousStrike then
+    -- Modern maintained contacts use the actual game receiver and a physical
+    -- entry/exit sweep. The independent one-shot operation below is unchanged.
+    if not context.ContinuousStrike(sound,main,character,current,sliceDeadline)then break end
+   else
+    -- Maintained contacts must leave the target before a new placement. A
+    -- second CFrame write while still overlapping is not another touch entry.
+    if repeating()and context.Rearm and not context.Rearm(sound,character,current,sliceDeadline)then break end
+    if repeating()and context.Clock()>=sliceDeadline then break end
+    if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
+    -- Park clears this force, so re-enable the original lift for each real
+    -- attempt. Preserve Position on SoundPart rather than substituting an
+    -- AssemblyRootPart transform or an invented crossing/impulse sequence.
+    if context.BeginStrike then context.BeginStrike(character)end
+    if not current()or completedState()or sound.Parent~=model or main.Parent~=model then break end
+    mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
+    sound.Position=torso.Position
+    sound.Velocity=Vector3.new(0,-10,0)
+    if context.Record then context.Record(sound,character)end -- placement telemetry only
+    if repeating()and context.WaitRepeat then
+     if not context.WaitRepeat(current,sliceDeadline)then break end
+    else context.Wait(.1)end
+   end
+   if not current()or completedState()or(not(repeating()and context.ContinuousStrike)and not head:FindFirstChild('PartOwner'))or context.Clock()-started>.5 then break end
   end
   -- Completion of a bounded repeating slice is never a new ragdoll-state
   -- acknowledgement, even when the target's bool was already true.
