@@ -1,4 +1,4 @@
--- Astral v4.90 | Defense repairs, reliable food removal and feature cleanup.
+-- Astral v4.91 | Restore original Unstick behavior.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -19701,7 +19701,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.90 | FTAP")
+                                warn("Astral v4.91 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23092,7 +23092,6 @@ end
 					for _, v24 in pairs(arg:QueryDescendants("BasePart")) do
 						if v24.Parent then
 							for _, v25 in pairs(v24:GetConnectedParts()) do
-                                    if tbl12.AntiKickItems and tbl12.AntiKickItems:IsProtected(v25) then continue end
 								if v25.Name == "StickyPart" then
 									for _, child in pairs(v25:GetChildren()) do
 										if child:IsA("TouchInterest") then
@@ -23129,7 +23128,6 @@ end
 					end
 
 					for _, v25 in v24:GetChildren() do
-                            if tbl12.AntiKickItems and tbl12.AntiKickItems:IsProtected(v25) then continue end
 						if v25:IsA("Model") then
 							local position = humanoidRootPart.Position
 
@@ -36643,7 +36641,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.90",true)
+            box:AddLabel("Astral v4.91",true)
         end
 
         do
@@ -37406,7 +37404,7 @@ Escape Timer: %*]]
 
 		Auras:AddDropdown("AurasDropdown", {
             Values = { "Unstick" }, Multi = true, AllowNull = true,
-            Text = "Aura", Tooltip = "Unstick nearby players. Your active Anti Kick items are excluded.",
+            Text = "Aura", Tooltip = "Unstick nearby players.",
             Callback = function(auras)
                 tbl7.Auras = { Unstick = type(auras)=="table" and auras.Unstick == true }
             end,
@@ -46330,9 +46328,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.90: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.91: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.90 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.91 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
