@@ -37,18 +37,31 @@ def run_feature_checks(modules,runner,folder):
         program+='local Impulse=(function()\n'+modules['GrabImpulse']+'\nend)()\n'
         program+='Guard=(function(...)\n'+modules['AntiGrabWalk']+'\nend)(function(name)if name=="WalkingRig"then return WalkingRig elseif name=="GrabImpulse"then return Impulse end;error(name)end)\n'+read('antigrab_body.luau')
         run('antigrab',program)
+    if 'AntiGrabWalk'in modules:
+        main=modules['Main'];a=main.index('GrabWelds=function()',main.index('tbl12.AntiGrabWalk=requireModule'))
+        b=main.index('\n                        RecoverAnimation=',a)
+        callback=main[a+len('GrabWelds='):b].strip().rstrip(',')
+        run('grab_discovery490',read('model_mock.luau')+'\n'+read('grab_discovery490_body.luau').replace('__ACTUAL_DISCOVERY__',callback))
     for module,alias,body in [('GrabImpulse','Impulse','grab_impulse_body.luau'),('BlobmanRide','Ride','blobman_ride_body.luau'),
-            ('FoodRemover','Remover','food_remover_body.luau'),('BlackholeVolume','Volume','blackhole_volume_body.luau'),('UFOBlaster','Blaster','ufo_blaster_body.luau'),
+            ('FoodRemover','Remover','food_remover_body.luau'),('FreezePCLD','Freeze','freeze_pcld_body.luau'),('DestroyDesync','Destroy','destroy_desync490_body.luau'),('AntiKickItems','Items','antikick490_body.luau'),('BlackholeVolume','Volume','blackhole_volume_body.luau'),('UFOBlaster','Blaster','ufo_blaster_body.luau'),
             ('SlideTeleport','Slide','slide_teleport_body.luau'),('PalletMagnet','Magnet','pallet_magnet_body.luau'),
             ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
+    if 'AntiKickItems'in modules:
+        main=modules['Main'];a=main.index('tbl12.RemoveSticky = function(arg, arg2)');b=main.index('tbl12.BreakLimb =',a)
+        body=read('unstick_defense_body.luau').replace('__ACTUAL_UNSTICK__',main[a:b])
+        run('unstick_defense',read('model_mock.luau')+'\nlocal Items=(function()\n'+modules['AntiKickItems']+'\nend)()\n'+body)
     assert 'DecoyGucci'not in modules and 'tbl12.DecoyGucci'not in modules['Main'],'Removed YouDecoyGucci still runs'
     for removed in ('Text="Kick Selected"','Text="Kick Server"','Text="Prepare Pallet"','Text="Copy Kick Info"','AddToggle("EKIToggle"','AddDropdown("KickServerMethod"'):
         assert removed not in modules['Main'],('Removed target control remains',removed)
     assert 'selectedPlayers,nil,false,nil,"Select Player"'in modules['Main'],'Target AddToList shortcut remains'
     if 'TargetPanel'in modules:
         run('target_panel488','local Panel=(function()\n'+modules['TargetPanel']+'\nend)()\n'+read('target_panel488_body.luau'))
+    if 'TargetPanel'in modules and 'FoodRemover'in modules:
+        program=read('model_mock.luau')+'\nlocal Remover=(function()\n'+modules['FoodRemover']+'\nend)()\n'
+        program+='local Panel=(function()\n'+modules['TargetPanel']+'\nend)()\n'+read('food_target490_body.luau')
+        run('food_target490',program)
     if 'GameShopStyle'in modules:
         run('game_shop484',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Layout=(function()\n'+modules['ShopLayout']+'\nend)()\nlocal Quick=(function()\n'+modules['ShopQuickSpawn']+'\nend)()\nlocal Shop=(function(...)\n'+modules['GameShopStyle']+'\nend)(function(name)if name=="ShopQuickSpawn"then return Quick end;assert(name=="ShopLayout");return Layout end)\n'+read('game_shop484_body.luau'))
     if 'ShopLayout'in modules:

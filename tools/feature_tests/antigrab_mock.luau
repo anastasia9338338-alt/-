@@ -46,8 +46,9 @@ local function fixture(mode)
  local hum=setmetatable({},{__index=hdata,__newindex=function(_,k,v)d.Writes[#d.Writes+1]='hum.'..k;local before=hdata[k];hdata[k]=v;if before~=v and hsignals[k]then hsignals[k]:Fire()end end})
  local ctx={RunService={Heartbeat=heart,PreSimulation=pre},Clock=function()return d.Now end,
   Enabled=function()return d.Enabled end,Held=function()return d.Held end,Mode=function()return d.Mode end,
+  LocalName="self",GrabOwner=function()return d.Owner end,
   Character=function()return d.Character or c,d.Root or root,d.Humanoid or hum end,
-  GrabWelds=function()return d.GrabWelds or{}end,RecoverAnimation=function()d.AnimationRecoveries=(d.AnimationRecoveries or 0)+1 end,
+  GrabWelds=function()d.WeldScans=(d.WeldScans or 0)+1;return d.GrabWelds or{}end,RecoverAnimation=function()d.AnimationRecoveries=(d.AnimationRecoveries or 0)+1 end,
   SetActive=function(value)d.Active[#d.Active+1]=value end,
   Struggle=function()d.Struggles+=1;if d.Throw then error('remote denied')end end,
   Ragdoll=function(r,t)d.Clears[#d.Clears+1]={Root=r,Duration=t};if d.Throw then error('remote denied')end end,
