@@ -18,10 +18,19 @@ local function cosmetic(v,c,root)
  end
  return false
 end
-local function destructive(v)
- return v:IsA('LuaSourceContainer')or v:IsA('RemoteEvent')or v:IsA('RemoteFunction')or v:IsA('BindableEvent')or v:IsA('BindableFunction')
-  or v:IsA('Tool')or v:IsA('JointInstance')or v:IsA('Constraint')or v:IsA('BodyMover')or v:IsA('Animator')
-  or v:IsA('AnimationController')or v:IsA('ControllerManager')or v:IsA('ControllerBase')or v:IsA('SensorBase')or v:IsA('ProximityPrompt')or v:IsA('ClickDetector')or v:IsA('IKControl')or v:IsA('Sound')or v:IsA('BillboardGui')or v:IsA('SurfaceGui')or v:IsA('Highlight')
+-- Clone preserves references to objects outside Character. A class blacklist is
+-- unsafe here: WeldConstraint inherits Instance rather than Constraint, and a
+-- surviving external weld can connect an anchored visual to a live assembly.
+-- Keep appearance-only contents, never mechanical links or object references.
+local visualClasses={Model=true,Folder=true,Humanoid=true,BodyColors=true,CharacterMesh=true,
+ SurfaceAppearance=true,FaceControls=true,NumberValue=true,WrapLayer=true,WrapTarget=true,
+ Shirt=true,Pants=true,ShirtGraphic=true,SpecialMesh=true,BlockMesh=true,CylinderMesh=true}
+local function visual(v)
+ return visualClasses[v.ClassName]or v:IsA('BasePart')or v:IsA('Accoutrement')or v:IsA('Clothing')
+  or v:IsA('DataModelMesh')or v:IsA('Decal')or v:IsA('Attachment')or v:IsA('BaseWrap')
+end
+local function transparency(v)
+ local n=tonumber(v);return n and n==n and math.clamp(n,0,1)or 0
 end
 local function skeletonRoot(character,humanoid,fallback)
  -- Desync helpers may replace Humanoid.RootPart. The actual root joint still
@@ -89,13 +98,14 @@ function Avatars:Build(player,character,root,detector)
  local prepared,prepareWhy=pcall(function()
   local humanoid=character:FindFirstChildOfClass('Humanoid')
   local rigRoot=skeletonRoot(character,humanoid,root)
-  local frames=restFrames(character,rigRoot);local pairsOfParts={};local allowed={}
+  local frames=restFrames(character,rigRoot);local pairsOfParts={};local allowed={};local originals={}
   local function pair(source,copy)
    local grouped={}
    for _,child in ipairs(copy:GetChildren())do local key=child.Name..'\0'..child.ClassName;grouped[key]=grouped[key]or{};table.insert(grouped[key],child)end
    for _,child in ipairs(source:GetChildren())do if child.Archivable~=false then
     local list=grouped[child.Name..'\0'..child.ClassName];local twin=list and table.remove(list,1)
     if twin then
+     originals[twin]=child
      if child:IsA('BasePart')and cosmetic(child,character,rigRoot)then pairsOfParts[#pairsOfParts+1]={Source=child,Part=twin,Frame=frames[child]};allowed[twin]=child end
      pair(child,twin)
     end
@@ -103,20 +113,22 @@ function Avatars:Build(player,character,root,detector)
   end
   pair(character,model)
   for _,v in ipairs(model:GetDescendants())do
-   if destructive(v)then v:Destroy()
+   if not visual(v)then v:Destroy()
    elseif v:IsA('BasePart')then
     if not allowed[v]then v:Destroy()
     else
      v.Anchored=true;v.Massless=true;v.CanCollide=false;v.CanTouch=false;v.CanQuery=false;v.CastShadow=false;v.LocalTransparencyModifier=0
      if allowed[v]==rigRoot then v.Transparency=1 end
+     if v:IsA('Seat')or v:IsA('VehicleSeat')then v.Disabled=true end
     end
+   elseif v:IsA('Model')then v.PrimaryPart=nil
    elseif v:IsA('Humanoid')then
     -- EvaluateStateMachine=false preserves clothing rendering, without
     -- humanoid forces, collision re-enabling, auto-scaling or locomotion.
     local inert=pcall(function()v.EvaluateStateMachine=false end)
     if not inert then v:Destroy()else
     v.RequiresNeck=false;v.BreakJointsOnDeath=false;v.AutomaticScalingEnabled=false
-    v.AutoRotate=false;v.PlatformStand=true;v.AutoJumpEnabled=false
+    v.AutoRotate=false;v.PlatformStand=true;v.AutoJumpEnabled=false;v.WalkToPart=nil
     v.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None;v.HealthDisplayType=Enum.HumanoidHealthDisplayType.AlwaysOff
     end
    elseif v:IsA('ParticleEmitter')or v:IsA('Trail')or v:IsA('Beam')then v.Enabled=false end
@@ -133,19 +145,22 @@ function Avatars:Build(player,character,root,detector)
    end
   end end
   if #parts==0 or #parts>320 or not finite(lo)or not finite(hi)or hi.Y-lo.Y<.1 then return end
+  model.PrimaryPart=nil
   local center=(lo+hi)*.5
   for _,p in ipairs(parts)do p.Offset=(CFrame.new(-center)*p.Frame)end
   model.Name='AstralPCLD/'..player.Name
   local highlight=Instance.new('Highlight');highlight.Name='PCLDColors';highlight.Adornee=model;highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;highlight.Parent=model
+  local surfaces={}
+  for _,v in ipairs(model:GetDescendants())do if v:IsA('Decal')then surfaces[#surfaces+1]={Part=v,Source=originals[v],Transparency=transparency(v.Transparency)}end end
   local record={Player=player,Character=character,Root=root,Model=model,Parts=parts,Highlight=highlight,Connections={},Detector=detector,
-   BodyHeight=hi.Y-lo.Y,Scale=1}
+   BodyHeight=hi.Y-lo.Y,Scale=1,Surfaces=surfaces,RigRoot=rigRoot}
   local function dirty(v)
    if v:IsA('BasePart')or v:IsA('Accessory')or v:IsA('Shirt')or v:IsA('Pants')or v:IsA('BodyColors')then record.Dirty=true end
   end
   if character.DescendantAdded then record.Connections[#record.Connections+1]=character.DescendantAdded:Connect(dirty)end
   if character.DescendantRemoving then record.Connections[#record.Connections+1]=character.DescendantRemoving:Connect(dirty)end
   for _,p in ipairs(parts)do
-   for _,property in ipairs({'Size','Color'})do
+   for _,property in ipairs({'Size','Color','Transparency'})do
     record.Connections[#record.Connections+1]=p.Source:GetPropertyChangedSignal(property):Connect(function()record.Dirty=true end)
    end
   end
@@ -161,6 +176,10 @@ function Avatars:Build(player,character,root,detector)
    end
   end
   for _,v in ipairs(model:GetDescendants())do if v:IsA('Humanoid')then guard(v,'EvaluateStateMachine',false);guard(v,'AutomaticScalingEnabled',false)end end
+  -- Engine/game callbacks must not add a fresh weld, controller or collider to
+  -- this frozen appearance copy after its initial sanitization.
+  local known={};for _,v in ipairs(model:GetDescendants())do known[v]=true end
+  record.Connections[#record.Connections+1]=model.DescendantAdded:Connect(function(v)if not known[v]then v:Destroy()end end)
   self.Records[player]=record;model.Parent=self.Container;result=record
  end)
  if not prepared or not result then model:Destroy();self.LastError=not prepared and tostring(prepareWhy)or self.LastError end
@@ -192,6 +211,9 @@ end
 function Avatars:Render(detector)
  if not self:Active()then self:Clear();return end
  local conf=self.Context.Config()
+ -- Skin and colored Highlight are two layers. Split their alpha so their
+ -- combined transparency is the same value used by ordinary Box PCLD.
+ local alpha=math.sqrt(transparency(conf.FillTransparency))
  for player,r in pairs(self.Records)do if not detector or detector==r.Detector then
   local character,root,h=self.Context.Character(player)
   if character~=r.Character or root~=r.Root or not h or h.Health<=0 or not alive(r.Detector)or self.Context.Waiting(r.Detector)then self:Remove(player)
@@ -199,9 +221,17 @@ function Avatars:Render(detector)
    local frame=self.Context.Frame(r.Detector)
    if frame and finite(frame.Position)then
     -- No fit-to-box scale and no second interpolation/prediction pass.
-    for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then p.Part.CFrame=frame*p.Offset end end
+    for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then
+     p.Part.CFrame=frame*p.Offset
+     local value=p.Source==r.RigRoot and 1 or 1-(1-transparency(p.Source.Transparency))*(1-alpha)
+     if p.Part.Transparency~=value then p.Part.Transparency=value end
+    end end
+    for _,s in ipairs(r.Surfaces)do if s.Part.Parent then
+     local original=s.Source and s.Source.Parent and transparency(s.Source.Transparency)or s.Transparency
+     s.Part.Transparency=1-(1-original)*(1-alpha)
+    end end
     r.Highlight.FillColor=conf.FillColor;r.Highlight.OutlineColor=conf.OutlineColor
-    r.Highlight.FillTransparency=conf.FillTransparency;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
+    r.Highlight.FillTransparency=alpha;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
    else r.Highlight.Enabled=false end
   end
  end end

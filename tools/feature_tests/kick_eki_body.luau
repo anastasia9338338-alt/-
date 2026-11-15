@@ -8,7 +8,7 @@ local function ekiFixture(original,withReader)
   ApplyFailures=0,ResetFailures=0,ResetThrows=0,ResetValues={}}
  local mover={Position=root.Position,Parent=root,Destroy=function()end}
  local session={Player=player,Character=targetState.Character,Root=root,Humanoid=targetState.Humanoid,
-  Position=mover,Orientation=mover,Physics={},EKIAt=0}
+  Position=mover,Orientation=mover,Physics={},EKIAt=0,CapturedFrame=0}
  local context={Clock=function()return state.Now end,Enabled=function()return true end,Selected=function()return true end,
   Character=function()return targetState.Character,root,targetState.Humanoid end,
   LocalCharacter=function()return {},actor,targetState.Humanoid end,
@@ -86,5 +86,73 @@ end
 do
  local f=ekiFixture(nil);f.State.Stored=f.Root;f.Update();f.Loop:Remove(f.Player)
  check(f.State.Stored==f.Root,'EKI cleared a replication root that already pointed at itself before activation')
+end
+-- Maximum-speed capture uses confirmed ownership followed by one distinct
+-- physics frame. This measures local scheduling, never server kick latency.
+do
+ local f=ekiFixture(nil);f.Session.EKIAt=nil;f.Session.CapturedFrame=nil;f.Update()
+ check(f.State.ApplyCalls==0 and f.Session.EKIAt==.6,'Fast EKI ran in the ownership observation frame')
+ f.State.Now=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==1 and f.Session.EKI,'Confirmed stable capture retained the fixed 600ms EKI pause')
+ check(f.State.Now<.6,'Fast EKI test did not exercise earlier readiness')
+end
+do
+ local f=ekiFixture(nil);f.Session.EKIAt=nil;f.Session.CapturedFrame=nil
+ local owned=false;f.Loop.Context.NetworkOwned=function()return owned end
+ f.Update();f.State.Now=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==0 and f.Session.CapturedFrame==nil,'Owner marker alone accelerated EKI')
+ owned=true;f.State.Now=2/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==0,'Late physics handoff skipped its settling frame')
+ f.State.Now=3/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==1,'Late confirmed capture failed to advance EKI readiness')
+end
+do
+ local f=ekiFixture(nil);f.Session.EKIAt=nil;f.Session.CapturedFrame=nil;f.Update()
+ local destination=f.Root.Position+Vector3.new(0,15,0)
+ f.State.Now=1/60;f.Loop.Frame+=1;f.Loop:Update(f.Session,destination,f.State.Now,.1)
+ check(f.State.ApplyCalls==0,'Unsettled target accelerated EKI before reaching its hold destination')
+ f.Loop.MaximumSpeed=false;f.State.Now=2/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==0,'Normal mode lost its original EKI delay')
+ f.State.Now=.6;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==1,'Normal mode never reached its original EKI readiness')
+end
+for _,lost in ipairs({'marker','physics','both'})do
+ local f=ekiFixture(nil);local marker,physics=true,true
+ f.Loop.Context.Owned=function()return marker and physics end
+ f.Loop.Context.NetworkOwned=function()return physics end
+ f.Update();check(f.State.ApplyCalls==1,'Lost-ownership case did not first establish EKI')
+ marker=lost=='physics';physics=lost=='marker'
+ f.State.Now=.8;f.Loop.Frame+=1;f.Update()
+ check(f.Session.CapturedFrame==nil and not f.Session.EKI,'Ownership loss retained stale fast EKI readiness: '..lost)
+ -- Physics may be observed again before the replicated owner marker.
+ physics=true;marker=false;f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==1 and not f.Session.EKI,'Physics-only reacquisition reused old EKI readiness: '..lost)
+ marker=true;f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==1,'Reacquisition skipped its new capture-observation frame: '..lost)
+ f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==2 and f.Session.EKI,'Fresh stable ownership failed to reapply EKI: '..lost)
+end
+for _,pause in ipairs({'busy','acquiring','distant'})do
+ local f=ekiFixture(nil);local owned=true;local busy=false
+ f.Loop.Context.Owned=function()return owned end
+ f.Loop.Context.NetworkOwned=function()return owned end
+ f.Loop.Context.OwnershipBusy=function()return busy end
+ f.Update();check(f.State.ApplyCalls==1,'Early-return case did not establish EKI')
+ owned=false;f.State.Now=.8;f.Loop.Frame+=1
+ local original=f.Root.Position
+ if pause=='busy'then busy=true
+ elseif pause=='acquiring'then f.Session.Acquiring=true
+ else
+  f.Root.Position=Vector3.new(100,0,0)
+  f.Loop.Acquire=function(_,session)session.ReacquireAttempted=true end
+ end
+ f.Update()
+ check(f.Session.CapturedFrame==nil,'Early return retained an old capture frame: '..pause)
+ if pause=='distant'then check(f.Session.ReacquireAttempted,'Distant regression did not take its acquisition return')end
+ busy=false;f.Session.Acquiring=false;f.Root.Position=original;owned=true
+ f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==1 and not f.Session.EKI,'Paused reacquisition skipped a fresh observation frame: '..pause)
+ f.State.Now+=1/60;f.Loop.Frame+=1;f.Update()
+ check(f.State.ApplyCalls==2 and f.Session.EKI,'Paused reacquisition failed after a fresh settling frame: '..pause)
 end
 print('PASS: '..checks..' local EKI dirty-state, snapshot, failed-reset and cleanup retry checks (mocked; no server disconnect)')

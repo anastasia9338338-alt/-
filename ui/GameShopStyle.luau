@@ -144,7 +144,7 @@ function Shop:Discover()
   if(name=='toys'or name=='toyshop'or name=='toystore'or name=='shop')and not seen[page]then
    local items=page:FindFirstChild('Contents',true)
    if items then
-    local view=gui(items)and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)
+    local view=items:IsA('ScrollingFrame')and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)or(gui(items)and items)
     if view then
      self.Pages[#self.Pages+1]={Node=page,List=view,Items=items}
      local p=view;while p and p~=self.Menu.Parent do if gui(p)then self:Watch(p,'Visible')end;if p==self.Menu then break end;p=p.Parent end
@@ -162,7 +162,7 @@ function Shop:Controls(record)
    local shared=not under(node,self.Contents)
    local name=node.Name:lower()
    if inPage or shared then
-    if node:IsA('TextLabel')then
+    if node:IsA('TextLabel')or node:IsA('TextButton')then
      local text=fold(node.Text)
      if text:find('your toys',1,true)or text:find('ваши игруш',1,true)or name=='title'or name=='heading'then title=title or node
      elseif text:find('лимит игруш',1,true)or text:find('toy limit',1,true)or name:find('toylimit',1,true)then limit=limit or node end
@@ -266,6 +266,71 @@ function Shop:Group(nodes,container,rect,direction,scope,page)
   self:Icon(node,global,scope)
  end
 end
+function Shop:Grid(record)
+ local plan=self.Plan;local list=record.List
+ -- Contents is not necessarily the actual collection: the native inventory
+ -- also places its grid under a ScrollingFrame and an inner canvas Frame.
+ local grid;local score=-1
+ for _,node in ipairs(descendants(record.Items))do
+  if node:IsA('UIGridLayout')then
+   local count=0;for _,child in ipairs(children(node.Parent))do if gui(child)then count+=1 end end
+   if count>score then grid=node;score=count end
+  end
+ end
+ local holder=grid and grid.Parent or list
+ if not gui(holder)then return end
+ local cells={};for _,node in ipairs(children(holder))do if gui(node)then cells[#cells+1]=node end end
+ local count=0;for _,cell in ipairs(cells)do if cell.Visible then count+=1 end end
+ local height=math.max(plan.Grid.H,math.ceil(count/plan.Columns)*(plan.Cell+plan.Gap)-plan.Gap)
+ -- Every coordinate space between viewport and grid must have the same usable
+ -- width. Changing CellSize alone left the old narrow inner canvas in place.
+ local node=holder
+ while node and under(node,list)do
+  if gui(node)then
+   if node==list then self:Rect(node,plan.Grid)
+   else self:Rect(node,{X=0,Y=0,W=plan.Grid.W,H=height})end
+   self:Write(node,'BackgroundTransparency',1,nil,true);self:Write(node,'BorderSizePixel',0)
+   local padding=node:FindFirstChildOfClass('UIPadding')
+   if padding then for _,key in ipairs({'PaddingTop','PaddingBottom','PaddingLeft','PaddingRight'})do self:Write(padding,key,UDim.new(0,0),nil,true)end end
+   for _,child in ipairs(children(node))do if child:IsA('UIScale')then self:Write(child,'Scale',1,nil,true)end end
+  end
+  if node==list then break end;node=node.Parent
+ end
+ if list:IsA('ScrollingFrame')then
+  self:Write(list,'CanvasSize',UDim2.fromOffset(0,height),nil,true)
+ end
+ if grid then
+  self:Write(grid,'CellSize',UDim2.fromOffset(plan.Cell,plan.Cell),nil,true)
+  self:Write(grid,'CellPadding',UDim2.fromOffset(plan.Gap,plan.Gap),nil,true)
+  self:Write(grid,'FillDirection',Enum.FillDirection.Horizontal,nil,true)
+  self:Write(grid,'FillDirectionMaxCells',plan.Columns,nil,true)
+  self:Write(grid,'HorizontalAlignment',Enum.HorizontalAlignment.Left,nil,true)
+  self:Write(grid,'VerticalAlignment',Enum.VerticalAlignment.Top,nil,true)
+  self:Write(grid,'StartCorner',Enum.StartCorner.TopLeft,nil,true)
+ end
+ local function favorite(v)
+  local name=v.Name:lower()
+  return name:find('favorite',1,true)or name:find('favourite',1,true)or name=='star'or name=='starbutton'
+ end
+ for _,cell in ipairs(cells)do
+  self:Rect(cell,{X=0,Y=0,W=plan.Cell,H=plan.Cell})
+  self:Write(cell,'ClipsDescendants',true,nil,true);self:Watch(cell,'Visible')
+  -- A fixed-size image/ViewportFrame inside a correctly sized grid cell still
+  -- renders the old 100-pixel toy. Fit the visual subtree, not just CellSize.
+  for _,v in ipairs(descendants(cell))do
+   if v:IsA('UIScale')then self:Write(v,'Scale',1,nil,true)
+   elseif gui(v)then
+    if favorite(v)and(v:IsA('ImageButton')or v:IsA('TextButton'))then
+     self:Write(v,'Visible',true,nil,true);self:Write(v,'AnchorPoint',Vector2.new(1,1),nil,true)
+     self:Write(v,'Position',UDim2.new(1,-1,1,-1),nil,true);self:Write(v,'Size',UDim2.fromOffset(11*plan.Scale,11*plan.Scale),nil,true)
+    elseif v:IsA('ImageLabel')or v:IsA('ImageButton')or v:IsA('ViewportFrame')or v:IsA('Frame')then
+     self:Rect(v,{X=0,Y=0,W=plan.Cell,H=plan.Cell})
+     self:Write(v,'Size',UDim2.fromScale(1,1),nil,true)
+    end
+   end
+  end
+ end
+end
 function Shop:Page(record)
  local plan=self.Plan;local list=record.List;self:Surface()
  for _,image in pairs(self.IconCopies)do image.Visible=false end
@@ -273,25 +338,21 @@ function Shop:Page(record)
  self:Normalize(list,'shared');self:Rect(list,plan.Body)
  self:Write(list,'BackgroundTransparency',1,nil,true);self:Write(list,'BorderSizePixel',0);self:Write(list,'ClipsDescendants',true)
  if list:IsA('ScrollingFrame')then self:Write(list,'ScrollBarThickness',0);self:Write(list,'ScrollingDirection',Enum.ScrollingDirection.Y);self:Write(list,'AutomaticCanvasSize',Enum.AutomaticSize.Y)end
- local grid=list:FindFirstChildOfClass('UIGridLayout')or record.Items:FindFirstChildOfClass('UIGridLayout')
- if grid then
-  self:Write(grid,'CellSize',UDim2.fromOffset(plan.Cell,plan.Cell),nil,true);self:Write(grid,'CellPadding',UDim2.fromOffset(plan.Gap,plan.Gap),nil,true)
-  self:Write(grid,'FillDirection',Enum.FillDirection.Horizontal,nil,true);self:Write(grid,'FillDirectionMaxCells',10,nil,true)
- end
- local padding=list:FindFirstChildOfClass('UIPadding')
- if padding then for _,key in ipairs({'PaddingTop','PaddingBottom','PaddingLeft','PaddingRight'})do self:Write(padding,key,UDim.new(0,2*plan.Scale),nil,true)end end
- for _,v in ipairs(descendants(record.Items))do if gui(v)then
-  self:Write(v,'BackgroundTransparency',1,nil,true);self:Write(v,'BorderSizePixel',0)
-  if v:IsA('ImageLabel')or v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit)end
-  if v.Parent==record.Items then
-   self:Write(v,'AutomaticSize',Enum.AutomaticSize.None,nil,true)
-   local bound=v:FindFirstChildOfClass('UISizeConstraint');if bound then self:Write(bound,'MinSize',Vector2.zero,nil,true);self:Write(bound,'MaxSize',Vector2.new(plan.Cell,plan.Cell),nil,true)end
-  end
-  local name=v.Name:lower()
-  if v.Parent~=record.Items and(name:find('favorite',1,true)or name:find('favourite',1,true)or name=='star'or name=='starbutton')and(v:IsA('ImageButton')or v:IsA('TextButton'))then
-   self:Write(v,'Visible',true,nil,true);self:Write(v,'AnchorPoint',Vector2.new(1,1));self:Write(v,'Position',UDim2.new(1,-1,1,-1));self:Write(v,'Size',UDim2.fromOffset(11*plan.Scale,11*plan.Scale))
+ -- Remove native panel fills throughout this page. Their old sibling header
+ -- and footer backgrounds otherwise cover the smaller rounded skin.
+ for _,v in ipairs(descendants(self.Menu))do if gui(v)and(under(v,record.Node)or not under(v,self.Contents))then
+  local scope=under(v,record.Items)and'page'or'shared'
+  self:Write(v,'BackgroundTransparency',1,scope,true);self:Write(v,'BorderSizePixel',0,scope)
+  local stroke=v:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,scope,true)end
+  if under(v,record.Items)and(v:IsA('ImageLabel')or v:IsA('ImageButton'))then self:Write(v,'ScaleType',Enum.ScaleType.Fit)
+  elseif v:IsA('ImageLabel')then
+   -- Header/footer are sometimes textured ImageLabels rather than Frames.
+   -- Keep small native glyphs; suppress only their old large panel artwork.
+   local size=v.AbsoluteSize
+   if size.X>self.Plan.IconSize*3 and size.Y>self.Plan.Scale*4 then self:Write(v,'ImageTransparency',1,scope,true)end
   end
  end end
+ self:Grid(record)
  local controls=self:Controls(record)
  if controls.Title then
   self:Normalize(controls.Title,'shared');self:Write(controls.Title,'TextTransparency',1,'shared',true);self:Write(controls.Title,'BackgroundTransparency',1,'shared',true)
@@ -328,7 +389,7 @@ function Shop:Page(record)
   if dedicated then self:Normalize(root,'shared');self:Rect(root,plan.Limit,'shared')end
   self:Write(caption,'TextTransparency',1,'shared',true);self:Write(caption,'BackgroundTransparency',1,'shared')
   for _,v in ipairs(descendants(root or record.Node))do
-   if v~=caption and v:IsA('TextLabel')and v.Text:match('%d+%s*/%s*%d+')then
+   if v~=caption and (v:IsA('TextLabel')or v:IsA('TextButton'))and v.Text:match('%d+%s*/%s*%d+')then
     count=v.Text;self:Watch(v,'Text');self:Write(v,'TextTransparency',1,'shared',true)
    end
    if dedicated and gui(v)then

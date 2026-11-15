@@ -1,4 +1,4 @@
--- Astral v4.84 | Reference-measured native inventory skin; 1:1 nonphysical avatar PCLD with native detector motion.
+-- Astral v4.85 | Nested native inventory layout; transparent isolated avatar PCLD; ownership scheduling fixes.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -20897,7 +20897,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.84 | FTAP")
+                                warn("Astral v4.85 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -37644,7 +37644,7 @@ Escape Timer: %*]]
                 until os.clock()>=deadline
                 return false
             end
-            tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,NativePhases=true,
+            tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,
                 Enabled=function()return not flag11 and tbl8.LoopApplyMethodT and tbl7.TargetMethods.Kick and not localPlayer.InPlot.Value end,
                 Selected=function(player)return player and player.Parent and tbl7.SelectedPlayers[player]==true and not tbl12.IsProtectedPlayer(player)end,
                 Targets=function()return tbl12.GetTargets(false,tbl7.SelectedPlayers)end,
@@ -37653,7 +37653,7 @@ Escape Timer: %*]]
                 NetworkOwned=tbl12.IsNetworkOwner,MarkerOwned=tbl12.IsPartOwner,
                 OwnershipBusy=function()return tbl7.States.Owning==true or tbl12.PalletRagdoll.Preparing or tbl12.PalletRagdoll.Ownership.InFlight end,
                 Grab=tbl12.Grab,Release=tbl12.RNO,
-                Acquire=function(root,valid)return tbl12.SNO(root,.65,valid)end,
+                Acquire=function(root,valid)return tbl12.SNO(root,.65,valid,true)end,
                 Teleport=function(root,position)tbl12.Teleport(root,position)end,
                 Collisions=tbl12.ToggleCollisions,Limbs=tbl12.RepositionLimbs,
                 RestoreMotors=function(character)tbl12.ToggleMotor6D(character,true,true)end,
@@ -37890,7 +37890,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.84",true)
+            box:AddLabel("Astral v4.85",true)
         end
 
         do
@@ -44018,10 +44018,19 @@ local function cosmetic(v,c,root)
  end
  return false
 end
-local function destructive(v)
- return v:IsA('LuaSourceContainer')or v:IsA('RemoteEvent')or v:IsA('RemoteFunction')or v:IsA('BindableEvent')or v:IsA('BindableFunction')
-  or v:IsA('Tool')or v:IsA('JointInstance')or v:IsA('Constraint')or v:IsA('BodyMover')or v:IsA('Animator')
-  or v:IsA('AnimationController')or v:IsA('ControllerManager')or v:IsA('ControllerBase')or v:IsA('SensorBase')or v:IsA('ProximityPrompt')or v:IsA('ClickDetector')or v:IsA('IKControl')or v:IsA('Sound')or v:IsA('BillboardGui')or v:IsA('SurfaceGui')or v:IsA('Highlight')
+-- Clone preserves references to objects outside Character. A class blacklist is
+-- unsafe here: WeldConstraint inherits Instance rather than Constraint, and a
+-- surviving external weld can connect an anchored visual to a live assembly.
+-- Keep appearance-only contents, never mechanical links or object references.
+local visualClasses={Model=true,Folder=true,Humanoid=true,BodyColors=true,CharacterMesh=true,
+ SurfaceAppearance=true,FaceControls=true,NumberValue=true,WrapLayer=true,WrapTarget=true,
+ Shirt=true,Pants=true,ShirtGraphic=true,SpecialMesh=true,BlockMesh=true,CylinderMesh=true}
+local function visual(v)
+ return visualClasses[v.ClassName]or v:IsA('BasePart')or v:IsA('Accoutrement')or v:IsA('Clothing')
+  or v:IsA('DataModelMesh')or v:IsA('Decal')or v:IsA('Attachment')or v:IsA('BaseWrap')
+end
+local function transparency(v)
+ local n=tonumber(v);return n and n==n and math.clamp(n,0,1)or 0
 end
 local function skeletonRoot(character,humanoid,fallback)
  -- Desync helpers may replace Humanoid.RootPart. The actual root joint still
@@ -44089,13 +44098,14 @@ function Avatars:Build(player,character,root,detector)
  local prepared,prepareWhy=pcall(function()
   local humanoid=character:FindFirstChildOfClass('Humanoid')
   local rigRoot=skeletonRoot(character,humanoid,root)
-  local frames=restFrames(character,rigRoot);local pairsOfParts={};local allowed={}
+  local frames=restFrames(character,rigRoot);local pairsOfParts={};local allowed={};local originals={}
   local function pair(source,copy)
    local grouped={}
    for _,child in ipairs(copy:GetChildren())do local key=child.Name..'\0'..child.ClassName;grouped[key]=grouped[key]or{};table.insert(grouped[key],child)end
    for _,child in ipairs(source:GetChildren())do if child.Archivable~=false then
     local list=grouped[child.Name..'\0'..child.ClassName];local twin=list and table.remove(list,1)
     if twin then
+     originals[twin]=child
      if child:IsA('BasePart')and cosmetic(child,character,rigRoot)then pairsOfParts[#pairsOfParts+1]={Source=child,Part=twin,Frame=frames[child]};allowed[twin]=child end
      pair(child,twin)
     end
@@ -44103,20 +44113,22 @@ function Avatars:Build(player,character,root,detector)
   end
   pair(character,model)
   for _,v in ipairs(model:GetDescendants())do
-   if destructive(v)then v:Destroy()
+   if not visual(v)then v:Destroy()
    elseif v:IsA('BasePart')then
     if not allowed[v]then v:Destroy()
     else
      v.Anchored=true;v.Massless=true;v.CanCollide=false;v.CanTouch=false;v.CanQuery=false;v.CastShadow=false;v.LocalTransparencyModifier=0
      if allowed[v]==rigRoot then v.Transparency=1 end
+     if v:IsA('Seat')or v:IsA('VehicleSeat')then v.Disabled=true end
     end
+   elseif v:IsA('Model')then v.PrimaryPart=nil
    elseif v:IsA('Humanoid')then
     -- EvaluateStateMachine=false preserves clothing rendering, without
     -- humanoid forces, collision re-enabling, auto-scaling or locomotion.
     local inert=pcall(function()v.EvaluateStateMachine=false end)
     if not inert then v:Destroy()else
     v.RequiresNeck=false;v.BreakJointsOnDeath=false;v.AutomaticScalingEnabled=false
-    v.AutoRotate=false;v.PlatformStand=true;v.AutoJumpEnabled=false
+    v.AutoRotate=false;v.PlatformStand=true;v.AutoJumpEnabled=false;v.WalkToPart=nil
     v.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None;v.HealthDisplayType=Enum.HumanoidHealthDisplayType.AlwaysOff
     end
    elseif v:IsA('ParticleEmitter')or v:IsA('Trail')or v:IsA('Beam')then v.Enabled=false end
@@ -44133,19 +44145,22 @@ function Avatars:Build(player,character,root,detector)
    end
   end end
   if #parts==0 or #parts>320 or not finite(lo)or not finite(hi)or hi.Y-lo.Y<.1 then return end
+  model.PrimaryPart=nil
   local center=(lo+hi)*.5
   for _,p in ipairs(parts)do p.Offset=(CFrame.new(-center)*p.Frame)end
   model.Name='AstralPCLD/'..player.Name
   local highlight=Instance.new('Highlight');highlight.Name='PCLDColors';highlight.Adornee=model;highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;highlight.Parent=model
+  local surfaces={}
+  for _,v in ipairs(model:GetDescendants())do if v:IsA('Decal')then surfaces[#surfaces+1]={Part=v,Source=originals[v],Transparency=transparency(v.Transparency)}end end
   local record={Player=player,Character=character,Root=root,Model=model,Parts=parts,Highlight=highlight,Connections={},Detector=detector,
-   BodyHeight=hi.Y-lo.Y,Scale=1}
+   BodyHeight=hi.Y-lo.Y,Scale=1,Surfaces=surfaces,RigRoot=rigRoot}
   local function dirty(v)
    if v:IsA('BasePart')or v:IsA('Accessory')or v:IsA('Shirt')or v:IsA('Pants')or v:IsA('BodyColors')then record.Dirty=true end
   end
   if character.DescendantAdded then record.Connections[#record.Connections+1]=character.DescendantAdded:Connect(dirty)end
   if character.DescendantRemoving then record.Connections[#record.Connections+1]=character.DescendantRemoving:Connect(dirty)end
   for _,p in ipairs(parts)do
-   for _,property in ipairs({'Size','Color'})do
+   for _,property in ipairs({'Size','Color','Transparency'})do
     record.Connections[#record.Connections+1]=p.Source:GetPropertyChangedSignal(property):Connect(function()record.Dirty=true end)
    end
   end
@@ -44161,6 +44176,10 @@ function Avatars:Build(player,character,root,detector)
    end
   end
   for _,v in ipairs(model:GetDescendants())do if v:IsA('Humanoid')then guard(v,'EvaluateStateMachine',false);guard(v,'AutomaticScalingEnabled',false)end end
+  -- Engine/game callbacks must not add a fresh weld, controller or collider to
+  -- this frozen appearance copy after its initial sanitization.
+  local known={};for _,v in ipairs(model:GetDescendants())do known[v]=true end
+  record.Connections[#record.Connections+1]=model.DescendantAdded:Connect(function(v)if not known[v]then v:Destroy()end end)
   self.Records[player]=record;model.Parent=self.Container;result=record
  end)
  if not prepared or not result then model:Destroy();self.LastError=not prepared and tostring(prepareWhy)or self.LastError end
@@ -44192,6 +44211,9 @@ end
 function Avatars:Render(detector)
  if not self:Active()then self:Clear();return end
  local conf=self.Context.Config()
+ -- Skin and colored Highlight are two layers. Split their alpha so their
+ -- combined transparency is the same value used by ordinary Box PCLD.
+ local alpha=math.sqrt(transparency(conf.FillTransparency))
  for player,r in pairs(self.Records)do if not detector or detector==r.Detector then
   local character,root,h=self.Context.Character(player)
   if character~=r.Character or root~=r.Root or not h or h.Health<=0 or not alive(r.Detector)or self.Context.Waiting(r.Detector)then self:Remove(player)
@@ -44199,9 +44221,17 @@ function Avatars:Render(detector)
    local frame=self.Context.Frame(r.Detector)
    if frame and finite(frame.Position)then
     -- No fit-to-box scale and no second interpolation/prediction pass.
-    for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then p.Part.CFrame=frame*p.Offset end end
+    for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then
+     p.Part.CFrame=frame*p.Offset
+     local value=p.Source==r.RigRoot and 1 or 1-(1-transparency(p.Source.Transparency))*(1-alpha)
+     if p.Part.Transparency~=value then p.Part.Transparency=value end
+    end end
+    for _,s in ipairs(r.Surfaces)do if s.Part.Parent then
+     local original=s.Source and s.Source.Parent and transparency(s.Source.Transparency)or s.Transparency
+     s.Part.Transparency=1-(1-original)*(1-alpha)
+    end end
     r.Highlight.FillColor=conf.FillColor;r.Highlight.OutlineColor=conf.OutlineColor
-    r.Highlight.FillTransparency=conf.FillTransparency;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
+    r.Highlight.FillTransparency=alpha;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
    else r.Highlight.Enabled=false end
   end
  end end
@@ -44927,7 +44957,7 @@ function Shop:Discover()
   if(name=='toys'or name=='toyshop'or name=='toystore'or name=='shop')and not seen[page]then
    local items=page:FindFirstChild('Contents',true)
    if items then
-    local view=gui(items)and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)
+    local view=items:IsA('ScrollingFrame')and items or items:FindFirstChildWhichIsA('ScrollingFrame',true)or(gui(items)and items)
     if view then
      self.Pages[#self.Pages+1]={Node=page,List=view,Items=items}
      local p=view;while p and p~=self.Menu.Parent do if gui(p)then self:Watch(p,'Visible')end;if p==self.Menu then break end;p=p.Parent end
@@ -44945,7 +44975,7 @@ function Shop:Controls(record)
    local shared=not under(node,self.Contents)
    local name=node.Name:lower()
    if inPage or shared then
-    if node:IsA('TextLabel')then
+    if node:IsA('TextLabel')or node:IsA('TextButton')then
      local text=fold(node.Text)
      if text:find('your toys',1,true)or text:find('ваши игруш',1,true)or name=='title'or name=='heading'then title=title or node
      elseif text:find('лимит игруш',1,true)or text:find('toy limit',1,true)or name:find('toylimit',1,true)then limit=limit or node end
@@ -45049,6 +45079,71 @@ function Shop:Group(nodes,container,rect,direction,scope,page)
   self:Icon(node,global,scope)
  end
 end
+function Shop:Grid(record)
+ local plan=self.Plan;local list=record.List
+ -- Contents is not necessarily the actual collection: the native inventory
+ -- also places its grid under a ScrollingFrame and an inner canvas Frame.
+ local grid;local score=-1
+ for _,node in ipairs(descendants(record.Items))do
+  if node:IsA('UIGridLayout')then
+   local count=0;for _,child in ipairs(children(node.Parent))do if gui(child)then count+=1 end end
+   if count>score then grid=node;score=count end
+  end
+ end
+ local holder=grid and grid.Parent or list
+ if not gui(holder)then return end
+ local cells={};for _,node in ipairs(children(holder))do if gui(node)then cells[#cells+1]=node end end
+ local count=0;for _,cell in ipairs(cells)do if cell.Visible then count+=1 end end
+ local height=math.max(plan.Grid.H,math.ceil(count/plan.Columns)*(plan.Cell+plan.Gap)-plan.Gap)
+ -- Every coordinate space between viewport and grid must have the same usable
+ -- width. Changing CellSize alone left the old narrow inner canvas in place.
+ local node=holder
+ while node and under(node,list)do
+  if gui(node)then
+   if node==list then self:Rect(node,plan.Grid)
+   else self:Rect(node,{X=0,Y=0,W=plan.Grid.W,H=height})end
+   self:Write(node,'BackgroundTransparency',1,nil,true);self:Write(node,'BorderSizePixel',0)
+   local padding=node:FindFirstChildOfClass('UIPadding')
+   if padding then for _,key in ipairs({'PaddingTop','PaddingBottom','PaddingLeft','PaddingRight'})do self:Write(padding,key,UDim.new(0,0),nil,true)end end
+   for _,child in ipairs(children(node))do if child:IsA('UIScale')then self:Write(child,'Scale',1,nil,true)end end
+  end
+  if node==list then break end;node=node.Parent
+ end
+ if list:IsA('ScrollingFrame')then
+  self:Write(list,'CanvasSize',UDim2.fromOffset(0,height),nil,true)
+ end
+ if grid then
+  self:Write(grid,'CellSize',UDim2.fromOffset(plan.Cell,plan.Cell),nil,true)
+  self:Write(grid,'CellPadding',UDim2.fromOffset(plan.Gap,plan.Gap),nil,true)
+  self:Write(grid,'FillDirection',Enum.FillDirection.Horizontal,nil,true)
+  self:Write(grid,'FillDirectionMaxCells',plan.Columns,nil,true)
+  self:Write(grid,'HorizontalAlignment',Enum.HorizontalAlignment.Left,nil,true)
+  self:Write(grid,'VerticalAlignment',Enum.VerticalAlignment.Top,nil,true)
+  self:Write(grid,'StartCorner',Enum.StartCorner.TopLeft,nil,true)
+ end
+ local function favorite(v)
+  local name=v.Name:lower()
+  return name:find('favorite',1,true)or name:find('favourite',1,true)or name=='star'or name=='starbutton'
+ end
+ for _,cell in ipairs(cells)do
+  self:Rect(cell,{X=0,Y=0,W=plan.Cell,H=plan.Cell})
+  self:Write(cell,'ClipsDescendants',true,nil,true);self:Watch(cell,'Visible')
+  -- A fixed-size image/ViewportFrame inside a correctly sized grid cell still
+  -- renders the old 100-pixel toy. Fit the visual subtree, not just CellSize.
+  for _,v in ipairs(descendants(cell))do
+   if v:IsA('UIScale')then self:Write(v,'Scale',1,nil,true)
+   elseif gui(v)then
+    if favorite(v)and(v:IsA('ImageButton')or v:IsA('TextButton'))then
+     self:Write(v,'Visible',true,nil,true);self:Write(v,'AnchorPoint',Vector2.new(1,1),nil,true)
+     self:Write(v,'Position',UDim2.new(1,-1,1,-1),nil,true);self:Write(v,'Size',UDim2.fromOffset(11*plan.Scale,11*plan.Scale),nil,true)
+    elseif v:IsA('ImageLabel')or v:IsA('ImageButton')or v:IsA('ViewportFrame')or v:IsA('Frame')then
+     self:Rect(v,{X=0,Y=0,W=plan.Cell,H=plan.Cell})
+     self:Write(v,'Size',UDim2.fromScale(1,1),nil,true)
+    end
+   end
+  end
+ end
+end
 function Shop:Page(record)
  local plan=self.Plan;local list=record.List;self:Surface()
  for _,image in pairs(self.IconCopies)do image.Visible=false end
@@ -45056,25 +45151,21 @@ function Shop:Page(record)
  self:Normalize(list,'shared');self:Rect(list,plan.Body)
  self:Write(list,'BackgroundTransparency',1,nil,true);self:Write(list,'BorderSizePixel',0);self:Write(list,'ClipsDescendants',true)
  if list:IsA('ScrollingFrame')then self:Write(list,'ScrollBarThickness',0);self:Write(list,'ScrollingDirection',Enum.ScrollingDirection.Y);self:Write(list,'AutomaticCanvasSize',Enum.AutomaticSize.Y)end
- local grid=list:FindFirstChildOfClass('UIGridLayout')or record.Items:FindFirstChildOfClass('UIGridLayout')
- if grid then
-  self:Write(grid,'CellSize',UDim2.fromOffset(plan.Cell,plan.Cell),nil,true);self:Write(grid,'CellPadding',UDim2.fromOffset(plan.Gap,plan.Gap),nil,true)
-  self:Write(grid,'FillDirection',Enum.FillDirection.Horizontal,nil,true);self:Write(grid,'FillDirectionMaxCells',10,nil,true)
- end
- local padding=list:FindFirstChildOfClass('UIPadding')
- if padding then for _,key in ipairs({'PaddingTop','PaddingBottom','PaddingLeft','PaddingRight'})do self:Write(padding,key,UDim.new(0,2*plan.Scale),nil,true)end end
- for _,v in ipairs(descendants(record.Items))do if gui(v)then
-  self:Write(v,'BackgroundTransparency',1,nil,true);self:Write(v,'BorderSizePixel',0)
-  if v:IsA('ImageLabel')or v:IsA('ImageButton')then self:Write(v,'ScaleType',Enum.ScaleType.Fit)end
-  if v.Parent==record.Items then
-   self:Write(v,'AutomaticSize',Enum.AutomaticSize.None,nil,true)
-   local bound=v:FindFirstChildOfClass('UISizeConstraint');if bound then self:Write(bound,'MinSize',Vector2.zero,nil,true);self:Write(bound,'MaxSize',Vector2.new(plan.Cell,plan.Cell),nil,true)end
-  end
-  local name=v.Name:lower()
-  if v.Parent~=record.Items and(name:find('favorite',1,true)or name:find('favourite',1,true)or name=='star'or name=='starbutton')and(v:IsA('ImageButton')or v:IsA('TextButton'))then
-   self:Write(v,'Visible',true,nil,true);self:Write(v,'AnchorPoint',Vector2.new(1,1));self:Write(v,'Position',UDim2.new(1,-1,1,-1));self:Write(v,'Size',UDim2.fromOffset(11*plan.Scale,11*plan.Scale))
+ -- Remove native panel fills throughout this page. Their old sibling header
+ -- and footer backgrounds otherwise cover the smaller rounded skin.
+ for _,v in ipairs(descendants(self.Menu))do if gui(v)and(under(v,record.Node)or not under(v,self.Contents))then
+  local scope=under(v,record.Items)and'page'or'shared'
+  self:Write(v,'BackgroundTransparency',1,scope,true);self:Write(v,'BorderSizePixel',0,scope)
+  local stroke=v:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,scope,true)end
+  if under(v,record.Items)and(v:IsA('ImageLabel')or v:IsA('ImageButton'))then self:Write(v,'ScaleType',Enum.ScaleType.Fit)
+  elseif v:IsA('ImageLabel')then
+   -- Header/footer are sometimes textured ImageLabels rather than Frames.
+   -- Keep small native glyphs; suppress only their old large panel artwork.
+   local size=v.AbsoluteSize
+   if size.X>self.Plan.IconSize*3 and size.Y>self.Plan.Scale*4 then self:Write(v,'ImageTransparency',1,scope,true)end
   end
  end end
+ self:Grid(record)
  local controls=self:Controls(record)
  if controls.Title then
   self:Normalize(controls.Title,'shared');self:Write(controls.Title,'TextTransparency',1,'shared',true);self:Write(controls.Title,'BackgroundTransparency',1,'shared',true)
@@ -45111,7 +45202,7 @@ function Shop:Page(record)
   if dedicated then self:Normalize(root,'shared');self:Rect(root,plan.Limit,'shared')end
   self:Write(caption,'TextTransparency',1,'shared',true);self:Write(caption,'BackgroundTransparency',1,'shared')
   for _,v in ipairs(descendants(root or record.Node))do
-   if v~=caption and v:IsA('TextLabel')and v.Text:match('%d+%s*/%s*%d+')then
+   if v~=caption and (v:IsA('TextLabel')or v:IsA('TextButton'))and v.Text:match('%d+%s*/%s*%d+')then
     count=v.Text;self:Watch(v,'Text');self:Write(v,'TextTransparency',1,'shared',true)
    end
    if dedicated and gui(v)then
@@ -47231,9 +47322,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.84: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.85: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.84 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.85 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -95441,7 +95532,10 @@ function Loop:FlushReleases()
         local due=first and(first.Frame and self.Frame>=first.Frame or first.Time and now>=first.Time)
         if due then
             if self:Valid(session)then
-                local owned=(self.Context.MarkerOwned or self.Context.Owned)(session.Root)
+                -- A replicated PartOwner marker can arrive before simulation
+                -- ownership. Release immediately only after both facts agree;
+                -- the bounded handoff timeout still recovers missing replies.
+                local owned=self.Context.Owned(session.Root)==true
                 if Handoff.CanRelease(session,self.Frame,now,owned)and self:Release(session)then
                     Handoff.Released(session,self.Frame,now,self.Context.PingSeconds(),self.Context.NativePhases==true and'Native'or self.Context.LowLatency==true)
                     table.remove(queue,1)
@@ -95455,6 +95549,9 @@ function Loop:FlushReleases()
 end
 function Loop:Update(session,position,now,ping)
     local ctx=self.Context;local root=session.Root
+    -- Acquisition/channel pauses below must not retain an older capture's
+    -- settling frame when ownership was lost during that pause.
+    if not ctx.Owned(root)then session.CapturedFrame=nil end
     session.Position.Position=position
     if self.Excursion or self.CaptureAnchor then return end
     if not self.NativeTick then
@@ -95499,7 +95596,20 @@ function Loop:Update(session,position,now,ping)
     self:Physics(session)
     session.EKIAt=session.EKIAt or now+.6
     local networkOwned=ctx.NetworkOwned and ctx.NetworkOwned(root)or not ctx.NetworkOwned and ctx.Owned(root)
-    if ctx.EKIEnabled()and now>=session.EKIAt and networkOwned and not(ctx.SuppressEKI and ctx.SuppressEKI(session.Player))then
+    local ekiReady=not self.MaximumSpeed and now>=session.EKIAt
+    -- The old unconditional 600ms delay also ran after an already-confirmed
+    -- capture. In maximum-speed mode use the acknowledgement and a subsequent
+    -- solver frame at the hold destination instead of that arbitrary pause.
+    -- Marker-only ownership, an unpositioned target and a reacquiring target
+    -- cannot take this path.
+    if self.MaximumSpeed and networkOwned and ctx.Owned(root)and not root.Anchored then
+        session.CapturedFrame=session.CapturedFrame or self.Frame
+        local distance=(root.Position-position).Magnitude
+        if self.Frame>session.CapturedFrame and finite(distance)and distance<=6 then
+            ekiReady=true
+        end
+    else session.CapturedFrame=nil end
+    if ctx.EKIEnabled()and ekiReady and networkOwned and not(ctx.SuppressEKI and ctx.SuppressEKI(session.Player))then
         if not session.EKI then
             session.EKIOriginal=nil
             if ctx.ReadReplicationRoot then

@@ -116,6 +116,9 @@ def run_feature_checks(modules,runner,folder):
             run('pallet_cadence','local Cadence=(function()\n'+modules['PalletCadence']+'\nend)()\n'+read('pallet_cadence_body.luau'))
         run('pallet_ownership',read('kick_mock.luau')+'\nlocal Ownership=(function()\n'+modules['PalletOwnership']+'\nend)()\n'+read('pallet_ownership_body.luau'))
         loop_source='\nlocal Handoff=(function()\n'+modules['KickHandoff']+'\nend)()\nlocal Loop=(function(...)\n'+modules['KickLoop']+'\nend)(function(name)assert(name=="KickHandoff");return Handoff end)\n'
+        native_context=modules['Main'].split('tbl12.KickLoop=requireModule("KickLoop").Install(',1)[1].split('lib:OnUnload(function()tbl12.KickLoop:Dispose()',1)[0]
+        assert 'LowLatency=true'in native_context and 'NativePhases=true'not in native_context,'Kick still bypasses observed ownership phases'
+        assert 'tbl12.SNO(root,.65,valid,true)'in native_context,'Kick acquisition still accepts a stale owner marker without physical ownership'
         run('kick_channel',read('kick_mock.luau')+loop_source+read('kick_channel_body.luau'))
         run('kick_handoff',read('kick_mock.luau')+loop_source+read('kick_handoff_body.luau'))
         run('kick_eki',read('kick_mock.luau')+loop_source+read('kick_eki_body.luau'))

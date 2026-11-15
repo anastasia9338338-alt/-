@@ -30,11 +30,12 @@ for _,ping in ipairs({0,.05,.25,1,math.huge,-1,0/0})do
  check(s.Handoff.Deadline>=1.05 and s.Handoff.Deadline<=1.3,'Release deadline escaped its bounds')
 end
 if Loop then
- local function setup(fps,enabledInterval,throwRelease,lowLatency)
+ local function setup(fps,enabledInterval,throwRelease,lowLatency,batchSeconds,allowNoEdges)
   local sim=Sim.new();currentSim=sim;local t=target('Victim')
   local actor=newNode('Model','Actor',WORLD);local ar=newNode('Part','HumanoidRootPart',actor)
   local ah=newNode('Humanoid','Humanoid',actor);ah.Health=100
-  local player={};local wire,history={},{};local owner=false;local exposedReleases=0;local nextBatch=.05
+  batchSeconds=batchSeconds or .05
+  local player={};local wire,history={},{};local owner=false;local exposedReleases=0;local nextBatch=batchSeconds
   local grabs,pallet,releaseCalls=0,0,0;local enabled=true;local lastInterval=-1
   local function send(kind)wire[#wire+1]=kind;history[#history+1]={Kind=kind,At=sim.Now}end
   local ctx={RunService=sim.RunService,Clock=function()return sim.Now end,MaximumSpeed=true,LowLatency=lowLatency==true,
@@ -62,12 +63,12 @@ if Loop then
      if was and not owner then exposedReleases+=1 end
      table.clear(wire)
     end
-    nextBatch=nextBatch+.05
+    nextBatch=nextBatch+batchSeconds
    end
    check((session.Position.Position-(ar.Position+Vector3.new(0,15,0))).Magnitude<1e-6,'Handoff gate stopped the existing hold from following its actor')
   end
   sim:Run(2,fps)
-  check(exposedReleases>=2,'Batched transport never exposed a released owner at '..fps..' FPS')
+  check(allowNoEdges or exposedReleases>=2,'Batched transport never exposed a released owner at '..fps..' FPS')
   check(grabs>=3 and grabs<=(lowLatency and 61 or 21)and pallet>0,'Handoff gate stopped grabbing/pallet or recreated an FPS-sized flood')
   local previous
   for _,event in ipairs(history)do
@@ -82,7 +83,7 @@ if Loop then
   if throwRelease then check(releaseCalls>=2,'Failed release was never retried')end
   loop:Dispose();local before=grabs;sim.After=nil;sim:Run(.3,fps)
   check(grabs==before,'Disposed handoff sent a late grab')
-  return grabs
+  return grabs,exposedReleases
  end
  for _,fps in ipairs({20,30,60,120,240,1000})do setup(fps,false,false)end
  setup(240,true,false);setup(240,false,true)
@@ -91,6 +92,36 @@ if Loop then
   check(fast>=legacy,'Observed-state path became slower at '..fps..' FPS')
   local native=setup(fps,false,false,'Native');check(native>legacy*1.5,'Source-frame cadence failed to remove acknowledgement bottleneck')
  end
+ -- Fixed alternating commands can collapse into the same final command in
+ -- every network batch. Count exposed owner transitions rather than equating
+ -- request count with useful acquisition/release cycles.
+ for _,batch in ipairs({.1,.2})do
+  local oldRequests,oldEdges=setup(60,false,false,'Native',batch,true)
+  local requests,edges=setup(60,false,false,true,batch)
+  check(oldEdges==0 and edges>=5,'Acknowledged phases failed to escape native frame/batch aliasing')
+  check(requests<oldRequests,'Transport recovery relied on increasing request traffic')
+  print(string.format('INFO: simulated %.0fms batches / 2s: native %d requests, %d release edges; observed %d requests, %d release edges',batch*1000,oldRequests,oldEdges,requests,edges))
+ end
+end
+-- A stale owner marker cannot acknowledge an acquisition before actual local
+-- simulation ownership arrives. The bounded timeout is tested above.
+do
+ local sim=Sim.new();currentSim=sim;local t=target('StaleMarker');local actor=newNode('Part','Actor',WORLD)
+ local player={};local physics=false;local releases=0
+ local ctx={Clock=function()return sim.Now end,RunService=sim.RunService,MaximumSpeed=true,LowLatency=true,
+  Enabled=function()return true end,Selected=function()return true end,Targets=function()return{player}end,
+  Character=function()return t.Character,t.Torso,t.Humanoid end,LocalCharacter=function()return{},actor,t.Humanoid end,
+  OwnershipBusy=function()return false end,Owned=function()return physics end,NetworkOwned=function()return physics end,
+  MarkerOwned=function()return true end,Grab=function()end,Release=function()releases+=1 end,
+  PingSeconds=function()return .15 end,Height=function()return 15 end,RagdollEnabled=function()return false end,
+  StickyEnabled=function()return false end,EKIEnabled=function()return false end,
+  Collisions=function()end,Limbs=function()end,CancelRagdoll=function()end,RestoreMotors=function()end}
+ local loop=Loop.Install(ctx);local session=loop:Create(player,t.Character,t.Torso,t.Humanoid);session.Physics={}
+ sim:Run(.1,60)
+ check(releases==0,'Stale owner marker released a grab before physical ownership was observed')
+ physics=true;sim:Run(1/60,60)
+ check(releases==1,'Confirmed physics handoff retained an unnecessary acknowledgment delay')
+ loop:Dispose()
 end
 do
  local s={};Handoff.Grabbed(s,1,0,.1,true)

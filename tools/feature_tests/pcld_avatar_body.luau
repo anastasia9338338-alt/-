@@ -3,14 +3,23 @@ local oldIsA=Proxy.IsA
 function Proxy:IsA(class)
  local c=self.ClassName
  return oldIsA(self,class)or class=='LuaSourceContainer'and(c=='LocalScript'or c=='Script'or c=='ModuleScript')
-  or class=='JointInstance'and(c=='Motor6D'or c=='Weld')or class=='Constraint'and c=='AlignPosition'or class=='BodyMover'and c=='BodyVelocity'or class=='ControllerBase'and c=='GroundController'
+  or class=='JointInstance'and(c=='Motor6D'or c=='Weld')or class=='Constraint'and(c=='AlignPosition'or c=='VectorForce')or class=='BodyMover'and c=='BodyVelocity'or class=='ControllerBase'and c=='GroundController'
+  or class=='Clothing'and(c=='Shirt'or c=='Pants')or class=='DataModelMesh'and c=='SpecialMesh'or class=='Accoutrement'and c=='Accessory'
 end
 function Proxy:Clone()
  if self.Archivable==false then return end
- local copy=newNode(self.ClassName,self.Name)
- for k,v in pairs(self._props)do if k~='Parent'and not(type(v)=='table'and v.Connections)then copy[k]=v end end
- for _,child in ipairs(self:GetChildren())do local c=child:Clone();if c then c.Parent=copy end end
- return copy
+ local twins={}
+ local function copy(source)
+  local twin=newNode(source.ClassName,source.Name);twins[source]=twin
+  for k,v in pairs(source._props)do if k~='Parent'and not(type(v)=='table'and v.Connections)then twin[k]=v end end
+  for _,child in ipairs(source:GetChildren())do if child.Archivable~=false then copy(child).Parent=twin end end
+  return twin
+ end
+ local root=copy(self)
+ -- Roblox retargets cloned references within the subtree, retaining references
+ -- outside it. This is exactly why external WeldConstraint.Part1 is dangerous.
+ for _,twin in pairs(twins)do for k,v in pairs(twin._props)do if k~='Parent'and twins[v]then twin[k]=twins[v]end end end
+ return root
 end
 function Proxy:GetScale()return self._scale or 1 end
 function Proxy:ScaleTo(value)
@@ -29,7 +38,15 @@ local function avatar(world,name,x)
  joint(c,t,head,CFrame.new(0,1,0),CFrame.new(0,-.5,0))
  for _,side in ipairs({-1,1})do local arm=add(c,'Part',side<0 and'Left Arm'or'Right Arm');arm.Size=Vector3.new(1,2,1);joint(c,t,arm,CFrame.new(side*1.5,0,0))end
  for _,side in ipairs({-1,1})do local leg=add(c,'Part',side<0 and'Left Leg'or'Right Leg');leg.Size=Vector3.new(1,2,1);leg.CFrame=r.CFrame*CFrame.new(side*.5,-2,0);joint(c,t,leg,CFrame.new(side*.5,-1,0),CFrame.new(0,1,0))end
- local h=add(c,'Humanoid');h.Health=100;h.RootPart=r
+ local h=add(c,'Humanoid');h.Health=100;h.RootPart=r;h.WalkToPart=r
+ local face=add(head,'Decal','face');face.Transparency=.2
+ -- WeldConstraint inherits Instance, not Constraint or JointInstance. Clone
+ -- retains external references: an anchored visual can otherwise weld a live root.
+ local external=add(world,'Part','LiveExternal/'..name);external.Anchored=false
+ local weld=add(t,'WeldConstraint','ExternalVisualWeld');weld.Part0=t;weld.Part1=external;weld.Enabled=true
+ local object=add(c,'ObjectValue','LiveReference');object.Value=external
+ local selection=add(c,'SelectionBox','InheritedSelection');selection.Adornee=external
+ local force=add(t,'VectorForce','InheritedForce');force.Attachment0=add(r,'Attachment');force.Enabled=true
  add(c,'Shirt').ShirtTemplate='rbxassetid://original-clothing'
  local hat=add(c,'Accessory','Hat');local handle=add(hat,'Part','Handle');handle.CFrame=r.CFrame*CFrame.new(0,3,0);local mesh=add(handle,'SpecialMesh');mesh.MeshId='rbxassetid://original-mesh'
  local j=add(c,'Weld');j.Part0=head;j.Part1=handle;j.C0=CFrame.new(0,1.5,0);j.C1=CFrame.new()
@@ -54,6 +71,14 @@ do
  check(me.Character.Archivable==false and other.Character.Archivable==false,'Archivable changed')
  for _,part in ipairs(r.Parts)do check(part.Part.Size==part.Source.Size,'A skin part/accessory differs from its source size')end
  local clone=r.Model;check(clone.Shirt.ShirtTemplate=='rbxassetid://original-clothing'and clone.Head.Color==head.Color,'Skin appearance lost')
+ check(not clone:FindFirstChild('ExternalVisualWeld',true),'External WeldConstraint remains and can connect visual to live assembly')
+ check(not clone:FindFirstChild('LiveReference',true)and not clone:FindFirstChild('InheritedSelection',true)and not clone:FindFirstChild('InheritedForce',true),'Clone retains external references or active inherited contents')
+ check(other.Character.Torso.ExternalVisualWeld.Part1.Parent==w and other.Character.Torso.ExternalVisualWeld.Enabled,'Source external weld was modified')
+ check(math.abs(clone.Torso.Transparency*clone.PCLDColors.FillTransparency-conf.FillTransparency)<1e-6 and clone.HumanoidRootPart.Transparency==1,'Visible clone skin is opaque instead of a ghost')
+ check(math.abs(clone.Head.face.Transparency-(.2+.8*math.sqrt(conf.FillTransparency)))<1e-6,'Face decal stays opaque over ghost skin')
+ for _,v in ipairs(clone:GetDescendants())do for key,value in pairs(v._props)do
+  if key~='Parent'and type(value)=='table'and value._class then check(value==clone or value:IsDescendantOf(clone),'Clone retains a live external object reference in '..v.Name..'.'..key)end
+ end end
  check(clone.Hat.Handle.SpecialMesh.MeshId=='rbxassetid://original-mesh','Accessory skin lost')
  check(not clone:FindFirstChild('AstralHelper'),'Helper geometry distorts silhouette size')
  check(r.Scale==1 and clone.Head.Size==head.Size,'Avatar was stretched to detector height')
@@ -70,7 +95,18 @@ do
  clone.Torso.Anchored=false;clone.Torso.Massless=false
  check(clone.Torso.Anchored and clone.Torso.Massless,'Visual copy acquires physical mass or becomes unanchored')
  clone.Humanoid.EvaluateStateMachine=true;check(clone.Humanoid.EvaluateStateMachine==false,'Humanoid collision/force controller re-enabled')
+ local injected=add(clone.Torso,'WeldConstraint','InjectedVisualWeld');injected.Part0=clone.Torso;injected.Part1=other.Root
+ check(not injected.Parent,'Engine-added physical content survives on visual clone')
  check(r.Highlight.FillColor==conf.FillColor and r.Highlight.OutlineColor==conf.OutlineColor,'Silhouette colors ignored')
+ conf.FillTransparency=.85;a:Render()
+ check(math.abs(clone.Torso.Transparency*clone.PCLDColors.FillTransparency-.85)<1e-6 and math.abs(clone.Head.face.Transparency-(.2+.8*math.sqrt(.85)))<1e-6,'Transparency settings do not update body and decals')
+ check(head.Transparency==0 and head.face.Transparency==.2,'Ghost transparency changed live source appearance')
+ head.face.Transparency=1;head.Transparency=1;a:Render()
+ check(clone.Head.Transparency==1 and clone.Head.face.Transparency==1,'Originally hidden skin or decals became visible')
+ head.face.Transparency=.2;head.Transparency=0
+ conf.FillTransparency=0;a:Render()
+ check(clone.Torso.Transparency==0 and clone.PCLDColors.FillTransparency==0,'User opacity=0 does not remain explicit')
+ conf.FillTransparency=.6;a:Render()
  local pos=clone.Head.CFrame;local realRoot=other.Root.CFrame;local sensorFrame=other.Detector.CFrame
  head.CFrame=CFrame.new(900,900,900);other.Root.CFrame=CFrame.new(-300,-300,-300);render:Fire(1/60);a:Render()
  check((clone.Head.Position-pos.Position).Magnitude<1e-6,'Live ragdoll/desync pose moves stationary server PCLD')
@@ -126,4 +162,4 @@ do
  check((visual.Model.Head.Position-fixed).Magnitude==0,'Independent render callback moves avatar outside native PCLD update')
  a:Dispose()
 end
-print('PASS: '..checks..' 1:1 PCLD size, inert humanoid/collision guards, same-frame native motion, skin and lifecycle checks (mocked)')
+print('PASS: '..checks..' 1:1 PCLD size, inert humanoid/collision guards, external-weld stripping, ghost skin/decals, same-frame native motion and lifecycle checks (mocked)')

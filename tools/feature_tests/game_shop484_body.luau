@@ -1,3 +1,9 @@
+-- Match Roblox's non-GuiObject layout/constraint classes in this fixture.
+local originalIsA=Node.IsA
+function Node:IsA(class)
+ if class=='GuiObject'and(self.ClassName=='UIPadding'or self.ClassName=='UISizeConstraint')then return false end
+ return originalIsA(self,class)
+end
 local playerGui=Instance.new('Folder');playerGui.Name='PlayerGui'
 local gui=Instance.new('ScreenGui',playerGui);gui.Name='MenuGui'
 local menu=Instance.new('Frame',gui);menu.Name='Menu';menu.Size=UDim2.fromScale(.96,.96);menu.Visible=true;menu.ZIndex=3
@@ -70,12 +76,48 @@ assert(not oldLayer.Parent,'Replacing the native menu leaves a background ghost'
 local nextMenu=Instance.new('Frame',gui);nextMenu.Name='Menu';nextMenu.Visible=true
 local nextPages=Instance.new('Folder',nextMenu);nextPages.Name='TabContents'
 local nextToys=Instance.new('Frame',nextPages);nextToys.Name='Toys';nextToys.Visible=true
-local nextList=Instance.new('ScrollingFrame',nextToys);nextList.Name='Contents'
-Instance.new('UIGridLayout',nextList);playerGui.DescendantAdded:Fire(nextMenu);advance(.03)
+-- The screenshot regression: outer Contents is a Frame; the real grid lives
+-- two levels deeper. Its fixed toy previews, padding, min size and UIScale
+-- previously remained native-sized while only the surrounding chrome shrank.
+local nextList=Instance.new('Frame',nextToys);nextList.Name='Contents'
+local viewport=Instance.new('ScrollingFrame',nextList);viewport.Name='InventoryScroll';viewport.Size=UDim2.fromScale(.5,1)
+local canvas=Instance.new('Frame',viewport);canvas.Name='Canvas';canvas.Size=UDim2.fromScale(.5,1)
+local nestedScale=Instance.new('UIScale',canvas);nestedScale.Scale=1.8
+local pad=Instance.new('UIPadding',canvas);pad.PaddingLeft=UDim.new(0,40);pad.PaddingRight=UDim.new(0,40)
+local nestedGrid=Instance.new('UIGridLayout',canvas);nestedGrid.CellSize=UDim2.fromOffset(100,100);nestedGrid.CellPadding=UDim2.fromOffset(12,12);nestedGrid.FillDirectionMaxCells=5
+local nestedCells={}
+for i=1,30 do
+ local cell=Instance.new('ImageButton',canvas);cell.Name='Toy'..i;cell.Size=UDim2.fromOffset(100,100);cell.Image='rbxassetid://toy'..i;cell.LayoutOrder=i
+ local minimum=Instance.new('UISizeConstraint',cell);minimum.MinSize=Vector2.new(100,100);minimum.MaxSize=Vector2.new(500,500)
+ local wrapper=Instance.new('Frame',cell);wrapper.Name='Thumbnail';wrapper.Size=UDim2.fromOffset(100,100)
+ local image=Instance.new(i%2==0 and'ViewportFrame'or'ImageLabel',wrapper);image.Size=UDim2.fromOffset(120,120);image.Position=UDim2.fromOffset(-10,-10)
+ local favorite=Instance.new('ImageButton',cell);favorite.Name='StarButton';favorite.Visible=false
+ nestedCells[i]={Cell=cell,Minimum=minimum,Wrapper=wrapper,Image=image,Favorite=favorite}
+end
+local oldHeader=Instance.new('ImageLabel',nextMenu);oldHeader.Name='Background';oldHeader.Size=UDim2.fromOffset(600,70);oldHeader.Image='rbxassetid://panel'
+local oldFooter=Instance.new('ImageLabel',nextToys);oldFooter.Name='LimitPanel';oldFooter.Size=UDim2.fromOffset(600,45);oldFooter.Image='rbxassetid://panel'
+local nextLimit=Instance.new('TextButton',oldFooter);nextLimit.Text='Лимит игрушек';nextLimit.Size=UDim2.fromOffset(250,25)
+local nextCount=Instance.new('TextLabel',oldFooter);nextCount.Text='0/100'
+playerGui.DescendantAdded:Fire(nextMenu);advance(.03)
 assert(controller.Menu==nextMenu and controller.Active and controller.Layer.Visible,'Native shop does not return after menu replacement/respawn')
+assert(controller.Pages[1].List==viewport,'Outer Contents Frame was selected instead of the scrolling viewport')
+assert(nestedGrid.FillDirectionMaxCells==10 and nestedGrid.CellSize.X.Offset<31,'Nested real item grid remains five columns/native-sized')
+assert(viewport.Size.X.Offset==312 and canvas.Size.X.Offset==312 and nestedScale.Scale==1,'Inner native canvas still cuts the compact grid in half')
+local usable=canvas.AbsoluteSize.X-pad.PaddingLeft.Offset-pad.PaddingRight.Offset
+assert(nestedGrid.CellSize.X.Offset*10+nestedGrid.CellPadding.X.Offset*9<=usable+.001,'Ten rendered columns cannot fit available canvas width')
+for i,r in ipairs(nestedCells)do
+ assert(r.Cell.AbsoluteSize.X<31 and r.Minimum.MinSize==Vector2.zero,'Native minimum constraint keeps a toy oversized')
+ assert(r.Wrapper.AbsoluteSize.X<31 and r.Image.AbsoluteSize.X<31 and r.Image.Position.X.Offset==0,'Actual thumbnail still overflows the compact native cell')
+ assert(r.Cell.ClipsDescendants and r.Favorite.Visible and r.Favorite.Size.X.Offset==11,'Tile clipping/favorite geometry is missing')
+ assert(r.Cell.Parent==canvas and r.Cell.LayoutOrder==i,'Toy order or original callback parent changed')
+end
+assert(oldHeader.BackgroundTransparency==1 and oldHeader.ImageTransparency==1 and oldFooter.ImageTransparency==1,'Old native header/footer panel covers the rounded reference skin')
+assert(nextLimit.TextTransparency==1 and controller.TextCopies.ToyLimitCount.Text=='0/100','Native TextButton footer is not replaced cosmetically')
+canvas.Size=UDim2.fromScale(.5,1);nestedGrid.CellSize=UDim2.fromOffset(100,100);nestedCells[1].Image.Size=UDim2.fromOffset(120,120);advance(.03)
+assert(canvas.Size.X.Offset==312 and nestedGrid.CellSize.X.Offset<31 and nestedCells[1].Image.Size.X.Scale==1,'Native relayout reintroduces large nested thumbnails')
 local listeners={};for _,map in pairs(controller.Watches)do for _,c in pairs(map)do listeners[#listeners+1]=c end end
 local layer=controller.Layer;local renderConnection=controller.IconConnection;controller:Dispose()
 assert(not renderConnection or not renderConnection.Connected,'Mirror render observer survives unload')
 for _,c in ipairs(listeners)do assert(not c.Connected,'Property observer survives unload')end
 assert(not layer.Parent,'Shop skin survives unload')
-print('PASS: reference rectangles, Folder/streaming discovery, native layout overwrite repair, white icons, original item/category/favorite actions, counter, Settings and unload')
+print('PASS: reference rectangles, nested rendered ten-column grid/thumbnail fit, Folder/streaming discovery, native layout overwrite repair, white icons, original item/category/favorite actions, counter, Settings and unload')
