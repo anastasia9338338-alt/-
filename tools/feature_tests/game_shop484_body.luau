@@ -1,7 +1,24 @@
 local originalIsA=Node.IsA
 function Node:IsA(class)
- if class=='GuiObject'and(self.ClassName=='UIPadding'or self.ClassName=='UISizeConstraint')then return false end
+ if class=='GuiObject'and(self.ClassName=='UIPadding'or self.ClassName=='UISizeConstraint'or self.ClassName=='UIAspectRatioConstraint')then return false end
  return originalIsA(self,class)
+end
+-- Engine constraint semantics: ScaleWithParentSize has the parent's maximum
+-- bounds; FitWithinMaxSize uses the requested own bounds (Creator Hub AspectType).
+local originalIndex=mt.__index
+mt.__index=function(node,key)
+ local value=originalIndex(node,key)
+ if key=='AbsoluteSize'and node:IsA('GuiObject')then
+  local aspect=node:FindFirstChildOfClass('UIAspectRatioConstraint')
+  if aspect then
+   local box=value
+   if aspect.AspectType==Enum.AspectType.ScaleWithParentSize and node.Parent then box=node.Parent.AbsoluteSize end
+   local ratio=aspect.AspectRatio or 1
+   local width=math.min(box.X,box.Y*ratio);value=Vector2.new(width,width/ratio)
+  end
+  for _,limit in ipairs(node:GetChildren())do if limit:IsA('UISizeConstraint')and limit.MinSize then value=Vector2.new(math.max(value.X,limit.MinSize.X),math.max(value.Y,limit.MinSize.Y))end end
+ end
+ return value
 end
 local function add(parent,class,name)local n=Instance.new(class,parent);n.Name=name;return n end
 local playerGui=Instance.new('Folder');playerGui.Name='PlayerGui'
@@ -12,14 +29,18 @@ local nativeScale=add(menu,'UIScale','NativeScale');nativeScale.Scale=1
 local pages=Instance.new('Folder',menu);pages.Name='TabContents'
 local toys=add(pages,'Frame','Toys');toys.Visible=false;toys.Size=UDim2.fromScale(1,1)
 local list=add(toys,'ScrollingFrame','Contents');local grid=add(list,'UIGridLayout','Grid');grid.CellSize=UDim2.fromOffset(100,100)
-local toy=add(list,'ImageButton','Chair');toy.Image='rbxassetid://chair';toy.ImageRectOffset=Vector2.new(20,30)
+local toy=add(list,'ImageButton','Chair');toy.Image='rbxassetid://star';toy.ImageTransparency=1;toy.ImageRectOffset=Vector2.new(20,30)
+local art=add(toy,'ImageLabel','Preview');art.Image='rbxassetid://chair'
+local nativeAspect=add(toy,'UIAspectRatioConstraint','Aspect');nativeAspect.AspectType=Enum.AspectType.ScaleWithParentSize;nativeAspect.DominantAxis=Enum.DominantAxis.Height;nativeAspect.AspectRatio=1
+local minA=add(toy,'UISizeConstraint','MinA');minA.MinSize=Vector2.new(80,80)
+local minB=add(toy,'UISizeConstraint','MinB');minB.MinSize=Vector2.new(90,90)
 local toyStar=add(toy,'ImageLabel','Star');toyStar.Image='rbxassetid://star';toyStar.Visible=false
 local title=add(toys,'TextLabel','Title');title.Text='Ваши игрушки';title.TextScaled=true;title.TextStrokeTransparency=0
 local cats=add(toys,'Frame','Categories');local category={};for i=1,6 do category[i]=add(cats,'ImageButton','Category'..i);category[i].Image='rbxassetid://'..i end
 local nav=add(menu,'Frame','Tabs');local navButtons={};for i=1,6 do navButtons[i]=add(nav,'ImageButton','Tab'..i);navButtons[i].Image='rbxassetid://nav'..i end
 local chat=add(menu,'ImageButton','ChatButton');chat.Image='rbxassetid://chat'
 local globalStar=add(menu,'ImageButton','Favorites');globalStar.Image='rbxassetid://favorite'
-local footer=add(gui,'Frame','ToyCountFooter');local caption=add(footer,'TextLabel','Caption');caption.Text='Limit';caption.LocalizedText='Лимит игрушек';caption.TextStrokeTransparency=0;caption.AutoLocalize=true
+local footer=add(gui,'Frame','BottomBar');local caption=add(footer,'TextLabel','Caption');caption.Text='Limit';caption.LocalizedText='Лимит игрушек';caption.TextStrokeTransparency=0;caption.AutoLocalize=true
 local count=add(footer,'TextLabel','Count');count.Text='5/100';local nativeBar=add(footer,'Frame','Progress');local footerStroke=add(nativeBar,'UIStroke','Border');footerStroke.Transparency=0
 local shop=add(pages,'Frame','ToyShop');shop.Visible=false;shop.Size=UDim2.fromScale(1,1)
 local shopTitle=add(shop,'TextLabel','Title');shopTitle.Text='Магазин игрушек';shopTitle.TextScaled=true;shopTitle.TextStrokeTransparency=0
@@ -33,13 +54,18 @@ local hue=add(picker,'TextBox','Hue');hue.Text='160';hue.Position=UDim2.fromOffs
 local gradient=add(picker,'UIGradient','HueGradient');gradient.Color=ColorSequence.new(Color3.new(1,0,0),Color3.new(0,1,0))
 local originalGradient=gradient.Color
 local swatch=add(picker,'TextButton','ColorSwatch');swatch.BackgroundColor3=Color3.new(1,0,0);local originalSwatch=swatch.BackgroundColor3
+local settingsFraction=add(picker,'TextLabel','Fraction');settingsFraction.Text='5/100';settingsFraction.TextTransparency=0
 local presetGrid=add(picker,'UIGridLayout','ColorPresets');presetGrid.CellSize=UDim2.fromOffset(40,40)
 local presetCellSize=presetGrid.CellSize
 local destroy=add(pages,'Frame','ToyDestroy');destroy.Visible=false;destroy.Size=UDim2.fromScale(1,1)
 local destroyButton=add(destroy,'TextButton','DestroySelected');destroyButton.Text='Delete';destroyButton.Position=UDim2.fromOffset(100,100);destroyButton.Size=UDim2.fromOffset(180,50)
 local currency=add(pages,'Frame','Coins');currency.Visible=false;currency.Size=UDim2.fromScale(1,1)
+local currencyFooter=add(currency,'Frame','Footer');local footerAction=add(currencyFooter,'TextButton','CurrencyAction');footerAction.Text='Purchase';footerAction.TextTransparency=0
 local buy=add(currency,'TextButton','BuyCoins');buy.Text='Buy Coins';buy.Position=UDim2.fromOffset(200,200);buy.Size=UDim2.fromOffset(150,70)
-local library={Toggles={},ScreenGui=Instance.new('ScreenGui')};local box={}
+local library={Toggles={},ScreenGui=Instance.new('ScreenGui'),Registry={},Scheme={WhiteColor=Color3.new(1,1,1),BodyTopColor=Color3.fromRGB(24,26,29),BodyBottomColor=Color3.fromRGB(21,23,26),MainColor=Color3.fromRGB(37,39,42),FontColor=Color3.fromRGB(231,234,238),GlassTransparency=.55,RowTransparency=.92}};local box={}
+function library:AddToRegistry(node,properties)self.Registry[node]=properties end
+function library:RemoveFromRegistry(node)self.Registry[node]=nil end
+function library:UpdateColorsUsingRegistry()for node,properties in pairs(self.Registry)do for key,value in pairs(properties)do node[key]=type(value)=='function'and value()or self.Scheme[value]end end end
 function box:AddToggle(id,info)local t={Value=info.Default};function t:SetValue(v)self.Value=v;info.Callback(v)end;library.Toggles[id]=t;return t end
 function box:AddLabel(text)return{SetText=function(self,v)self.Text=v end,Text=text}end
 local input={InputBegan=signal(),Held={}};function input:GetFocusedTextBox()return self.Focused end;function input:IsKeyDown(key)return self.Held[key.Name]==true end
@@ -68,11 +94,14 @@ end
 local clicks=0;toy.Activated:Connect(function()clicks+=1 end);card.Activated:Connect(function()clicks+=10 end);destroyButton.Activated:Connect(function()clicks+=100 end);buy.Activated:Connect(function()clicks+=1000 end)
 controller:Sync();switch(toys)
 check(grid.FillDirectionMaxCells==10 and grid.CellSize.X.Offset>25,'Ten-column inventory remains tiny')
-check(toy.Image=='rbxassetid://chair'and toy.ImageRectOffset==Vector2.new(20,30)and toy.Parent==list,'Original image atlas/path changed')
+check(toy.Image=='rbxassetid://star'and toy.ImageRectOffset==Vector2.new(20,30)and toy.Parent==list,'Original image atlas/path changed')
 check(not toyStar.Visible,'Per-item favorite stars were not removed')
 check(title.TextTransparency==1 and title.TextStrokeTransparency==1,'Native outlined inventory heading leaks')
 check(controller.TextCopies.ToyLimitCount.Text=='5/100'and controller.Panels.Limit.Node.Visible,'Owned Toy Limit/count missing')
-check(controller.HasFavorite and globalStar.Visible,'Global favorite missing')
+check(not controller.HasFavorite and not globalStar.Visible and not controller.TextCopies.FavoritesStar,'Global top-right star was not removed')
+check(toy.AbsoluteSize.X<=controller.Plan.Cell+.001 and minA.MinSize==Vector2.zero and minB.MinSize==Vector2.zero and nativeAspect.AspectType==Enum.AspectType.FitWithinMaxSize,'Native parent-relative aspect or duplicate minimum breaks ten-column cell fit')
+check(toy.AbsoluteSize.X*10+controller.Plan.Gap*9<=controller.Plan.Grid.W+.001,'Ten rendered cell widths do not fit viewport')
+check(controller.Panels.Body.Node.BackgroundColor3==library.Scheme.WhiteColor and controller.Panels.Body.Node.BackgroundTransparency==library.Scheme.GlassTransparency and controller.Panels.Body.Node.AstralShopGradient.Color.Keypoints[1].Value==library.Scheme.BodyTopColor,'Shop does not use Astral glass gradient/opacity')
 check(chat.Visible and chat.Position.Y.Offset>nav.Position.Y.Offset,'Detached native Chat tab is outside strip')
 local corner=nav:FindFirstChild('AstralShopCorner');check(corner~=nil,'Sidebar not rounded')
 toy.Activated:Fire();local inventoryWidth=grid.CellSize.X.Offset
@@ -88,6 +117,7 @@ local huePosition,hueSize=hue.Position,hue.Size
 switch(settings)
 check(price.TextScaled==true and price.TextSize==90,'Previous paid card modifications leaked across page transition')
 check(controller.TextCopies.YourToysTitle.Text=='Settings'and settingsTitle.TextTransparency==1,'Settings retains old giant title/theme')
+check(settingsFraction.TextTransparency==0,'Settings fraction was mistaken for an inventory count')
 check(hue.Text=='160'and hue.Position==huePosition and hue.Size==hueSize and gradient.Color==originalGradient and swatch.BackgroundColor3==originalSwatch and presetGrid.CellSize==presetCellSize,'HSV geometry/values/gradient were flattened')
 check(settings:FindFirstChild('AstralPanelScale')~=nil and settings.Position.X.Offset+1e-5>=controller.Plan.Body.X,'Settings content not proportionally contained')
 local settingsScale=settings:FindFirstChild('AstralPanelScale')
@@ -95,7 +125,7 @@ switch(destroy)
 check(not settingsScale.Parent and hue.Position==huePosition and hue.Text=='160','Settings content/scale leaks into cleanup page')
 check(controller.TextCopies.YourToysTitle.Text=='Toy Cleanup','ToyDestroy remains unstyled')
 destroyButton.Activated:Fire()
-switch(currency);check(controller.TextCopies.YourToysTitle.Text=='Coins','Unknown native page not discovered/styled');buy.Activated:Fire()
+switch(currency);check(footerAction.TextTransparency==0,'Arbitrary native Footer action is mistaken for Toy Limit');check(controller.TextCopies.YourToysTitle.Text=='Coins','Unknown native page not discovered/styled');buy.Activated:Fire()
 check(clicks==1111 and card.Parent==shopList and hue.Parent==picker,'Original game handlers/paths lost')
 switch(toys);check(grid.CellSize.X.Offset==inventoryWidth,'Inventory changes size after full page round trip')
 count.Text='6/100';controller:Find();check(controller.TextCopies.ToyLimitCount.Text=='6/100','Footer count stale')
@@ -121,10 +151,14 @@ check(controller.LayoutPasses==passes,'Unchanged menu is rebuilt on every deferr
 check(not(controller.Watches[toy]and controller.Watches[toy].Size),'A per-item size observer causes repeated full inventory layouts')
 check(controller.TextCopies.ToyLimitCount.Parent==controller.Panels.Limit.Node and controller.Panels.Limit.Node.ClipsDescendants,'5/100 is outside its clipped Toy Limit frame')
 check(controller.TextCopies.ToyLimitLabel.TextTransparency==0,'Style hides its own footer during a repeated update')
+library.Scheme.FontColor=Color3.fromRGB(210,170,130);library.Scheme.GlassTransparency=.61;library.Scheme.BodyTopColor=Color3.fromRGB(31,32,33);library:UpdateColorsUsingRegistry()
+check(controller.Panels.Body.Node.BackgroundTransparency==.61 and controller.TextCopies.ToyLimitCount.TextColor3==library.Scheme.FontColor and controller.Panels.Body.Node.AstralShopGradient.Color.Keypoints[1].Value==library.Scheme.BodyTopColor,'Shop does not follow live Astral theme changes')
 quick.Clock.Activated:Fire();check(quick.Open and controller.Current.Quick and quick.Host.Visible,'Clock tab did not open')
 local addButton=quick.Host:FindFirstChild('AddItem');addButton.Activated:Fire()
+check(quick.Host.QuickItems.Chair.Item.Image=='rbxassetid://chair'and quick.Host.QuickItems.Chair.Item.ImageRectOffset==Vector2.zero,'Quick picker copied the favorite bitmap/atlas instead of item art')
 check(quick.Choosing and quick.Owned.Chair and not quick.Owned.Unowned,'Picker includes unavailable store items')
 quick.Host.QuickItems.Chair.Item.Activated:Fire()
+check(quick.Rows.Chair.Image.Image=='rbxassetid://chair'and quick.Rows.Chair.Image.ImageRectOffset==Vector2.zero,'Selected quick tile copied favorite artwork')
 check(quick.Selected.Chair and not quick.Choosing and quick.Rows.Chair.Bind.Size.X.Offset==quick.Rows.Chair.Image.Size.X.Offset,'Selected item bind does not match icon width')
 quick.Rows.Chair.Bind.Activated:Fire();check(library.IsPicking and quick.Picking=='Chair','Compact bind does not capture')
 input.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.K},false)
@@ -152,4 +186,5 @@ local watches={};for _,map in pairs(controller.Watches)do for _,connection in pa
 local layer=controller.Layer;controller:Dispose();check(not layer.Parent,'Style survives unload')
 for _,connection in ipairs(watches)do check(not connection.Connected,'Observer survives unload')end
 check(savedOptions.AstralShopQuickItems==nil,'Quick config options survive unload')
+check(next(library.Registry)==nil,'Owned shop theme entries survive unload')
 print('PASS: reference rectangles, '..checks..' current-sized all-page profiles, padded star-free cards, paid labels, HSV, clipped footer, clock owned selection/binds/config/spawn and lifecycle (mocked)')

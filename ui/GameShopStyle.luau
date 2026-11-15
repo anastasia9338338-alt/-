@@ -90,13 +90,17 @@ function Shop:Rect(node,r,scope)
  if not gui(node)then return end
  self:Write(node,'AnchorPoint',Vector2.zero,scope,true)
  self:Write(node,'AutomaticSize',Enum.AutomaticSize.None,scope,true)
+ self:Write(node,'SizeConstraint',Enum.SizeConstraint.RelativeXY,scope,true)
  local parent=parentGui(node);local automatic=parent and(parent:FindFirstChildOfClass('UIListLayout')or parent:FindFirstChildOfClass('UIGridLayout'))
  self:Write(node,'Position',UDim2.fromOffset(r.X,r.Y),scope,not automatic)
  self:Write(node,'Size',UDim2.fromOffset(r.W,r.H),scope,true)
  local aspect=node:FindFirstChildOfClass('UIAspectRatioConstraint')
- if aspect then self:Write(aspect,'AspectRatio',r.W/math.max(r.H,.001),scope,true)end
- local limit=node:FindFirstChildOfClass('UISizeConstraint')
- if limit then self:Write(limit,'MinSize',Vector2.zero,scope,true);self:Write(limit,'MaxSize',Vector2.new(1e6,1e6),scope,true)end
+ if aspect then
+  self:Write(aspect,'AspectType',Enum.AspectType.FitWithinMaxSize,scope,true)
+  self:Write(aspect,'DominantAxis',Enum.DominantAxis.Width,scope,true)
+  self:Write(aspect,'AspectRatio',r.W/math.max(r.H,.001),scope,true)
+ end
+ for _,limit in ipairs(children(node))do if limit:IsA('UISizeConstraint')then self:Write(limit,'MinSize',Vector2.zero,scope,true);self:Write(limit,'MaxSize',Vector2.new(1e6,1e6),scope,true)end end
 end
 function Shop:Round(node,radius,scope)
  local corner=node:FindFirstChildOfClass('UICorner')
@@ -106,7 +110,7 @@ end
 function Shop:Text(node,size,scope)
  self:Write(node,'TextScaled',false,scope,true);self:Write(node,'TextWrapped',false,scope,true)
  self:Write(node,'FontFace',Font.fromEnum(Enum.Font.GothamBold),scope)
- self:Write(node,'TextSize',size,scope,true);self:Write(node,'TextColor3',C(247,247,247),scope)
+ self:Write(node,'TextSize',size,scope,true);self:Write(node,'TextColor3',self:ThemeColor('FontColor',C(231,234,238)),scope)
  self:Write(node,'TextXAlignment',Enum.TextXAlignment.Left,scope)
 end
 function Shop:Normalize(node,scope)
@@ -123,6 +127,34 @@ function Shop:Normalize(node,scope)
   if p==self.Menu then break end;p=p.Parent
  end
 end
+function Shop:ThemeColor(key,fallback)
+ local scheme=self.Context.Library.Scheme or{}
+ return scheme[key]or fallback
+end
+function Shop:RegisterTheme(node,properties)
+ if self.Context.Library.AddToRegistry then self.Context.Library:AddToRegistry(node,properties)end
+end
+function Shop:DestroyArtwork(node)
+ if not node then return end
+ if self.Context.Library.RemoveFromRegistry then
+  for _,child in ipairs(descendants(node))do self.Context.Library:RemoveFromRegistry(child)end
+  self.Context.Library:RemoveFromRegistry(node)
+ end
+ node:Destroy()
+end
+function Shop:PanelTheme(panel)
+ local scheme=self.Context.Library.Scheme or{}
+ panel.BackgroundColor3=self:ThemeColor('WhiteColor',C(255,255,255))
+ panel.BackgroundTransparency=tonumber(scheme.GlassTransparency)or .55
+ local gradient=panel:FindFirstChild('AstralShopGradient')
+ if not gradient then gradient=Instance.new('UIGradient');gradient.Name='AstralShopGradient';gradient.Rotation=90;gradient.Parent=panel end
+ local function colors()
+  return ColorSequence.new(self:ThemeColor('BodyTopColor',C(24,26,29)),self:ThemeColor('BodyBottomColor',C(21,23,26)))
+ end
+ gradient.Color=colors()
+ self:RegisterTheme(panel,{BackgroundColor3='WhiteColor',BackgroundTransparency='GlassTransparency'})
+ self:RegisterTheme(gradient,{Color=colors});self:Watch(gradient,'Color')
+end
 function Shop:Surface()
  if live(self.Layer)then return end
  local parent=self.Menu.Parent
@@ -131,7 +163,7 @@ function Shop:Surface()
  local layer=Instance.new('Frame');layer.Name='AstralGameShopSkin';layer.BackgroundTransparency=1;layer.BorderSizePixel=0;layer.Active=false;layer.Visible=false;layer.Parent=parent
  self.Layer=layer;self.LayerScale=Instance.new('UIScale');self.LayerScale.Parent=layer;self.Panels={};self.IconCopies={};self.IconMeta={};self.TextCopies={}
  for _,name in ipairs({'Sidebar','Title','Categories','Favorite','Body','Limit'})do
-  local panel=Instance.new('Frame');panel.Name=name;panel.BorderSizePixel=0;panel.Active=false;panel.BackgroundColor3=C(51,53,55);panel.BackgroundTransparency=name=='Body'and .18 or .24;panel.Parent=layer
+  local panel=Instance.new('Frame');panel.Name=name;panel.BorderSizePixel=0;panel.Active=false;panel.Parent=layer;self:PanelTheme(panel)
   local corner=Instance.new('UICorner');corner.Parent=panel;self.Panels[name]={Node=panel,Corner=corner}
  end
 end
@@ -143,6 +175,7 @@ function Shop:Draw()
  self.Layer.Position=UDim2.fromOffset(position.X-origin.X,position.Y-origin.Y)
  self.LayerScale.Scale=self.MenuScale or 1;self.Layer.Size=UDim2.fromOffset(self.Plan.Width,self.Plan.Height);self.Layer.ZIndex=self.Menu.ZIndex-1;self.Layer.Visible=true
  for name,panel in pairs(self.Panels)do
+  self:PanelTheme(panel.Node)
   local r=self.Plan[name];panel.Node.Position=UDim2.fromOffset(r.X,r.Y);panel.Node.Size=UDim2.fromOffset(r.W,r.H)
   panel.Corner.CornerRadius=UDim.new(0,r.Radius);panel.Node.ZIndex=self.Menu.ZIndex-1
   panel.Node.Visible=(name~='Favorite'or self.HasFavorite)and(name~='Categories'or self.HasCategories)and(name~='Limit'or self.ShowLimit)
@@ -155,7 +188,7 @@ function Shop:Bind(menu,contents)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()if self.Active and self.Plan and live(self.Layer)then self:Draw()end end)
  self.Bound[#self.Bound+1]=menu.Destroying:Connect(function()
-  self.Active=false;if self.Layer then self.Layer:Destroy();self.Layer=nil end;self:Queue()
+  self.Active=false;if self.Layer then self:DestroyArtwork(self.Layer);self.Layer=nil end;self:Queue()
  end)
  self:Watch(menu,'Size')
 end
@@ -203,7 +236,7 @@ local function footer(v,stop)
  local n=v
  while n and n~=stop do
   local name=fold(n.Name):gsub('[%s_%-]','')
-  if name:find('toylimit',1,true)or name:find('toyslimit',1,true)or name:find('toycount',1,true)or name:find('footer',1,true)then return n end
+  if name:find('toylimit',1,true)or name:find('toyslimit',1,true)or name:find('toycount',1,true)then return n end
   n=n.Parent
  end
  return nil
@@ -212,7 +245,7 @@ function Shop:HideText(node,scope)
  self:Write(node,'TextTransparency',1,scope,true);self:Write(node,'TextStrokeTransparency',1,scope,true)
 end
 function Shop:ResetArtwork()
- for _,map in ipairs({self.IconCopies or{},self.TextCopies or{},self.CardCopies or{}})do for _,v in pairs(map)do if v.Parent then v:Destroy()end end end
+ for _,map in ipairs({self.IconCopies or{},self.TextCopies or{},self.CardCopies or{}})do for _,v in pairs(map)do if v.Parent then self:DestroyArtwork(v)end end end
  self.IconCopies={};self.IconMeta={};self.TextCopies={};self.CardCopies={}
 end
 function Shop:Controls(record)
@@ -278,7 +311,7 @@ function Shop:Icon(node,r,scope)
  image.Position=UDim2.fromOffset(r.X,r.Y);image.Size=UDim2.fromOffset(r.W,r.H);image.Image=visual.Image
  image.ImageRectOffset=visual.ImageRectOffset;image.ImageRectSize=visual.ImageRectSize;image.ScaleType=Enum.ScaleType.Fit
  pcall(function()image.ResampleMode=Enum.ResamplerMode.Default end)
- image.ImageColor3=C(245,245,245);image.ImageTransparency=0;image.ZIndex=self.Menu.ZIndex-1;image.Visible=true
+ image.ImageColor3=self:ThemeColor('FontColor',C(231,234,238));self:RegisterTheme(image,{ImageColor3='FontColor'});image.ImageTransparency=0;image.ZIndex=self.Menu.ZIndex-1;image.Visible=true
  self.IconMeta[visual]={Button=node,Desired=r}
  self:Write(visual,'ImageTransparency',1,scope,true);self:Watch(visual,'Image');self:Watch(visual,'ImageRectOffset');self:Watch(visual,'ImageRectSize')
 end
@@ -309,7 +342,7 @@ function Shop:Label(key,text,r,size,right)
  if not label then label=Instance.new('TextLabel');label.Name=key;label.BackgroundTransparency=1;label.BorderSizePixel=0;label.Active=false;label.Parent=self.Layer;self.TextCopies[key]=label end
  label.Position=UDim2.fromOffset(r.X,r.Y);label.Size=UDim2.fromOffset(r.W,r.H)
  label.Text=text;label.TextSize=size;label.TextScaled=false;label.TextWrapped=false;label.AutoLocalize=false
- label.FontFace=Font.fromEnum(Enum.Font.GothamBold);label.TextColor3=C(248,248,248)
+ label.FontFace=Font.fromEnum(Enum.Font.GothamBold);label.TextColor3=self:ThemeColor('FontColor',C(231,234,238));self:RegisterTheme(label,{TextColor3='FontColor'})
  label.TextXAlignment=right and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left;label.ZIndex=self.Menu.ZIndex-1;label.Visible=true
 end
 function Shop:Button(node,r,scope)
@@ -352,7 +385,8 @@ function Shop:Grid(record)
  local grid;local score=-1
  for _,node in ipairs(descendants(record.Items))do
   if node:IsA('UIGridLayout')then
-   local count=0;for _,child in ipairs(children(node.Parent))do if gui(child)then count+=1 end end
+   local count,known=0,0;for _,child in ipairs(children(node.Parent))do if gui(child)then count+=1;if self.Context.Catalog and self.Context.Catalog[child.Name]then known+=1 end end end
+   count+=known*1000
    if count>score then grid=node;score=count end
   end
  end
@@ -433,30 +467,46 @@ function Shop:PanelContent(record)
   if gui(v)then
    if v:IsA('Frame')or v:IsA('ScrollingFrame')then self:Write(v,'BackgroundTransparency',1,'page',true)
    elseif v:IsA('TextBox')or button(v)then
-    if v:IsA('TextBox')then self:Write(v,'BackgroundColor3',C(51,53,55),'page')end;self:Write(v,'BackgroundTransparency',.18,'page')
+    if v:IsA('TextBox')then self:Write(v,'BackgroundColor3',self:ThemeColor('MainColor',C(37,39,42)),'page')end;self:Write(v,'BackgroundTransparency',(self.Context.Library.Scheme or{}).RowTransparency or .92,'page')
     self:Round(v,5,'page')
    end
    if v:IsA('TextLabel')or v:IsA('TextButton')or v:IsA('TextBox')then
     local t=tostring(v.Text or'')
-    if not t:match('^[RGBHSV]$')then self:Write(v,'TextColor3',C(245,245,245),'page')end
+    if not t:match('^[RGBHSV]$')then self:Write(v,'TextColor3',self:ThemeColor('FontColor',C(231,234,238)),'page')end
    end
   end
  end
 end
 function Shop:Footer(record)
  local count='';local root=self.GuiRoot or self.Menu.Parent
- for _,v in ipairs(descendants(root))do if not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))then
-  local text=textValue(v)
+ local nodes=descendants(root);local groups={}
+ local function nativeText(v)
+  return not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))
+ end
+ local function caption(v)
+  local value=textValue(v)
+  return value:find('лимит игруш',1,true)or value:find('toy limit',1,true)or value:find('toys limit',1,true)
+ end
+ for _,v in ipairs(nodes)do if nativeText(v)and caption(v)then
+  local parent=v.Parent
+  if gui(parent)and parent~=self.Menu and parent~=record.Node and not under(record.Items,parent)then groups[parent]=true end
+ end end
+ for _,v in ipairs(nodes)do if nativeText(v)then
   local footerRoot=footer(v,root)
-  local isFooter=footerRoot or text:find('лимит игруш',1,true)or text:find('toy limit',1,true)or text:find('toys limit',1,true)
+  local fraction=tostring(v.Text or''):match('^%s*%d+%s*/%s*%d+%s*$')~=nil
+  local associated=false
+  for group in pairs(groups)do if under(v,group)then associated=true;footerRoot=footerRoot or group;break end end
+  local outsideItems=not under(v,record.Items)
+  local visibleCounter=fraction and outsideItems and visible(v,root)and(record.Quick or record.Node.Name:lower()=='toys')
+  local isFooter=footerRoot or caption(v)or associated or visibleCounter
   if isFooter then
    self.FooterNodes=self.FooterNodes or{};self.FooterNodes[v]=true
-   if v.Text:match('^%s*%d+%s*/%s*%d+%s*$')then count=v.Text end
+   if fraction then count=v.Text end
    self:HideText(v,'shared');self:Watch(v,'Text');self:Watch(v,'AutoLocalize');self:Watch(v,'ContentText')
-   if footerRoot then for _,piece in ipairs(descendants(footerRoot))do if piece:IsA('UIStroke')then self:Write(piece,'Transparency',1,'shared',true)end;if gui(piece)then
-    self:Write(piece,'BackgroundTransparency',1,'shared',true)
-    if piece:IsA('ImageLabel')then self:Write(piece,'ImageTransparency',1,'shared',true)end
-   end end end
+   if footerRoot then for _,piece in ipairs(descendants(footerRoot))do
+    if piece:IsA('UIStroke')then self:Write(piece,'Transparency',1,'shared',true)end
+    if gui(piece)then self:Write(piece,'BackgroundTransparency',1,'shared',true);if piece:IsA('ImageLabel')then self:Write(piece,'ImageTransparency',1,'shared',true)end end
+   end end
    local p=v.Parent
    if gui(p)and p~=self.Menu and p~=record.Node then self:Write(p,'BackgroundTransparency',1,'shared',true);if p:IsA('ImageLabel')then self:Write(p,'ImageTransparency',1,'shared',true)end end
   end
@@ -527,27 +577,16 @@ function Shop:Page(record)
   controls.CategoryButtons={};controls.Favorite=nil
  end
 
- self.HasFavorite=controls.Favorite~=nil
- local categoryButtons={};for _,v in ipairs(controls.CategoryButtons)do if v~=controls.Favorite then categoryButtons[#categoryButtons+1]=v end end
+ local removedFavorite=controls.Favorite
+ self.HasFavorite=false
+ if removedFavorite then self:Write(removedFavorite,'Visible',false,'shared',true)end
+ local categoryButtons={}
+ for _,v in ipairs(controls.CategoryButtons)do
+  if v~=removedFavorite and not favoriteName(v)then categoryButtons[#categoryButtons+1]=v end
+ end
+ controls.Favorite=nil
  local categoryScope=under(controls.Categories,record.Node)and'page'or'shared'
  self:Group(categoryButtons,controls.Categories,plan.Categories,'row',categoryScope,record.Node)
- if controls.Favorite then
-  local favoriteScope=under(controls.Favorite,record.Node)and'page'or'shared'
-  self:Write(controls.Favorite,'Visible',true,favoriteScope,true);self:Write(controls.Favorite,'LayoutOrder',#categoryButtons+1,favoriteScope,true)
-  local parent=parentGui(controls.Favorite)
-  local categoryRoot=gui(controls.Categories)and controls.Categories or parentGui(categoryButtons[1])
-  if parent==categoryRoot and parent and parent~=record.Node and parent~=self.Menu then
-   local gap=plan.Favorite.X-(plan.Categories.X+plan.Categories.W)
-   self:Write(parent,'Size',UDim2.fromOffset(plan.Categories.W+gap+plan.Favorite.W,plan.Categories.H),nil,true)
-   self:Button(controls.Favorite,{X=plan.Favorite.X-plan.Categories.X,Y=0,W=plan.Favorite.W+gap,H=plan.Favorite.H},favoriteScope)
-  else self:Normalize(controls.Favorite,favoriteScope);self:Button(controls.Favorite,plan.Favorite,favoriteScope)end
-  self:Icon(controls.Favorite,plan.Favorite,favoriteScope)
-  -- The reference uses a hollow star. The original button remains the hit
-  -- target; only its artwork is replaced by an unclickable outline glyph.
-  for visual,meta in pairs(self.IconMeta)do if meta.Button==controls.Favorite then self.IconCopies[visual].Visible=false;meta.Hidden=true end end
-  self:Label('FavoritesStar','☆',{X=plan.Favorite.X,Y=plan.Favorite.Y,W=plan.Favorite.W,H=plan.Favorite.H},18*plan.Scale)
-  self.TextCopies.FavoritesStar.TextXAlignment=Enum.TextXAlignment.Center
- end
  if self.Quick then self.Quick:Mount(self.Menu,self.Contents);self.Quick:ConnectTabs(controls.Sidebar)end
  local side=plan.Sidebar
  if self.Quick then side={X=side.X,Y=side.Y,W=side.W,H=side.H*#controls.Sidebar/(#controls.Sidebar+1),Radius=side.Radius}end
@@ -616,7 +655,7 @@ function Shop:Detach()
  if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
  for _,c in ipairs(self.Bound)do c:Disconnect()end;self.Bound={}
  for _,map in pairs(self.Watches)do for _,c in pairs(map)do c:Disconnect()end end;self.Watches={}
- self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self.Layer:Destroy();self.Layer=nil end
+ self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self:DestroyArtwork(self.Layer);self.Layer=nil end
  self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
 end
 function Shop:SetEnabled(value)

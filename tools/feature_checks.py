@@ -43,6 +43,12 @@ def run_feature_checks(modules,runner,folder):
             ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
+    assert 'DecoyGucci'not in modules and 'tbl12.DecoyGucci'not in modules['Main'],'Removed YouDecoyGucci still runs'
+    for removed in ('Text="Kick Selected"','Text="Kick Server"','Text="Prepare Pallet"','Text="Copy Kick Info"','AddToggle("EKIToggle"','AddDropdown("KickServerMethod"'):
+        assert removed not in modules['Main'],('Removed target control remains',removed)
+    assert 'selectedPlayers,nil,false,nil,"Select Player"'in modules['Main'],'Target AddToList shortcut remains'
+    if 'TargetPanel'in modules:
+        run('target_panel488','local Panel=(function()\n'+modules['TargetPanel']+'\nend)()\n'+read('target_panel488_body.luau'))
     if 'GameShopStyle'in modules:
         run('game_shop484',read('ui_engine_mock.luau')+'\n'+read('ui_native_mock.luau')+'\nlocal Layout=(function()\n'+modules['ShopLayout']+'\nend)()\nlocal Quick=(function()\n'+modules['ShopQuickSpawn']+'\nend)()\nlocal Shop=(function(...)\n'+modules['GameShopStyle']+'\nend)(function(name)if name=="ShopQuickSpawn"then return Quick end;assert(name=="ShopLayout");return Layout end)\n'+read('game_shop484_body.luau'))
     if 'ShopLayout'in modules:
@@ -124,9 +130,12 @@ def run_feature_checks(modules,runner,folder):
         native_context=modules['Main'].split('tbl12.KickLoop=requireModule("KickLoop").Install(',1)[1].split('lib:OnUnload(function()tbl12.KickLoop:Dispose()',1)[0]
         assert 'LowLatency=true'in native_context and 'NativePhases=true'in native_context,'Kick lost its bounded native frame cadence'
         assert 'tbl12.SNO(root,.65,valid,true)'in native_context,'Kick acquisition still accepts a stale owner marker without physical ownership'
+        assert 'IntervalSeconds=function()'in native_context and 'KickInterval:CycleSeconds()'in native_context,'Loop MS is not connected to full-cycle timing'
+        assert modules['Main'].count('tbl12.KickInterval:BuildUI(')==1,'Loop MS settings are missing or duplicated'
         run('kick_channel',read('kick_mock.luau')+loop_source+read('kick_channel_body.luau'))
         run('kick_handoff',read('kick_mock.luau')+loop_source+read('kick_handoff_body.luau'))
         run('kick_eki',read('kick_mock.luau')+loop_source+read('kick_eki_body.luau'))
+        run('kick_interval',read('kick_mock.luau')+loop_source+'\nlocal Interval=(function()\n'+modules['KickInterval']+'\nend)()\n'+read('kick_interval_body.luau'))
         start=modules['Main'].index('tbl12.SNO = function');end=modules['Main'].index('tbl12.RNO = function',start)
         sno=modules['Main'][start:end]
         run('pallet_sno',read('kick_mock.luau')+'\n'+read('pallet_sno_prefix.luau')+'\n'+sno+'\n'+read('pallet_sno_body.luau'))

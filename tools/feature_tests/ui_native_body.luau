@@ -49,6 +49,12 @@ window.MainFrame.Size=UDim2.fromOffset(500,420);window:SetSidebarWidth(180)
 check(window:GetSidebarWidth()==52 and not Library.TabButtons[1].Label.Visible,"An old layout restored a full-width text sidebar")
 check(surface.Size.X.Offset==0 and Library.WindowContainer.Size.X.Offset==-53,"Sidebar and body resize independently and overlap")
 resetButton.Base.MouseButton1Click:Fire();check(resets==1,"Explicit Respawn button click no longer works")
+check(resetButton.PressIndicator and resetButton.PressIndicator.Parent==resetButton.AddonHost,"Press action is missing its right-side hand indicator")
+check(resetButton.PressIndicator.LayoutOrder==1000 and resetButton.PressIndicator.Size.X.Offset==18,"Press marker does not share the shortcut rail")
+check(resetButton.Type=="Button"and resetButton.Value==nil,"Press action was converted to a toggle")
+resetButton:SetDisabled(true);check(resetButton.PressIndicator[resetButton.PressIndicator:IsA("ImageLabel")and"ImageTransparency"or"TextTransparency"]==.8,"Disabled press marker stays active-looking")
+resetButton:SetDisabled(false)
+
 check(slider.Value==16 and dropdown.Value=="Pallet","Native controls lost declared defaults")
 local itemImages={}
 for _,node in ipairs(Library.ScreenGui:GetDescendants())do

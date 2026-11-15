@@ -1,6 +1,10 @@
 -- Local inventory shortcuts. Only selected owned native inventory IDs can spawn;
 -- one shared input observer, bounded requests and the existing game spawn API.
 local Quick={};Quick.__index=Quick
+local function theme(self,key,fallback)
+ local scheme=self.Context.Library.Scheme
+ return scheme and scheme[key]~=nil and scheme[key]or fallback
+end
 local function inside(node,root)return root and(node==root or node:IsDescendantOf(root))end
 local function create(class,parent,props)
  local v=Instance.new(class);for k,value in pairs(props or{})do v[k]=value end;v.Parent=parent;return v
@@ -50,7 +54,7 @@ function Quick:Mount(menu,contents)
  if self.Host and self.Host.Parent==menu then return end
  self:Detach()
  self.Host=create('Frame',menu,{Name='AstralQuickSpawnPage',BackgroundTransparency=1,Visible=false,Size=UDim2.fromScale(1,1),ZIndex=menu.ZIndex+2})
- self.Clock=create('TextButton',menu,{Name='AstralQuickClock',Text='◷',TextSize=21,FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=Color3.fromRGB(245,245,245),BackgroundColor3=Color3.fromRGB(51,53,55),BackgroundTransparency=.2,BorderSizePixel=0,ZIndex=menu.ZIndex+4})
+ self.Clock=create('TextButton',menu,{Name='AstralQuickClock',Text='◷',TextSize=21,FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=theme(self,'FontColor',Color3.fromRGB(231,234,238)),BackgroundColor3=theme(self,'MainColor',Color3.fromRGB(37,39,42)),BackgroundTransparency=theme(self,'RowTransparency',.92),BorderSizePixel=0,ZIndex=menu.ZIndex+4})
  round(self.Clock,7)
  if self.Context.Library.GetIcon and self.Context.Library.ApplyLucideIcon then
   local ok,icon=pcall(self.Context.Library.GetIcon,self.Context.Library,'clock')
@@ -91,8 +95,18 @@ function Quick:RefreshOwned(pages)
   for _,cell in ipairs(record.Grid.Parent:GetChildren())do if cell:IsA('GuiObject')then
    local name=self.Context.ResolveItem and self.Context.ResolveItem(cell)or cell.Name
    if type(name)=='string'and self.Context.Catalog and self.Context.Catalog[name]then
-    local image=(cell:IsA('ImageButton')or cell:IsA('ImageLabel'))and cell or cell:FindFirstChildWhichIsA('ImageLabel',true)or cell:FindFirstChildWhichIsA('ImageButton',true)
-    owned[name]={Name=name,Image=image and image.Image~=''and image.Image or self.Context.Catalog[name],Offset=image and image.ImageRectOffset,Rect=image and image.ImageRectSize}
+    -- The outer native ImageButton can be the favorite-star hit surface.
+    -- Canonical item artwork has priority; do not inherit its star atlas.
+    local picture=self.Context.Catalog[name]
+    if type(picture)~='string'then picture=''end
+    local offset,rect=Vector2.zero,Vector2.zero
+    if picture==''then
+     for _,node in ipairs(cell:GetDescendants())do
+      local n=node.Name:lower()
+      if(node:IsA('ImageLabel')or node:IsA('ImageButton'))and node.Image~=''and not n:find('star',1,true)and not n:find('favorit',1,true)and not n:find('background',1,true)then picture=node.Image;offset=node.ImageRectOffset;rect=node.ImageRectSize;break end
+     end
+    end
+    owned[name]={Name=name,Image=picture,Offset=offset,Rect=rect}
     self:KeyOption(name)
    end
   end end
@@ -154,7 +168,7 @@ function Quick:Render(plan)
  self.Rendering=true
  for _,v in ipairs(self.Host:GetChildren())do v:Destroy()end
  local s=plan.Scale;local r=plan.Grid
- local add=create('TextButton',self.Host,{Name='AddItem',Text=self.Choosing and'Назад'or'+ Добавить предмет',TextSize=math.max(8,8*s),FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=Color3.fromRGB(240,240,240),BackgroundColor3=Color3.fromRGB(60,62,65),BackgroundTransparency=.1,BorderSizePixel=0,Position=UDim2.fromOffset(r.X,r.Y),Size=UDim2.fromOffset(r.W,18*s),ZIndex=self.Host.ZIndex+1})
+ local add=create('TextButton',self.Host,{Name='AddItem',Text=self.Choosing and'Назад'or'+ Добавить предмет',TextSize=math.max(8,8*s),FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=theme(self,'FontColor',Color3.fromRGB(231,234,238)),BackgroundColor3=theme(self,'MainColor',Color3.fromRGB(37,39,42)),BackgroundTransparency=theme(self,'RowTransparency',.92),BorderSizePixel=0,Position=UDim2.fromOffset(r.X,r.Y),Size=UDim2.fromOffset(r.W,18*s),ZIndex=self.Host.ZIndex+1})
  round(add,5*s);add.Activated:Connect(function()self:CancelPick();self.Choosing=not self.Choosing;self:Redraw()end)
  local list=create('ScrollingFrame',self.Host,{Name='QuickItems',Position=UDim2.fromOffset(r.X,r.Y+23*s),Size=UDim2.fromOffset(r.W,math.max(1,r.H-23*s)),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2*s,ScrollingDirection=Enum.ScrollingDirection.Y,ClipsDescendants=true,ZIndex=self.Host.ZIndex+1})
  local names={};for name in pairs(self.Choosing and self.Owned or self.Selected)do if self.Owned[name]then table.insert(names,name)end end;table.sort(names)
@@ -166,7 +180,7 @@ function Quick:Render(plan)
   local image=create('ImageButton',cell,{Name='Item',Image=item.Image,ImageRectOffset=item.Offset or Vector2.zero,ImageRectSize=item.Rect or Vector2.zero,ScaleType=Enum.ScaleType.Fit,BackgroundTransparency=1,Size=UDim2.fromOffset(w,w),ZIndex=cell.ZIndex+1})
   image.Activated:Connect(function()if self.Choosing then self:Select(name)else self:Spawn(name)end end)
   if not self.Choosing then
-   local bind=create('TextButton',cell,{Name='Bind',Text=self.Picking==name and'…'or self:KeyOption(name).Value,TextSize=math.max(7,8*s),FontFace=Font.fromEnum(Enum.Font.Code),TextColor3=Color3.fromRGB(235,235,235),BackgroundColor3=Color3.fromRGB(50,52,55),BackgroundTransparency=.05,BorderSizePixel=0,Position=UDim2.fromOffset(0,w+2*s),Size=UDim2.fromOffset(w,14*s),TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=cell.ZIndex+2})
+   local bind=create('TextButton',cell,{Name='Bind',Text=self.Picking==name and'…'or self:KeyOption(name).Value,TextSize=math.max(7,8*s),FontFace=Font.fromEnum(Enum.Font.Code),TextColor3=theme(self,'FontColor',Color3.fromRGB(231,234,238)),BackgroundColor3=theme(self,'MainColor',Color3.fromRGB(37,39,42)),BackgroundTransparency=theme(self,'RowTransparency',.92),BorderSizePixel=0,Position=UDim2.fromOffset(0,w+2*s),Size=UDim2.fromOffset(w,14*s),TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=cell.ZIndex+2})
    round(bind,4*s)
    bind.Activated:Connect(function()if self.Context.Library.IsPicking and not self.Picking then return end;self:CancelPick();self.Picking=name;self.Context.Library.IsPicking=true;self:Redraw()end)
    bind.MouseButton2Click:Connect(function()self:CancelPick();self:KeyOption(name):SetValue({'None','Press'})end)

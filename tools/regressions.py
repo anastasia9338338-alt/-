@@ -3,11 +3,8 @@ import re,subprocess
 
 def check_regressions(modules,embedded,runner,folder):
     main=modules['Main']
-    start=main.index('tbl12.DecoyGucci=requireModule')
-    decoy=main[start:main.index('tbl12.GucciDestroy=requireModule',start)]
-    can_spawn=re.search(r'CanSpawn=(function\(\).*?\n            end),',decoy,re.S)[1]
-    spawn=re.search(r'SpawnToy=(function\(\).*?\n            end),',decoy,re.S)[1]
-    train=re.search(r'SharedTrain=(function\(\).*?end),',decoy,re.S)[1]
+    spawn=re.search(r'SpawnQuick=(function\(name,valid\).*?\n                    end)',main,re.S)[1]
+    train=re.search(r'SharedTrain=(function\(\).*?end),',main[main.index('tbl12.GucciDestroy=requireModule'):],re.S)[1]
     country=re.search(r'local flag12 = arg.Country == v24.*?return tostring\(arg.City\) < tostring\(arg2.City\)',main,re.S)[0]
     a=embedded.index('_G.sa2GetTgt = function()');z=embedded.index('\n\ndo\nlocal thread5 = nil',a)
     aim=embedded[a:z]
@@ -34,14 +31,14 @@ local workspace={FindFirstChild=function(_,n)if n=='Map'then return map end end}
 '''
     code+='local GameFlags=(function()\n'+modules['GameFlags']+'\nend)()\n'
     code+='local function requireModule(name)assert(name=="GameFlags");return GameFlags end\n'
-    code+='local canSpawn='+can_spawn+'\nlocal spawnToy='+spawn+'\nlocal sharedTrain='+train+'\n'
-    code+='''check(canSpawn(),'Normal plot markers failed');check(spawnToy()~=nil and spawns==1,'Decoy spawn failed')
+    code+='local function canSpawn()return not flag11 and GameFlags.CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end\nlocal spawnToy='+spawn+'\nlocal sharedTrain='+train+'\n'
+    code+='''check(canSpawn(),'Normal plot markers failed');check(spawnToy("Chair",function()return true end)~=nil and spawns==1,'Quick spawn failed')
 check(sharedTrain()==expectedTrain,'Shared train not resolved')
-flags.InPlot.Value=true;check(not canSpawn()and spawnToy()==nil and spawns==1,'Foreign plot allowed a spawn')
+flags.InPlot.Value=true;check(not canSpawn()and spawnToy("Chair",function()return true end)==nil and spawns==1,'Foreign plot allowed a spawn')
 flags.InOwnedPlot.Value=true;check(canSpawn(),'Own plot denied a spawn')
-flags.InPlot=nil;check(not canSpawn()and spawnToy()==nil,'Missing marker was indexed')
-flags.InPlot={Value=false};tbl7.States.Spawning=true;check(not canSpawn()and spawnToy()==nil,'Busy spawn bypassed')
-tbl7.States.Spawning=false;flag11=true;check(not canSpawn()and spawnToy()==nil,'Unload allowed a spawn')
+flags.InPlot=nil;check(not canSpawn()and spawnToy("Chair",function()return true end)==nil,'Missing marker was indexed')
+flags.InPlot={Value=false};tbl7.States.Spawning=true;check(not canSpawn()and spawnToy("Chair",function()return true end)==nil,'Busy spawn bypassed')
+tbl7.States.Spawning=false;flag11=true;check(not canSpawn()and spawnToy("Chair",function()return true end)==nil,'Unload allowed a spawn')
 local v24='RU'
 '''
     code+='local function countryFirst(arg,arg2)\n'+country+'\nend\n'

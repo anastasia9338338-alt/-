@@ -1,4 +1,4 @@
--- Astral v4.87 | Shared game menu profiles, readable purchase cards and responsive sizing.
+-- Astral v4.88 | Shared game menu profiles, readable purchase cards and responsive sizing.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -1097,8 +1097,17 @@ end
 local function observe(phase,owned,wanted)
  if owned==wanted then phase.Observed=true end
 end
-function Handoff.Grabbed(session,frame,now,ping,lowLatency)
- session.Handoff={Phase='grab',Frame=frame,Earliest=now+(lowLatency and 0 or .05),Native=lowLatency=='Native',
+local function cycleSeconds(value)
+ if type(value)=='number'and value==value and value>0 and value<math.huge then return math.min(value,120)end
+ return nil
+end
+function Handoff.CancelTiming(session,now)
+ local phase=session.Handoff
+ if phase and phase.CycleSeconds then phase.CycleSeconds=nil;phase.Earliest=math.min(phase.Earliest,now)end
+end
+function Handoff.Grabbed(session,frame,now,ping,lowLatency,period)
+ period=cycleSeconds(period)
+ session.Handoff={Phase='grab',Frame=frame,Earliest=now+(period and period*.5 or lowLatency and 0 or .05),Native=lowLatency=='Native',CycleSeconds=period,
   Deadline=now+math.clamp(.1+pingSeconds(ping),.15,.7),Observed=false}
 end
 function Handoff.CanRelease(session,frame,now,owned)
@@ -1106,14 +1115,15 @@ function Handoff.CanRelease(session,frame,now,owned)
  if not phase or phase.Phase~='grab'then return false end
  observe(phase,owned,true)
  if frame<=phase.Frame or now+1e-7<phase.Earliest then return false end
- if phase.Native or phase.Observed or now+1e-7>=phase.Deadline then
-  session.LastHandoff={Phase='grab',Observed=phase.Observed,Native=phase.Native,At=now}
+ if phase.CycleSeconds or phase.Native or phase.Observed or now+1e-7>=phase.Deadline then
+  session.LastHandoff={Phase='grab',Observed=phase.Observed,Native=phase.Native,CycleSeconds=phase.CycleSeconds,At=now}
   return true
  end
  return false
 end
-function Handoff.Released(session,frame,now,ping,lowLatency)
- session.Handoff={Phase='released',Frame=frame,Earliest=now+(lowLatency and 0 or .05),Native=lowLatency=='Native',
+function Handoff.Released(session,frame,now,ping,lowLatency,period)
+ period=cycleSeconds(period)
+ session.Handoff={Phase='released',Frame=frame,Earliest=now+(period and period*.5 or lowLatency and 0 or .05),Native=lowLatency=='Native',CycleSeconds=period,
   Deadline=now+math.clamp(.05+pingSeconds(ping)*.5,.05,.3),Observed=false}
 end
 function Handoff.CanGrab(session,frame,now,owned)
@@ -1122,8 +1132,8 @@ function Handoff.CanGrab(session,frame,now,owned)
  if phase.Phase~='released'then return false end
  observe(phase,owned,false)
  if frame<=phase.Frame or now+1e-7<phase.Earliest then return false end
- if phase.Native or phase.Observed or now+1e-7>=phase.Deadline then
-  session.LastHandoff={Phase='released',Observed=phase.Observed,Native=phase.Native,At=now}
+ if phase.CycleSeconds or phase.Native or phase.Observed or now+1e-7>=phase.Deadline then
+  session.LastHandoff={Phase='released',Observed=phase.Observed,Native=phase.Native,CycleSeconds=phase.CycleSeconds,At=now}
   session.Handoff=nil
   return true
  end
@@ -10237,6 +10247,7 @@ do
                 Parent = Content,
             })
 
+            Content.ClipsDescendants=true
             Button.Content = Content
             Button.Label = New("TextLabel", {
                 AutomaticSize = Enum.AutomaticSize.X,
@@ -10257,6 +10268,24 @@ do
 
             ApplyButtonIcon(Button, Button.Icon)
 
+            -- A press action is visually distinct from a stateful checkbox.
+            -- Reuse the addon rail so shortcuts and the hand never overlap.
+            Button.Base=Base
+            local host=Library:GetAddonHost(Button)
+            local layout=host:FindFirstChildOfClass("UIListLayout")
+            if layout then layout.SortOrder=Enum.SortOrder.LayoutOrder end
+            local icon=Library:GetIcon("hand-pointer")or Library:GetIcon("hand")
+            if icon then
+                Button.PressIndicator=New("ImageLabel",{Name="PressIndicator",BackgroundTransparency=1,
+                    ImageColor3="FontColor",ImageTransparency=Button.Disabled and .8 or .35,
+                    LayoutOrder=1000,Size=UDim2.fromOffset(18,18),Parent=host})
+                Library:ApplyLucideIcon(Button.PressIndicator,icon)
+            else
+                Button.PressIndicator=New("TextLabel",{Name="PressIndicator",BackgroundTransparency=1,
+                    Text="☞",TextSize=18,TextColor3="FontColor",TextTransparency=Button.Disabled and .8 or .35,
+                    LayoutOrder=1000,Size=UDim2.fromOffset(18,18),Parent=host})
+            end
+            if Button.RefreshAddons then Button.RefreshAddons()end
             return Base, Stroke
         end
 
@@ -10389,6 +10418,10 @@ do
                 if SubButton.IconImage and SubButton.IconImage.Visible then
                     SubButton.IconImage.ImageTransparency = SubButton.Disabled and 0.8 or 0.4
                 end
+                if SubButton.PressIndicator then
+                    if SubButton.PressIndicator:IsA("ImageLabel")then SubButton.PressIndicator.ImageTransparency=SubButton.Disabled and .8 or .35
+                    else SubButton.PressIndicator.TextTransparency=SubButton.Disabled and .8 or .35 end
+                end
 
                 Library.Registry[SubButton.Base].BackgroundColor3 = SubButton.Disabled and "BackgroundColor"
                     or "MainColor"
@@ -10493,6 +10526,10 @@ do
 
             if Button.IconImage and Button.IconImage.Visible then
                 Button.IconImage.ImageTransparency = Button.Disabled and 0.8 or 0.4
+            end
+            if Button.PressIndicator then
+                if Button.PressIndicator:IsA("ImageLabel")then Button.PressIndicator.ImageTransparency=Button.Disabled and .8 or .35
+                else Button.PressIndicator.TextTransparency=Button.Disabled and .8 or .35 end
             end
 
             Library.Registry[Button.Base].BackgroundColor3 = Button.Disabled and "BackgroundColor" or "MainColor"
@@ -20897,7 +20934,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.87 | FTAP")
+                                warn("Astral v4.88 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -37709,7 +37746,7 @@ Escape Timer: %*]]
                 end,
                 FastMode=function()return tbl9.NKDelayMode=="Faster but worse"end,
                 PingSeconds=tbl12.KickPingSeconds,
-                IntervalReady=function(player,character)return not tbl12.KickInterval or tbl12.KickInterval:Ready(player,character)end,
+                IntervalSeconds=function()return tbl12.KickInterval and tbl12.KickInterval:CycleSeconds()end,
                 ForgetInterval=function(player)if tbl12.KickInterval then tbl12.KickInterval:Forget(player)end end,
             })
             lib:OnUnload(function()tbl12.KickLoop:Dispose()end)
@@ -37926,7 +37963,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.87",true)
+            box:AddLabel("Astral v4.88",true)
         end
 
         do
@@ -39526,7 +39563,7 @@ Escape Timer: %*]]
         lib:OnUnload(function()tbl12.KickInterval:Dispose()end)
         local targetGroup=tbl15.Target:AddLeftGroupbox("Target Config", "circle-user-round")
         tbl12.KickControls=targetGroup
-        tbl12.CreatePlayerDropdown(targetGroup,"Target",selectedPlayers,nil,nil,nil,"Select Player")
+        tbl12.CreatePlayerDropdown(targetGroup,"Target",selectedPlayers,nil,false,nil,"Select Player")
         requireModule("TargetActions").Install({Group=targetGroup,Tab=tbl15.Target,Library=lib,API=tbl12,Data=tbl7,Settings=tbl9,Notify=fn18})
         tbl12.HoldableActions=requireModule("HoldableActions").Install({API=tbl12,Data=tbl7,Library=lib,Clock=os.clock,Notify=fn18})
         tbl12.PCLDFreeze=requireModule("FreezePCLD").Install({RunService=RunService,Detector=tbl12.DetectPCLD,Owned=tbl12.IsNetworkOwner,
@@ -39536,56 +39573,6 @@ Escape Timer: %*]]
                 return {}
             end})
         lib:OnUnload(function()tbl12.PCLDFreeze:Dispose()end)
-        local decoyModels=setmetatable({},{__mode="k"})
-        tbl12.DecoyGucci=requireModule("DecoyGucci").Install({RunService=RunService,Library=lib,Clock=os.clock,SpawnThread=task.spawn,Wait=task.wait,
-            Character=function()return tbl12.Char()end,
-            Targets=function()return tbl12.GetTargets(false,tbl7.SelectedPlayers)end,
-            Selected=function(player)return tbl7.SelectedPlayers[player]==true end,
-            Protected=tbl12.IsProtectedPlayer,Inventory=tbl12.GetInventory,
-            SharedTrain=function()local map=workspace:FindFirstChild("Map");local objects=map and map:FindFirstChild("AlwaysHereTweenedObjects");return objects and objects:FindFirstChild("Train")end,
-            TargetSeat=function(player)local _,_,humanoid=tbl12.Char(player);return humanoid and humanoid.SeatPart end,
-            TargetCharacter=function(player)local character,_,humanoid=tbl12.Char(player);return character,humanoid end,
-            CanSpawn=function()
-                if flag11 then return false,"Astral is unloading"end
-                return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)
-            end,
-            SpawnToy=function()
-                -- No queue wait, SNO or foreign-plot spawn path is allowed.
-                if flag11 or not requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)then return nil end
-                local model=tbl12.SpawnToy("YouDecoy",nil,0,true)
-                if model and model.Parent==v17 and model~=localPlayer.Character then decoyModels[model]=true end
-                return model
-            end,
-            IsOwnToy=function(model)return model and decoyModels[model]==true and model~=localPlayer.Character and model.Parent==v17 end,
-            Destroy=function(model)
-                if model and decoyModels[model]and model~=localPlayer.Character then
-                    decoyModels[model]=nil;tbl7.ToyAuraReserved[model]=nil;if model.Parent==v17 then tbl12.DestroyToy(model)end
-                end
-            end,
-            BeforeEnable=function()
-                if toggles.TargetLoopGucci and toggles.TargetLoopGucci.Value then toggles.TargetLoopGucci:SetValue(false)end
-                local busy=tbl12.TargetPanel and tbl12.TargetPanel.Busy.Gucci
-                if busy and next(busy)then return false,"Wait for the native Gucci attempt to finish, then enable YouDecoy again"end
-                return true
-            end,
-            AfterEnable=function(value)
-                local panel=tbl12.TargetPanel
-                if value and panel and panel.GucciToggle and panel.GucciToggle.Value then panel.GucciToggle:SetValue(false)end
-                if panel and panel.GucciToggle then panel.GucciToggle:SetDisabled(false)end
-                if panel and panel.GucciButton then panel.GucciButton:SetDisabled(false)end
-            end,
-            Owned=tbl12.IsNetworkOwner,
-            RequestOwner=function(root)
-                if not root or not root.Parent or not decoyModels[root.Parent]or root.Parent.Parent~=v17 or root.Name~="HumanoidRootPart"then return false,"Only the registered YouDecoy root is accepted"end
-                if tbl8.LoopApplyMethodT or tbl8.LoopApplyMethodTServer or tbl7.States.Owning then return false,"Start the decoy before Kick; existing grabbing is not interrupted"end
-                tbl12.Grab(root);return true
-            end,
-            ReleaseRequest=function(root)
-                if not root or not root.Parent or not decoyModels[root.Parent]then return false end
-                if tbl8.LoopApplyMethodT or tbl8.LoopApplyMethodTServer or tbl7.States.Owning then return false end
-                tbl12.RNO(root);return true
-            end,
-        })
         do
             local function detached(model)
                 if not model or not model.Parent then return false end
@@ -39611,7 +39598,6 @@ Escape Timer: %*]]
                 KickHeld=function(player)return tbl12.KickLoop:IsHolding(player)end,
                 OperationBusy=function()return flag11 or tbl7.States.Owning or tbl7.States.Spawning or tbl8.ControllingSomeone end,
                 BeforeEnable=function()
-                    if toggles.TargetDecoyGucci and toggles.TargetDecoyGucci.Value then toggles.TargetDecoyGucci:SetValue(false)end
                 end,
                 BorrowKick=function(token)return tbl12.KickLoop:BeginExcursion(token)end,
                 ReleaseKick=function(token)tbl12.KickLoop:EndExcursion(token)end,
@@ -39689,7 +39675,7 @@ Escape Timer: %*]]
         })
         lib:OnUnload(function()tbl12.DesyncDestroy:Dispose()end)
         -- ASTRAL_DESTROY_DESYNC_END
-        tbl12.TargetPanel=requireModule("TargetPanel").Install({API=tbl12,Data=tbl7,Library=lib,RunService=RunService,Spawn=task.spawn,Notify=fn18,Decoy=tbl12.DecoyGucci,Gucci=tbl12.GucciDestroy,Desync=tbl12.DesyncDestroy})
+        tbl12.TargetPanel=requireModule("TargetPanel").Install({API=tbl12,Data=tbl7,Library=lib,RunService=RunService,Spawn=task.spawn,Notify=fn18,Gucci=tbl12.GucciDestroy,Desync=tbl12.DesyncDestroy})
         tbl12.TargetPanel:BuildUI(tbl15.Target)
         tbl8.DeleteShurInNK=false
 
@@ -39701,8 +39687,6 @@ Escape Timer: %*]]
         Apply:AddDivider("Kick")
 		tbl12.CreateLoopToggle(Apply, "LoopApplyMethodTSel", "LoopApplyMethodT", false, false, tbl7.SelectedPlayers)
 		tbl12.CreateLoopToggle(Apply, "LoopApplyMethodTServ", "LoopApplyMethodTServer", true, false, tbl7.SelectedPlayers)
-        Apply:AddButton({Text="Kick Selected",Func=function()toggles.LoopApplyMethodTSel:SetValue(true)end})
-        Apply:AddButton({Text="Kick Server",Func=function()toggles.LoopApplyMethodTServ:SetValue(true)end})
 	end
 
 	do
@@ -39740,18 +39724,10 @@ Escape Timer: %*]]
 
 
         local v21=v20
-        v21:AddDivider("Hold")
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
             Tooltip="Experimental local retry limit. Each attempt still waits for physics and physical exit; server hit and kick timing are not measured by this setting. Use 10 for the previous polling interval.",
             Callback=function(value)tbl12.PalletRagdoll:SetContactRate(value)end})
-        v21:AddButton({Text="Prepare Pallet",Func=function()tbl12.PalletRagdoll:Warm()end})
-        v21:AddButton({Text="Copy Kick Info",Func=function()
-            local copy=setclipboard or toclipboard
-            if type(copy)~="function"then fn18("Clipboard unavailable");return end
-            local ok,why=pcall(function()local info=tbl12.PalletRagdoll:Evidence();info.OwnershipCycle=tbl12.KickLoop:Evidence();copy(HttpService:JSONEncode(info))end)
-            fn18(ok and "Pallet receiver and observed ragdoll data copied."or "Copy failed: "..tostring(why))
-        end})
 
 		v21:AddToggle("RagdollNK", {
 			Text = "Ragdoll During Kick",
@@ -39762,17 +39738,7 @@ Escape Timer: %*]]
 			end,
 		})
 
-		v21:AddToggle("EKIToggle", {
-			Text = "Experimental Kick Improvements [BETA]",
-			Risky = true,
-			Default = tbl8.EKI,
-			Tooltip = "Improves the kick, but can get very buggy! This also doesn't work on bad executors",
-			DisabledTooltip = "Your executor does not support this feature!",
-			Disabled = typeof(sethiddenproperty) ~= "function",
-			Callback = function(eki)
-				tbl8.EKI = eki
-			end,
-		})
+        tbl8.EKI=false
 
 		v21:AddSlider("HeightNK", {
 			Text = "Kick Height",
@@ -39809,17 +39775,8 @@ Escape Timer: %*]]
             tbl12.Teleport(root,CFrame.new(point+Vector3.new(0,feet+.2,0)))
         end})
 
-		v21:AddDivider("Kick Server Settings")
-
-		v21:AddDropdown("KickServerMethod", {
-			Values = { "Circle + Lag", "Void" },
-			Multi = false,
-			Default = 1,
-			Text = "Kick Server Method",
-			Callback = function(kickServerMethod)
-				tbl9.KickServerMethod = kickServerMethod
-			end,
-		})
+        tbl9.KickServerMethod="Circle + Lag"
+        tbl12.KickInterval:BuildUI(tbl15.Target:AddRightGroupbox("Loop MS", "timer"))
 
 		local v22 = v20:AddDependencyBox()
 		v22:SetupDependencies({ { toggles.TargetLoopGucci, true } })
@@ -44939,13 +44896,17 @@ function Shop:Rect(node,r,scope)
  if not gui(node)then return end
  self:Write(node,'AnchorPoint',Vector2.zero,scope,true)
  self:Write(node,'AutomaticSize',Enum.AutomaticSize.None,scope,true)
+ self:Write(node,'SizeConstraint',Enum.SizeConstraint.RelativeXY,scope,true)
  local parent=parentGui(node);local automatic=parent and(parent:FindFirstChildOfClass('UIListLayout')or parent:FindFirstChildOfClass('UIGridLayout'))
  self:Write(node,'Position',UDim2.fromOffset(r.X,r.Y),scope,not automatic)
  self:Write(node,'Size',UDim2.fromOffset(r.W,r.H),scope,true)
  local aspect=node:FindFirstChildOfClass('UIAspectRatioConstraint')
- if aspect then self:Write(aspect,'AspectRatio',r.W/math.max(r.H,.001),scope,true)end
- local limit=node:FindFirstChildOfClass('UISizeConstraint')
- if limit then self:Write(limit,'MinSize',Vector2.zero,scope,true);self:Write(limit,'MaxSize',Vector2.new(1e6,1e6),scope,true)end
+ if aspect then
+  self:Write(aspect,'AspectType',Enum.AspectType.FitWithinMaxSize,scope,true)
+  self:Write(aspect,'DominantAxis',Enum.DominantAxis.Width,scope,true)
+  self:Write(aspect,'AspectRatio',r.W/math.max(r.H,.001),scope,true)
+ end
+ for _,limit in ipairs(children(node))do if limit:IsA('UISizeConstraint')then self:Write(limit,'MinSize',Vector2.zero,scope,true);self:Write(limit,'MaxSize',Vector2.new(1e6,1e6),scope,true)end end
 end
 function Shop:Round(node,radius,scope)
  local corner=node:FindFirstChildOfClass('UICorner')
@@ -44955,7 +44916,7 @@ end
 function Shop:Text(node,size,scope)
  self:Write(node,'TextScaled',false,scope,true);self:Write(node,'TextWrapped',false,scope,true)
  self:Write(node,'FontFace',Font.fromEnum(Enum.Font.GothamBold),scope)
- self:Write(node,'TextSize',size,scope,true);self:Write(node,'TextColor3',C(247,247,247),scope)
+ self:Write(node,'TextSize',size,scope,true);self:Write(node,'TextColor3',self:ThemeColor('FontColor',C(231,234,238)),scope)
  self:Write(node,'TextXAlignment',Enum.TextXAlignment.Left,scope)
 end
 function Shop:Normalize(node,scope)
@@ -44972,6 +44933,34 @@ function Shop:Normalize(node,scope)
   if p==self.Menu then break end;p=p.Parent
  end
 end
+function Shop:ThemeColor(key,fallback)
+ local scheme=self.Context.Library.Scheme or{}
+ return scheme[key]or fallback
+end
+function Shop:RegisterTheme(node,properties)
+ if self.Context.Library.AddToRegistry then self.Context.Library:AddToRegistry(node,properties)end
+end
+function Shop:DestroyArtwork(node)
+ if not node then return end
+ if self.Context.Library.RemoveFromRegistry then
+  for _,child in ipairs(descendants(node))do self.Context.Library:RemoveFromRegistry(child)end
+  self.Context.Library:RemoveFromRegistry(node)
+ end
+ node:Destroy()
+end
+function Shop:PanelTheme(panel)
+ local scheme=self.Context.Library.Scheme or{}
+ panel.BackgroundColor3=self:ThemeColor('WhiteColor',C(255,255,255))
+ panel.BackgroundTransparency=tonumber(scheme.GlassTransparency)or .55
+ local gradient=panel:FindFirstChild('AstralShopGradient')
+ if not gradient then gradient=Instance.new('UIGradient');gradient.Name='AstralShopGradient';gradient.Rotation=90;gradient.Parent=panel end
+ local function colors()
+  return ColorSequence.new(self:ThemeColor('BodyTopColor',C(24,26,29)),self:ThemeColor('BodyBottomColor',C(21,23,26)))
+ end
+ gradient.Color=colors()
+ self:RegisterTheme(panel,{BackgroundColor3='WhiteColor',BackgroundTransparency='GlassTransparency'})
+ self:RegisterTheme(gradient,{Color=colors});self:Watch(gradient,'Color')
+end
 function Shop:Surface()
  if live(self.Layer)then return end
  local parent=self.Menu.Parent
@@ -44980,7 +44969,7 @@ function Shop:Surface()
  local layer=Instance.new('Frame');layer.Name='AstralGameShopSkin';layer.BackgroundTransparency=1;layer.BorderSizePixel=0;layer.Active=false;layer.Visible=false;layer.Parent=parent
  self.Layer=layer;self.LayerScale=Instance.new('UIScale');self.LayerScale.Parent=layer;self.Panels={};self.IconCopies={};self.IconMeta={};self.TextCopies={}
  for _,name in ipairs({'Sidebar','Title','Categories','Favorite','Body','Limit'})do
-  local panel=Instance.new('Frame');panel.Name=name;panel.BorderSizePixel=0;panel.Active=false;panel.BackgroundColor3=C(51,53,55);panel.BackgroundTransparency=name=='Body'and .18 or .24;panel.Parent=layer
+  local panel=Instance.new('Frame');panel.Name=name;panel.BorderSizePixel=0;panel.Active=false;panel.Parent=layer;self:PanelTheme(panel)
   local corner=Instance.new('UICorner');corner.Parent=panel;self.Panels[name]={Node=panel,Corner=corner}
  end
 end
@@ -44992,6 +44981,7 @@ function Shop:Draw()
  self.Layer.Position=UDim2.fromOffset(position.X-origin.X,position.Y-origin.Y)
  self.LayerScale.Scale=self.MenuScale or 1;self.Layer.Size=UDim2.fromOffset(self.Plan.Width,self.Plan.Height);self.Layer.ZIndex=self.Menu.ZIndex-1;self.Layer.Visible=true
  for name,panel in pairs(self.Panels)do
+  self:PanelTheme(panel.Node)
   local r=self.Plan[name];panel.Node.Position=UDim2.fromOffset(r.X,r.Y);panel.Node.Size=UDim2.fromOffset(r.W,r.H)
   panel.Corner.CornerRadius=UDim.new(0,r.Radius);panel.Node.ZIndex=self.Menu.ZIndex-1
   panel.Node.Visible=(name~='Favorite'or self.HasFavorite)and(name~='Categories'or self.HasCategories)and(name~='Limit'or self.ShowLimit)
@@ -45004,7 +44994,7 @@ function Shop:Bind(menu,contents)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()if self.Active and self.Plan and live(self.Layer)then self:Draw()end end)
  self.Bound[#self.Bound+1]=menu.Destroying:Connect(function()
-  self.Active=false;if self.Layer then self.Layer:Destroy();self.Layer=nil end;self:Queue()
+  self.Active=false;if self.Layer then self:DestroyArtwork(self.Layer);self.Layer=nil end;self:Queue()
  end)
  self:Watch(menu,'Size')
 end
@@ -45052,7 +45042,7 @@ local function footer(v,stop)
  local n=v
  while n and n~=stop do
   local name=fold(n.Name):gsub('[%s_%-]','')
-  if name:find('toylimit',1,true)or name:find('toyslimit',1,true)or name:find('toycount',1,true)or name:find('footer',1,true)then return n end
+  if name:find('toylimit',1,true)or name:find('toyslimit',1,true)or name:find('toycount',1,true)then return n end
   n=n.Parent
  end
  return nil
@@ -45061,7 +45051,7 @@ function Shop:HideText(node,scope)
  self:Write(node,'TextTransparency',1,scope,true);self:Write(node,'TextStrokeTransparency',1,scope,true)
 end
 function Shop:ResetArtwork()
- for _,map in ipairs({self.IconCopies or{},self.TextCopies or{},self.CardCopies or{}})do for _,v in pairs(map)do if v.Parent then v:Destroy()end end end
+ for _,map in ipairs({self.IconCopies or{},self.TextCopies or{},self.CardCopies or{}})do for _,v in pairs(map)do if v.Parent then self:DestroyArtwork(v)end end end
  self.IconCopies={};self.IconMeta={};self.TextCopies={};self.CardCopies={}
 end
 function Shop:Controls(record)
@@ -45127,7 +45117,7 @@ function Shop:Icon(node,r,scope)
  image.Position=UDim2.fromOffset(r.X,r.Y);image.Size=UDim2.fromOffset(r.W,r.H);image.Image=visual.Image
  image.ImageRectOffset=visual.ImageRectOffset;image.ImageRectSize=visual.ImageRectSize;image.ScaleType=Enum.ScaleType.Fit
  pcall(function()image.ResampleMode=Enum.ResamplerMode.Default end)
- image.ImageColor3=C(245,245,245);image.ImageTransparency=0;image.ZIndex=self.Menu.ZIndex-1;image.Visible=true
+ image.ImageColor3=self:ThemeColor('FontColor',C(231,234,238));self:RegisterTheme(image,{ImageColor3='FontColor'});image.ImageTransparency=0;image.ZIndex=self.Menu.ZIndex-1;image.Visible=true
  self.IconMeta[visual]={Button=node,Desired=r}
  self:Write(visual,'ImageTransparency',1,scope,true);self:Watch(visual,'Image');self:Watch(visual,'ImageRectOffset');self:Watch(visual,'ImageRectSize')
 end
@@ -45158,7 +45148,7 @@ function Shop:Label(key,text,r,size,right)
  if not label then label=Instance.new('TextLabel');label.Name=key;label.BackgroundTransparency=1;label.BorderSizePixel=0;label.Active=false;label.Parent=self.Layer;self.TextCopies[key]=label end
  label.Position=UDim2.fromOffset(r.X,r.Y);label.Size=UDim2.fromOffset(r.W,r.H)
  label.Text=text;label.TextSize=size;label.TextScaled=false;label.TextWrapped=false;label.AutoLocalize=false
- label.FontFace=Font.fromEnum(Enum.Font.GothamBold);label.TextColor3=C(248,248,248)
+ label.FontFace=Font.fromEnum(Enum.Font.GothamBold);label.TextColor3=self:ThemeColor('FontColor',C(231,234,238));self:RegisterTheme(label,{TextColor3='FontColor'})
  label.TextXAlignment=right and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left;label.ZIndex=self.Menu.ZIndex-1;label.Visible=true
 end
 function Shop:Button(node,r,scope)
@@ -45201,7 +45191,8 @@ function Shop:Grid(record)
  local grid;local score=-1
  for _,node in ipairs(descendants(record.Items))do
   if node:IsA('UIGridLayout')then
-   local count=0;for _,child in ipairs(children(node.Parent))do if gui(child)then count+=1 end end
+   local count,known=0,0;for _,child in ipairs(children(node.Parent))do if gui(child)then count+=1;if self.Context.Catalog and self.Context.Catalog[child.Name]then known+=1 end end end
+   count+=known*1000
    if count>score then grid=node;score=count end
   end
  end
@@ -45282,30 +45273,46 @@ function Shop:PanelContent(record)
   if gui(v)then
    if v:IsA('Frame')or v:IsA('ScrollingFrame')then self:Write(v,'BackgroundTransparency',1,'page',true)
    elseif v:IsA('TextBox')or button(v)then
-    if v:IsA('TextBox')then self:Write(v,'BackgroundColor3',C(51,53,55),'page')end;self:Write(v,'BackgroundTransparency',.18,'page')
+    if v:IsA('TextBox')then self:Write(v,'BackgroundColor3',self:ThemeColor('MainColor',C(37,39,42)),'page')end;self:Write(v,'BackgroundTransparency',(self.Context.Library.Scheme or{}).RowTransparency or .92,'page')
     self:Round(v,5,'page')
    end
    if v:IsA('TextLabel')or v:IsA('TextButton')or v:IsA('TextBox')then
     local t=tostring(v.Text or'')
-    if not t:match('^[RGBHSV]$')then self:Write(v,'TextColor3',C(245,245,245),'page')end
+    if not t:match('^[RGBHSV]$')then self:Write(v,'TextColor3',self:ThemeColor('FontColor',C(231,234,238)),'page')end
    end
   end
  end
 end
 function Shop:Footer(record)
  local count='';local root=self.GuiRoot or self.Menu.Parent
- for _,v in ipairs(descendants(root))do if not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))then
-  local text=textValue(v)
+ local nodes=descendants(root);local groups={}
+ local function nativeText(v)
+  return not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))
+ end
+ local function caption(v)
+  local value=textValue(v)
+  return value:find('лимит игруш',1,true)or value:find('toy limit',1,true)or value:find('toys limit',1,true)
+ end
+ for _,v in ipairs(nodes)do if nativeText(v)and caption(v)then
+  local parent=v.Parent
+  if gui(parent)and parent~=self.Menu and parent~=record.Node and not under(record.Items,parent)then groups[parent]=true end
+ end end
+ for _,v in ipairs(nodes)do if nativeText(v)then
   local footerRoot=footer(v,root)
-  local isFooter=footerRoot or text:find('лимит игруш',1,true)or text:find('toy limit',1,true)or text:find('toys limit',1,true)
+  local fraction=tostring(v.Text or''):match('^%s*%d+%s*/%s*%d+%s*$')~=nil
+  local associated=false
+  for group in pairs(groups)do if under(v,group)then associated=true;footerRoot=footerRoot or group;break end end
+  local outsideItems=not under(v,record.Items)
+  local visibleCounter=fraction and outsideItems and visible(v,root)and(record.Quick or record.Node.Name:lower()=='toys')
+  local isFooter=footerRoot or caption(v)or associated or visibleCounter
   if isFooter then
    self.FooterNodes=self.FooterNodes or{};self.FooterNodes[v]=true
-   if v.Text:match('^%s*%d+%s*/%s*%d+%s*$')then count=v.Text end
+   if fraction then count=v.Text end
    self:HideText(v,'shared');self:Watch(v,'Text');self:Watch(v,'AutoLocalize');self:Watch(v,'ContentText')
-   if footerRoot then for _,piece in ipairs(descendants(footerRoot))do if piece:IsA('UIStroke')then self:Write(piece,'Transparency',1,'shared',true)end;if gui(piece)then
-    self:Write(piece,'BackgroundTransparency',1,'shared',true)
-    if piece:IsA('ImageLabel')then self:Write(piece,'ImageTransparency',1,'shared',true)end
-   end end end
+   if footerRoot then for _,piece in ipairs(descendants(footerRoot))do
+    if piece:IsA('UIStroke')then self:Write(piece,'Transparency',1,'shared',true)end
+    if gui(piece)then self:Write(piece,'BackgroundTransparency',1,'shared',true);if piece:IsA('ImageLabel')then self:Write(piece,'ImageTransparency',1,'shared',true)end end
+   end end
    local p=v.Parent
    if gui(p)and p~=self.Menu and p~=record.Node then self:Write(p,'BackgroundTransparency',1,'shared',true);if p:IsA('ImageLabel')then self:Write(p,'ImageTransparency',1,'shared',true)end end
   end
@@ -45376,27 +45383,16 @@ function Shop:Page(record)
   controls.CategoryButtons={};controls.Favorite=nil
  end
 
- self.HasFavorite=controls.Favorite~=nil
- local categoryButtons={};for _,v in ipairs(controls.CategoryButtons)do if v~=controls.Favorite then categoryButtons[#categoryButtons+1]=v end end
+ local removedFavorite=controls.Favorite
+ self.HasFavorite=false
+ if removedFavorite then self:Write(removedFavorite,'Visible',false,'shared',true)end
+ local categoryButtons={}
+ for _,v in ipairs(controls.CategoryButtons)do
+  if v~=removedFavorite and not favoriteName(v)then categoryButtons[#categoryButtons+1]=v end
+ end
+ controls.Favorite=nil
  local categoryScope=under(controls.Categories,record.Node)and'page'or'shared'
  self:Group(categoryButtons,controls.Categories,plan.Categories,'row',categoryScope,record.Node)
- if controls.Favorite then
-  local favoriteScope=under(controls.Favorite,record.Node)and'page'or'shared'
-  self:Write(controls.Favorite,'Visible',true,favoriteScope,true);self:Write(controls.Favorite,'LayoutOrder',#categoryButtons+1,favoriteScope,true)
-  local parent=parentGui(controls.Favorite)
-  local categoryRoot=gui(controls.Categories)and controls.Categories or parentGui(categoryButtons[1])
-  if parent==categoryRoot and parent and parent~=record.Node and parent~=self.Menu then
-   local gap=plan.Favorite.X-(plan.Categories.X+plan.Categories.W)
-   self:Write(parent,'Size',UDim2.fromOffset(plan.Categories.W+gap+plan.Favorite.W,plan.Categories.H),nil,true)
-   self:Button(controls.Favorite,{X=plan.Favorite.X-plan.Categories.X,Y=0,W=plan.Favorite.W+gap,H=plan.Favorite.H},favoriteScope)
-  else self:Normalize(controls.Favorite,favoriteScope);self:Button(controls.Favorite,plan.Favorite,favoriteScope)end
-  self:Icon(controls.Favorite,plan.Favorite,favoriteScope)
-  -- The reference uses a hollow star. The original button remains the hit
-  -- target; only its artwork is replaced by an unclickable outline glyph.
-  for visual,meta in pairs(self.IconMeta)do if meta.Button==controls.Favorite then self.IconCopies[visual].Visible=false;meta.Hidden=true end end
-  self:Label('FavoritesStar','☆',{X=plan.Favorite.X,Y=plan.Favorite.Y,W=plan.Favorite.W,H=plan.Favorite.H},18*plan.Scale)
-  self.TextCopies.FavoritesStar.TextXAlignment=Enum.TextXAlignment.Center
- end
  if self.Quick then self.Quick:Mount(self.Menu,self.Contents);self.Quick:ConnectTabs(controls.Sidebar)end
  local side=plan.Sidebar
  if self.Quick then side={X=side.X,Y=side.Y,W=side.W,H=side.H*#controls.Sidebar/(#controls.Sidebar+1),Radius=side.Radius}end
@@ -45465,7 +45461,7 @@ function Shop:Detach()
  if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
  for _,c in ipairs(self.Bound)do c:Disconnect()end;self.Bound={}
  for _,map in pairs(self.Watches)do for _,c in pairs(map)do c:Disconnect()end end;self.Watches={}
- self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self.Layer:Destroy();self.Layer=nil end
+ self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self:DestroyArtwork(self.Layer);self.Layer=nil end
  self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
 end
 function Shop:SetEnabled(value)
@@ -47500,7 +47496,7 @@ function Layout.Build(viewWidth,viewHeight,nativeWidth,nativeHeight)
  local sx,sy=width/346,height/274
  local function rect(x,y,w,h,r)return{X=x*sx,Y=y*sy,W=w*sx,H=h*sy,Radius=(r or 0)*scale}end
  return{Scale=scale,Width=width,Height=height,Columns=10,
-  Sidebar=rect(0,40,25,207,11),Title=rect(27,20,179,18,9),Categories=rect(210,20,108,18,9),Favorite=rect(321,20,23,18,9),
+  Sidebar=rect(0,40,25,207,11),Title=rect(27,20,179,18,9),Categories=rect(210,20,134,18,9),Favorite=rect(321,20,23,18,9),
   Body=rect(27,40,317,207,8),Grid=rect(34,47,303,193),Limit=rect(64,250,238,17,8),
   TitleText=rect(32,22,170,14),LimitText=rect(69,253,226,10),
   Cell=(303*sx-9*scale)/10,Gap=scale,TitleSize=math.max(8,8*scale),SmallSize=math.max(6,6*scale),IconSize=18*scale,
@@ -47513,6 +47509,10 @@ sources.ShopQuickSpawn = [========[
 -- Local inventory shortcuts. Only selected owned native inventory IDs can spawn;
 -- one shared input observer, bounded requests and the existing game spawn API.
 local Quick={};Quick.__index=Quick
+local function theme(self,key,fallback)
+ local scheme=self.Context.Library.Scheme
+ return scheme and scheme[key]~=nil and scheme[key]or fallback
+end
 local function inside(node,root)return root and(node==root or node:IsDescendantOf(root))end
 local function create(class,parent,props)
  local v=Instance.new(class);for k,value in pairs(props or{})do v[k]=value end;v.Parent=parent;return v
@@ -47562,7 +47562,7 @@ function Quick:Mount(menu,contents)
  if self.Host and self.Host.Parent==menu then return end
  self:Detach()
  self.Host=create('Frame',menu,{Name='AstralQuickSpawnPage',BackgroundTransparency=1,Visible=false,Size=UDim2.fromScale(1,1),ZIndex=menu.ZIndex+2})
- self.Clock=create('TextButton',menu,{Name='AstralQuickClock',Text='◷',TextSize=21,FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=Color3.fromRGB(245,245,245),BackgroundColor3=Color3.fromRGB(51,53,55),BackgroundTransparency=.2,BorderSizePixel=0,ZIndex=menu.ZIndex+4})
+ self.Clock=create('TextButton',menu,{Name='AstralQuickClock',Text='◷',TextSize=21,FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=theme(self,'FontColor',Color3.fromRGB(231,234,238)),BackgroundColor3=theme(self,'MainColor',Color3.fromRGB(37,39,42)),BackgroundTransparency=theme(self,'RowTransparency',.92),BorderSizePixel=0,ZIndex=menu.ZIndex+4})
  round(self.Clock,7)
  if self.Context.Library.GetIcon and self.Context.Library.ApplyLucideIcon then
   local ok,icon=pcall(self.Context.Library.GetIcon,self.Context.Library,'clock')
@@ -47603,8 +47603,18 @@ function Quick:RefreshOwned(pages)
   for _,cell in ipairs(record.Grid.Parent:GetChildren())do if cell:IsA('GuiObject')then
    local name=self.Context.ResolveItem and self.Context.ResolveItem(cell)or cell.Name
    if type(name)=='string'and self.Context.Catalog and self.Context.Catalog[name]then
-    local image=(cell:IsA('ImageButton')or cell:IsA('ImageLabel'))and cell or cell:FindFirstChildWhichIsA('ImageLabel',true)or cell:FindFirstChildWhichIsA('ImageButton',true)
-    owned[name]={Name=name,Image=image and image.Image~=''and image.Image or self.Context.Catalog[name],Offset=image and image.ImageRectOffset,Rect=image and image.ImageRectSize}
+    -- The outer native ImageButton can be the favorite-star hit surface.
+    -- Canonical item artwork has priority; do not inherit its star atlas.
+    local picture=self.Context.Catalog[name]
+    if type(picture)~='string'then picture=''end
+    local offset,rect=Vector2.zero,Vector2.zero
+    if picture==''then
+     for _,node in ipairs(cell:GetDescendants())do
+      local n=node.Name:lower()
+      if(node:IsA('ImageLabel')or node:IsA('ImageButton'))and node.Image~=''and not n:find('star',1,true)and not n:find('favorit',1,true)and not n:find('background',1,true)then picture=node.Image;offset=node.ImageRectOffset;rect=node.ImageRectSize;break end
+     end
+    end
+    owned[name]={Name=name,Image=picture,Offset=offset,Rect=rect}
     self:KeyOption(name)
    end
   end end
@@ -47666,7 +47676,7 @@ function Quick:Render(plan)
  self.Rendering=true
  for _,v in ipairs(self.Host:GetChildren())do v:Destroy()end
  local s=plan.Scale;local r=plan.Grid
- local add=create('TextButton',self.Host,{Name='AddItem',Text=self.Choosing and'Назад'or'+ Добавить предмет',TextSize=math.max(8,8*s),FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=Color3.fromRGB(240,240,240),BackgroundColor3=Color3.fromRGB(60,62,65),BackgroundTransparency=.1,BorderSizePixel=0,Position=UDim2.fromOffset(r.X,r.Y),Size=UDim2.fromOffset(r.W,18*s),ZIndex=self.Host.ZIndex+1})
+ local add=create('TextButton',self.Host,{Name='AddItem',Text=self.Choosing and'Назад'or'+ Добавить предмет',TextSize=math.max(8,8*s),FontFace=Font.fromEnum(Enum.Font.GothamBold),TextColor3=theme(self,'FontColor',Color3.fromRGB(231,234,238)),BackgroundColor3=theme(self,'MainColor',Color3.fromRGB(37,39,42)),BackgroundTransparency=theme(self,'RowTransparency',.92),BorderSizePixel=0,Position=UDim2.fromOffset(r.X,r.Y),Size=UDim2.fromOffset(r.W,18*s),ZIndex=self.Host.ZIndex+1})
  round(add,5*s);add.Activated:Connect(function()self:CancelPick();self.Choosing=not self.Choosing;self:Redraw()end)
  local list=create('ScrollingFrame',self.Host,{Name='QuickItems',Position=UDim2.fromOffset(r.X,r.Y+23*s),Size=UDim2.fromOffset(r.W,math.max(1,r.H-23*s)),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2*s,ScrollingDirection=Enum.ScrollingDirection.Y,ClipsDescendants=true,ZIndex=self.Host.ZIndex+1})
  local names={};for name in pairs(self.Choosing and self.Owned or self.Selected)do if self.Owned[name]then table.insert(names,name)end end;table.sort(names)
@@ -47678,7 +47688,7 @@ function Quick:Render(plan)
   local image=create('ImageButton',cell,{Name='Item',Image=item.Image,ImageRectOffset=item.Offset or Vector2.zero,ImageRectSize=item.Rect or Vector2.zero,ScaleType=Enum.ScaleType.Fit,BackgroundTransparency=1,Size=UDim2.fromOffset(w,w),ZIndex=cell.ZIndex+1})
   image.Activated:Connect(function()if self.Choosing then self:Select(name)else self:Spawn(name)end end)
   if not self.Choosing then
-   local bind=create('TextButton',cell,{Name='Bind',Text=self.Picking==name and'…'or self:KeyOption(name).Value,TextSize=math.max(7,8*s),FontFace=Font.fromEnum(Enum.Font.Code),TextColor3=Color3.fromRGB(235,235,235),BackgroundColor3=Color3.fromRGB(50,52,55),BackgroundTransparency=.05,BorderSizePixel=0,Position=UDim2.fromOffset(0,w+2*s),Size=UDim2.fromOffset(w,14*s),TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=cell.ZIndex+2})
+   local bind=create('TextButton',cell,{Name='Bind',Text=self.Picking==name and'…'or self:KeyOption(name).Value,TextSize=math.max(7,8*s),FontFace=Font.fromEnum(Enum.Font.Code),TextColor3=theme(self,'FontColor',Color3.fromRGB(231,234,238)),BackgroundColor3=theme(self,'MainColor',Color3.fromRGB(37,39,42)),BackgroundTransparency=theme(self,'RowTransparency',.92),BorderSizePixel=0,Position=UDim2.fromOffset(0,w+2*s),Size=UDim2.fromOffset(w,14*s),TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=cell.ZIndex+2})
    round(bind,4*s)
    bind.Activated:Connect(function()if self.Context.Library.IsPicking and not self.Picking then return end;self:CancelPick();self.Picking=name;self.Context.Library.IsPicking=true;self:Redraw()end)
    bind.MouseButton2Click:Connect(function()self:CancelPick();self:KeyOption(name):SetValue({'None','Press'})end)
@@ -47747,9 +47757,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.87: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.88: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.87 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.88 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -50956,7 +50966,6 @@ function Panel:Run(key,looped)
     if key=="Desync"and self.Context.Desync then self:SetLoop(key,true);return end
     if key=="Gucci"and self.Context.Gucci then self.Context.Gucci:SetEnabled(true);return end
     if self.Closed or not self.Methods[key]then return end
-    if key=="Gucci"and self.Context.Decoy and self.Context.Decoy.Enabled then return end
     local api=self.Context.API;local busy=self.Busy[key]
     if not busy then busy=setmetatable({},{__mode="k"});self.Busy[key]=busy end
     local token=self.Tokens[key]
@@ -50985,11 +50994,6 @@ function Panel:SetLoop(key,value)
     end
     if key=="Gucci"and self.Context.Gucci then
         self.Enabled[key]=not self.Closed and value==true;self.Context.Gucci:SetEnabled(self.Enabled[key]);return
-    end
-    if key=="Gucci"and value and self.Context.Decoy and self.Context.Decoy.Enabled then
-        if self.GucciToggle and self.GucciToggle.Value then self.GucciToggle:SetValue(false)end
-        self.Context.Notify("YouDecoy mode is active; native Gucci removal would use your real character.")
-        return
     end
     self.Tokens[key]=(self.Tokens[key]or 0)+1
     self.Enabled[key]=not self.Closed and value==true
@@ -51020,21 +51024,20 @@ function Panel:BuildUI(tab)
     self:AddLoop(destroy,"Food","TargetDestroyFood","Destroy Food")
     self:AddLoop(destroy,"Seatables","TargetDeleteSeatables","Delete Seatables")
     self:AddLoop(destroy,"AntiKick","AntiKickRemoverNK","Destroy Anti-Kick")
-    self.GucciButton=destroy:AddButton({Text="Destroy Gucci",Tooltip="Removes Gucci only while its player is not held by your Kick. Held targets are skipped automatically; removal resumes after the hold ends.",Func=function()
-        if self.GucciToggle then self.GucciToggle:SetValue(true)else self:Run("Gucci")end
-    end})
     self.GucciToggle=self:AddLoop(destroy,"Gucci","TargetLoopGucci","Auto Destroy Gucci")
-    destroy:AddButton({Text="Stop Destroy Gucci",Func=function()self.GucciToggle:SetValue(false)end})
-    if self.Context.Gucci then self.Context.Gucci.Label=destroy:AddLabel("Disabled",true)end
+    if self.Context.Gucci then
+        local status=destroy:AddDependencyBox();status:SetupDependencies({{self.GucciToggle,true}})
+        self.Context.Gucci.Label=status:AddLabel("Disabled",true)
+    end
     self:AddLoop(destroy,"Invisible","TargetRemoveInvisibility","Remove Invisibility")
     if self.Context.Desync then
         self.DesyncToggle=self:AddLoop(destroy,"Desync","TargetDestroyDesync","Destroy Desync",{
             Tooltip="Attempts to interrupt the selected target's desync through confirmed native ownership/ragdoll and a verified local replication-root reset. Shares the active kick; cannot stop code on the other player's client.",
             Disabled=not self.Context.Desync.Supported,DisabledTooltip="Requires sethiddenproperty and gethiddenproperty to verify the reset."})
-        self.DesyncLabel=destroy:AddLabel(self.Context.Desync.Status,true)
+        local status=destroy:AddDependencyBox();status:SetupDependencies({{self.DesyncToggle,true}})
+        self.DesyncLabel=status:AddLabel(self.Context.Desync.Status,true)
     end
     self:AddLoop(destroy,"Holdable","TargetBreakHoldable","Break Holdable")
-    if self.Context.Decoy then self.Context.Decoy:BuildUI(destroy)end
     return destroy
 end
 function Panel:Dispose()
@@ -51047,410 +51050,7 @@ end
 return Panel
 
 ]========]
-sources.DecoyGucci = [========[
--- Experimental YouDecoy-only seat interaction. This module never receives a
--- character teleport, SNO, RemoveGucci or DestroyObject capability.
--- A client-observed weld is diagnostic evidence, not server success.
-local Decoy={};Decoy.__index=Decoy
-local kinds={GucciRSC=true,CreatureBlobman=true,TractorGreen=true,TractorRed=true,TractorOrange=true,Train=true,SantaSleigh=true}
-local function seatClass(part)return part:IsA("Seat")or part:IsA("VehicleSeat")end
-local function disconnect(connection)if connection then connection:Disconnect()end end
-function Decoy.Install(context)
-    local self=setmetatable({Context=context,Enabled=false,Closed=false,Generation=0,Speed=120,FastApproach=true,FastMoves=0,
-        Seats={},Folders={},NextScan=0,NextSpawn=0,Attempts=0,OwnWelds=0,Status="Disabled"},Decoy)
-    self.Connection=context.RunService.Heartbeat:Connect(function(dt)
-        local ok,message=pcall(self.Step,self,dt)
-        if not ok then self:Fail("Decoy error: "..tostring(message))end
-        self:Render()
-    end)
-    context.Library:OnUnload(function()self:Dispose()end)
-    return self
-end
-function Decoy:Selected(player)
-    return self.Context.Selected(player)and not self.Context.Protected(player)
-end
-function Decoy:SeatValid(seat,record)
-    if not record then return false end
-    local train=self.Context.SharedTrain and self.Context.SharedTrain()
-    if not self.Folders[record.Folder]and record.Folder~=train then return false end
-    return seat and seat.Parent and record.Folder.Parent and seat:IsDescendantOf(record.Folder)and self:Selected(record.Player)and record.Player==self.TargetPlayer
-end
-function Decoy:Discover(seat,folder,player)
-    if not seatClass(seat)or self.Seats[seat]then return end
-    local node=seat.Parent;local known=false
-    while node do if node:IsA("Model")and kinds[node.Name]then known=true;break end;if node==folder then break end;node=node.Parent end
-    if known then self.Seats[seat]={Folder=folder,Player=player,Tries=0,Next=0}end
-end
-function Decoy:ResolveTarget()
-    local chosen,count=nil,0
-    for _,player in ipairs(self.Context.Targets())do
-        if self:Selected(player)then chosen=player;count+=1 end
-    end
-    if count~=1 then return nil,count==0 and "Select one kick target"or "Select exactly one target for YouDecoy"end
-    local character,humanoid=self.Context.TargetCharacter(chosen)
-    if not character or not character.Parent or not humanoid or humanoid.Health<=0 then return nil,"Waiting for the selected target's character"end
-    return chosen,nil,character,humanoid
-end
-function Decoy:SyncTarget()
-    local player,reason,character,humanoid=self:ResolveTarget()
-    if player~=self.TargetPlayer or character~=self.TargetCharacter then
-        self.Generation+=1
-        self:DetachOwn(self.ActiveSeat);self:ClearAttempt();self:StopMovers()
-        if self.Spawning then self:DropModel()end
-        for _,connection in pairs(self.Folders)do disconnect(connection)end
-        self.Folders={};self.Seats={};self.LockedSeat=nil;self.NextScan=0
-        self.TargetPlayer,self.TargetCharacter,self.TargetHumanoid=player,character,humanoid
-    end
-    return player,reason
-end
-function Decoy:Refresh()
-    local player=self.TargetPlayer
-    if not player or not self:Selected(player)then return end
-    local wanted={};local a,b=self.Context.Inventory(player)
-    for _,folder in pairs({a,b})do
-        if folder and folder.Parent then
-            wanted[folder]=true
-            if not self.Folders[folder]then
-                self.Folders[folder]=folder.DescendantAdded:Connect(function(item)
-                    if self.Enabled and self.TargetPlayer==player and self:Selected(player)then self:Discover(item,folder,player)end
-                end)
-                for _,item in ipairs(folder:GetDescendants())do self:Discover(item,folder,player)end
-            end
-        end
-    end
-    local train=self.Context.SharedTrain and self.Context.SharedTrain()
-    local current=self.Context.TargetSeat and self.Context.TargetSeat(player)
-    if train and current and current:IsDescendantOf(train)then self:Discover(current,train,player)end
-    for folder,connection in pairs(self.Folders)do if not wanted[folder]then disconnect(connection);self.Folders[folder]=nil end end
-    for seat,record in pairs(self.Seats)do if not self:SeatValid(seat,record)then self.Seats[seat]=nil end end
-end
-function Decoy:ForeignClaim(seat)
-    if seat.Occupant and seat.Occupant~=self.TargetHumanoid and seat.Occupant~=self.Humanoid then return true end
-    for _,weld in ipairs(seat:GetChildren())do
-        if weld.Name=="SeatWeld"and(weld:IsA("Weld")or weld:IsA("WeldConstraint"))and not self:OwnWeld(weld,seat)then
-            local a,b=weld.Part0,weld.Part1
-            local other=a==seat and b or b==seat and a
-            if other and not other:IsDescendantOf(self.TargetCharacter)then return true end
-        end
-    end
-    return false
-end
-function Decoy:TargetProof(seat,record)
-    if not self:SeatValid(seat,record)then return nil end
-    local humanoid,character=self.TargetHumanoid,self.TargetCharacter
-    if not humanoid or not character then return nil end
-    if self:ForeignClaim(seat)then record.LastProof=nil;return nil end
-    if self.Context.TargetSeat(self.TargetPlayer)==seat then return 3,"SeatPart"end
-    if seat.Occupant==humanoid then return 2,"Occupant"end
-    for _,weld in ipairs(seat:GetChildren())do
-        if weld.Name=="SeatWeld"and(weld:IsA("Weld")or weld:IsA("WeldConstraint"))then
-            local a,b=weld.Part0,weld.Part1
-            if a==seat and b and b:IsDescendantOf(character)or b==seat and a and a:IsDescendantOf(character)then return 1,"SeatWeld"end
-        end
-    end
-    return nil
-end
-function Decoy:BoundSeat()
-    local best,score,evidence,count=nil,0,nil,0
-    for seat,record in pairs(self.Seats)do
-        local rank,source=self:TargetProof(seat,record)
-        if rank then
-            if not record.Claimed then record.Tries=0;record.Next=0 end
-            record.Claimed=true;record.Character=self.TargetCharacter;record.LastProof=self.Context.Clock()
-            if rank>score then best,score,evidence,count=seat,rank,source,1 elseif rank==score then count+=1 end
-        else record.Claimed=false end
-    end
-    if count>1 then
-        self.BindingValid=false;self:StopMovers();self.BindingStatus="Ambiguous target seat; waiting for a unique association"
-        return nil
-    end
-    if best then
-        if self.LockedSeat~=best then
-            self:DetachOwn(self.ActiveSeat);self:ClearAttempt();self:StopMovers()
-        end
-        self.LockedSeat=best
-        self.BindingStatus="Bound to "..self.TargetPlayer.Name.." via "..evidence
-    end
-    local seat=self.LockedSeat;local record=seat and self.Seats[seat]
-    -- Keep only the just-confirmed seat through a short free-seat transition.
-    -- Never fall back to an arbitrary free vehicle when evidence expires.
-    if not self:SeatValid(seat,record)or record.Character~=self.TargetCharacter or self.Context.Clock()-(record.LastProof or -math.huge)>1.5 then
-        self:DetachOwn(seat)
-        self.BindingValid=false;self.LockedSeat=nil;self.BindingStatus="Waiting for this target's SeatPart/SeatWeld association"
-        return nil
-    end
-    self.BindingValid=true
-    local occupied=self:Occupied(seat)
-    if record.WasOccupied and not occupied then record.Next=0 end
-    record.WasOccupied=occupied
-    if record.Tries>=3 or self.Context.Clock()<record.Next then return nil end
-    return seat,record
-end
-function Decoy:OwnWeld(weld,seat)
-    if not self.Model or not weld or not weld:IsA("Weld")or weld.Name~="SeatWeld"then return false end
-    local a,b=weld.Part0,weld.Part1
-    return a==seat and b and b:IsDescendantOf(self.Model)or b==seat and a and a:IsDescendantOf(self.Model)
-end
-function Decoy:Occupied(seat)
-    if seat.Occupant and seat.Occupant~=self.Humanoid then return true end
-    for _,item in ipairs(seat:GetChildren())do
-        if item.Name=="SeatWeld"and(item:IsA("Weld")or item:IsA("WeldConstraint"))and not self:OwnWeld(item,seat)then return true end
-    end
-    return false
-end
-function Decoy:StopMovers()
-    if self.Position then self.Position:Destroy();self.Position=nil end
-    if self.Rotation then self.Rotation:Destroy();self.Rotation=nil end
-end
-function Decoy:ClearAttempt()
-    disconnect(self.SeatConnection);self.SeatConnection=nil
-    self.ActiveSeat=nil;self.AttemptUntil=nil
-end
-function Decoy:DetachOwn(seat)
-    if not seat or not seat.Parent then return end
-    self:StopMovers()
-    for _,item in ipairs(seat:GetChildren())do
-        if self:OwnWeld(item,seat)then
-            item:Destroy();self.OwnWelds+=1
-        end
-    end
-    if self.Humanoid and self.Humanoid.Parent then self.Humanoid.Sit=false end
-end
-function Decoy:DropModel()
-    local model=self.Model
-    if self.OwnerRequested and self.Context.ReleaseRequest then pcall(self.Context.ReleaseRequest,self.OwnerRequested)end
-    self.OwnerRequested=nil
-    self:DetachOwn(self.ActiveSeat)
-    if self.Humanoid and self.Humanoid.SeatPart then self:DetachOwn(self.Humanoid.SeatPart)end
-    self:ClearAttempt();self:StopMovers()
-    self.Model,self.Root,self.Humanoid=nil,nil,nil
-    if model then pcall(self.Context.Destroy,model)end
-end
-function Decoy:SetEnabled(value)
-    if self.Closed then return end
-    value=value==true
-    if self.Enabled==value then return end
-    if value and self.Context.BeforeEnable then
-        local allowed,reason=self.Context.BeforeEnable()
-        if not allowed then
-            self.Status=reason or "Another action is still active"
-            if self.Toggle and self.Toggle.Value then self.Toggle:SetValue(false)end
-            self:Render();return
-        end
-    end
-    self.Generation+=1;self.Enabled=value
-    if self.Context.AfterEnable then self.Context.AfterEnable(value)end
-    self:DropModel()
-    for _,connection in pairs(self.Folders)do disconnect(connection)end
-    self.Folders={};self.Seats={};self.LockedSeat=nil;self.TargetPlayer=nil;self.TargetCharacter=nil;self.TargetHumanoid=nil;self.NextScan=0
-    if value then self.SpawnFailed=false;self.NextSpawn=0;self.Character=nil;self.Status="Waiting for a selected player's Gucci"else self.Status="Disabled"end
-end
-function Decoy:Fail(reason)
-    self:SetEnabled(false);self.Status=reason
-    if self.Toggle and self.Toggle.Value then self.Toggle:SetValue(false);self.Status=reason end
-end
-function Decoy:HasTarget()
-    local player,_,character=self:ResolveTarget()
-    return player~=nil and player==self.TargetPlayer and character==self.TargetCharacter
-end
-function Decoy:Valid(version)
-    if self.Closed or not self.Enabled or self.Generation~=version then return false end
-    local character,root,humanoid=self.Context.Character()
-    return self:HasTarget()and character==self.Character and root and root.Parent and humanoid and humanoid.Health>0
-end
-function Decoy:AssemblySafe()
-    local model,root=self.Model,self.Root
-    if not model or not model.Parent or not self.Context.IsOwnToy(model)or not root or not root.Parent or root.Anchored then return false end
-    local assembly=root.AssemblyRootPart or root
-    if not assembly:IsDescendantOf(model)then return false end
-    for _,part in ipairs(root:GetConnectedParts(true))do if not part:IsDescendantOf(model)then return false end end
-    return true
-end
-function Decoy:Spawn()
-    if self.Spawning or self.SpawnFailed or self.Context.Clock()<self.NextSpawn then return end
-    local allowed,reason=self.Context.CanSpawn()
-    if not allowed then self.Status=reason or "Toy spawning unavailable";return end
-    self.Spawning=true;self.NextSpawn=self.Context.Clock()+2
-    local version=self.Generation
-    self.Context.SpawnThread(function()
-        local model,root,humanoid,accepted
-        local ok,message=pcall(function()
-            model=self.Context.SpawnToy()
-            if not model then error("YouDecoy spawn not confirmed; toggle off/on to retry",0)end
-            if not self:Valid(version)then return end
-            if not self.Context.IsOwnToy(model)then error("Spawned toy is outside your inventory",0)end
-            local deadline=self.Context.Clock()+1
-            repeat
-                root=model:FindFirstChild("HumanoidRootPart")
-                humanoid=model:FindFirstChildOfClass("Humanoid")
-                if root and humanoid then break end
-                self.Context.Wait(.05)
-            until not self:Valid(version)or not model.Parent or self.Context.Clock()>=deadline
-            if not self:Valid(version)then return end
-            if not root or not root:IsA("BasePart")or not humanoid or humanoid.Health<=0 then error("YouDecoy has no live Humanoid/root; this variant is unsupported",0)end
-            if model==self.Character or root:IsDescendantOf(self.Character)then error("Real character rejected as decoy",0)end
-            self.Model,self.Root,self.Humanoid=model,root,humanoid
-            if not self:AssemblySafe()then error("YouDecoy is anchored or attached to another assembly",0)end
-            local assembly=root.AssemblyRootPart or root
-            for _,part in ipairs(model:GetDescendants())do
-                if part:IsA("BasePart")and(part.Anchored or(part.AssemblyRootPart or part)~=assembly)then error("YouDecoy has independent parts; unsupported rig",0)end
-            end
-            -- Ownership attempts only address this detached toy. No SNO or
-            -- character movement fallback is available to this controller.
-            deadline=self.Context.Clock()+1;local nextRequest=0
-            while self:Valid(version)and model.Parent and not self.Context.Owned(root)and self.Context.Clock()<deadline do
-                if not self:AssemblySafe()then error("YouDecoy became attached during acquisition",0)end
-                if self.Context.Clock()>=nextRequest then
-                    local requested,reason=self.Context.RequestOwner(root)
-                    if requested==false then error(reason or "Cannot request toy control without interfering with another action",0)end
-                    self.OwnerRequested=root;nextRequest=self.Context.Clock()+.25
-                end
-                self.Context.Wait(.05)
-            end
-            if not self:Valid(version)then return end
-            if not model.Parent or not self.Context.Owned(root)then error("YouDecoy ownership unavailable; no character teleport attempted",0)end
-            if self.OwnerRequested and self.Context.ReleaseRequest then
-                if self.Context.ReleaseRequest(root)then self.OwnerRequested=nil end
-            end
-            for _,part in ipairs(model:GetDescendants())do if part:IsA("BasePart")then part.CanCollide=false end end
-            humanoid.AutoRotate=false
-            self.ParkFrame=root.CFrame
-            accepted=true;self.Status="YouDecoy ready; server effect unverified"
-        end)
-        if not accepted then
-            if self.Model==model then self:DropModel()elseif model and self.Context.IsOwnToy(model)then pcall(self.Context.Destroy,model)end
-            if self:Valid(version)then self.SpawnFailed=true;self:Fail(not ok and tostring(message)or "YouDecoy setup cancelled")end
-        end
-        self.Spawning=false
-    end)
-end
-function Decoy:Drive(goal,dt)
-    if not self:AssemblySafe()or not self.Context.Owned(self.Root)then self:StopMovers();return false end
-    -- The supplied source also repositions an owned YouDecoy by its root.
-    -- Use that only for a detached, confirmed owned toy, never an avatar.
-    if self.FastApproach and(self.Root.Position-goal.Position).Magnitude>1 then
-        self:StopMovers()
-        if not self:AssemblySafe()or not self.Context.Owned(self.Root)then return false end
-        self.Root.CFrame=goal
-        self.Root.AssemblyLinearVelocity=Vector3.zero;self.Root.AssemblyAngularVelocity=Vector3.zero
-        self.FastMoves+=1
-    end
-    if not self.Position then
-        local mass=math.clamp(self.Root.AssemblyMass,1,1000)
-        self.Position=Instance.new("BodyPosition");self.Position.Name="AstralDecoyPosition"
-        self.Position.D=1000;self.Position.P=5000;self.Position.MaxForce=Vector3.one*math.min(mass*1500,1000000)
-        self.Position.Position=self.Root.Position;self.Position.Parent=self.Root
-        self.Rotation=Instance.new("BodyGyro");self.Rotation.Name="AstralDecoyRotation"
-        self.Rotation.D=300;self.Rotation.P=3000;self.Rotation.MaxTorque=Vector3.one*math.min(mass*3000,1000000);self.Rotation.Parent=self.Root
-    end
-    self.Position.Position=goal.Position;self.Rotation.CFrame=goal.Rotation
-    local velocity=self.Root.AssemblyLinearVelocity
-    if velocity.Magnitude>self.Speed then self.Root.AssemblyLinearVelocity=velocity.Unit*self.Speed end
-    return true
-end
-function Decoy:BeginAttempt(seat,record)
-    if not self.BindingValid or seat~=self.LockedSeat or not self:SeatValid(seat,record)or record.Character~=self.TargetCharacter then return end
-    if self.Context.Clock()-(record.LastProof or -math.huge)>1.5 then return end
-    if self.Context.Clock()<record.Next or record.Tries>=3 then return end
-    if self:Occupied(seat)or seat.Disabled then return end
-    self:StopMovers()
-    self:ClearAttempt();self.ActiveSeat=seat;record.Tries+=1;record.Next=self.Context.Clock()+.25
-    self.Attempts+=1;self.AttemptUntil=self.Context.Clock()+.5
-    self.SeatConnection=seat.ChildAdded:Connect(function(weld)
-        -- Foreign/player welds are never destroyed. Stop the toy's movers
-        -- before detaching even its own weld so no foreign assembly is driven.
-        if self.Enabled and self.ActiveSeat==seat and self:OwnWeld(weld,seat)then
-            self:DetachOwn(seat);self.AttemptUntil=self.Context.Clock()
-        end
-    end)
-    local ok,message=pcall(seat.Sit,seat,self.Humanoid)
-    if not ok then self:ClearAttempt();self.Status="Seat rejected YouDecoy: "..tostring(message)end
-end
-function Decoy:Step(dt)
-    if not self.Enabled or self.Closed then return end
-    local character,realRoot,realHumanoid=self.Context.Character()
-    if not realRoot or not realHumanoid or realHumanoid.Health<=0 then self:Fail("Character unavailable; toggle on after respawn");return end
-    if self.Character and self.Character~=character then self:Fail("Character changed; toggle on to restart the decoy");return end
-    self.Character=character
-    local now=self.Context.Clock()
-    local target,reason=self:SyncTarget()
-    if not target then self:DropModel();self.Status=reason;return end
-    if now>=self.NextScan then self.NextScan=now+.25;self:Refresh()end
-    if self.Spawning then self.Status="Preparing YouDecoy: validating parts and ownership";return end
-    local chosen,chosenRecord=self:BoundSeat()
-    -- The engine can seat a touching NPC before our explicit Sit call. Handle
-    -- that attachment before checking assembly ownership or applying forces.
-    if self.Model then
-        for seat,record in pairs(self.Seats)do
-            if seat==self.LockedSeat and self:SeatValid(seat,record)and record.Character==self.TargetCharacter then
-                for _,weld in ipairs(seat:GetChildren())do
-                    if self:OwnWeld(weld,seat)then
-                        self:StopMovers()
-                        if self.ActiveSeat~=seat then
-                            if record.Tries>=3 then self:Fail("Repeated automatic seating: test limit reached; toggle on to retry");return end
-                            record.Tries+=1;self.Attempts+=1
-                        end
-                        record.Next=now+.25;self:DetachOwn(seat);self:ClearAttempt()
-                        self.Status="Decoy seat weld observed locally; server effect unverified";return
-                    end
-                end
-            end
-        end
-    end
-    if self.ActiveSeat then
-        local record=self.Seats[self.ActiveSeat]
-        if self.ActiveSeat~=self.LockedSeat or not self.BindingValid or not self:SeatValid(self.ActiveSeat,record)or self:Occupied(self.ActiveSeat)or now>=(self.AttemptUntil or 0)then
-            self:DetachOwn(self.ActiveSeat);self:ClearAttempt()
-        else self.Status="Trying YouDecoy seating; server effect unverified";return end
-    end
-    if not chosen then
-        if not self:HasTarget()then
-            self:DropModel();self.Status="Select an unprotected target; decoy released";return
-        end
-        if not self.Model then self:Spawn();return end
-        if not self.Model.Parent or not self.Root.Parent or self.Humanoid.Health<=0 then self:Fail("YouDecoy disappeared; toggle on to retry");return end
-        if not self.Context.Owned(self.Root)then self:Fail("YouDecoy ownership lost while waiting; no character teleport attempted");return end
-        if self.ParkFrame then self:Drive(self.ParkFrame,dt)end
-        self.Status=self.BindingStatus or "Waiting for the selected target's actual Gucci seat"
-        return
-    end
-    if not self.Model then self:Spawn();return end
-    if not self.Model.Parent or not self.Root.Parent or self.Humanoid.Health<=0 then self:Fail("YouDecoy disappeared; toggle on to retry");return end
-    if not self:AssemblySafe()then self:StopMovers();self.Status="YouDecoy coupled externally; movement stopped";return end
-    if not self.Context.Owned(self.Root)then self:Fail("YouDecoy ownership lost; real character left untouched");return end
-    local goal=chosen.CFrame*CFrame.new(0,2,0)
-    local point=goal.Position
-    if point.X~=point.X or point.Y~=point.Y or point.Z~=point.Z or point.Magnitude>10000000 then self:StopMovers();self.Status="Invalid seat position; waiting";return end
-    if not self:Drive(goal,dt)then return end
-    if self:Occupied(chosen)then self.Status="Following "..self.TargetPlayer.Name.."'s bound Gucci; waiting for free seat"
-    elseif(chosen.Position-self.Root.Position).Magnitude<=5 then self:BeginAttempt(chosen,chosenRecord)
-    else self.Status="Following Gucci with YouDecoy"end
-end
-function Decoy:Render()
-    if not self.Label then return end
-    local text=self.Status..string.format("\nAttempts: %d | own welds seen locally: %d",self.Attempts,self.OwnWelds)
-    if text~=self.LastText then self.Label:SetText(text);self.LastText=text end
-end
-function Decoy:BuildUI(group)
-    self.Toggle=group:AddToggle("TargetDecoyGucci",{Text="YouDecoy Gucci [Experimental]",Default=false,
-        Tooltip="One selected target only. SeatPart/Occupant/SeatWeld must identify that target's actual seat. Only a real spawned YouDecoy is used. No real-character teleport/SNO fallback. Occupied seats are followed, not forced open. Server result is unverified.",
-        Callback=function(value)self:SetEnabled(value)end})
-    self.Toggle:AddKeyPicker("TargetDecoyGucciKey",{Text="YouDecoy Gucci",Default="None",Mode="Toggle",SyncToggleState=true,NoUI=false})
-    local settings=group:AddDependencyBox();settings:SetupDependencies({{self.Toggle,true}})
-    settings:AddToggle("TargetDecoyGucciFast",{Text="Fast Decoy Reposition",Default=true,
-        Tooltip="Repositions only the owned detached toy at the uniquely associated target seat, as in the supplied YouDecoy source. Stops on ownership loss or external attachment.",
-        Callback=function(value)self.FastApproach=value==true end})
-    settings:AddSlider("TargetDecoyGucciSpeed",{Text="Decoy Follow Speed",Default=120,Min=10,Max=300,Rounding=0,Compact=true,Suffix=" studs/s",
-        Callback=function(value)if type(value)=="number"and value==value then self.Speed=math.clamp(value,10,300)end end})
-    self.Label=group:AddLabel("Disabled",true);self:Render()
-end
-function Decoy:Dispose()
-    if self.Closed then return end
-    self:SetEnabled(false);self.Closed=true;disconnect(self.Connection)
-end
-return Decoy
 
-]========]
 sources.MenuDecor = [========[
 local requireModule=...
 local Catalog=requireModule("AssetCatalog")
@@ -52378,9 +51978,9 @@ return Freeze
 
 ]========]
 sources.KickInterval = [========[
--- Optional cadence for repeat Grab/release actions in selected Loop Kick.
+-- Optional complete Grab/RNO cycle period for selected Loop Kick.
 -- Ragdoll, pallet contacts, holding and limb positioning never pass this gate.
--- Disabled by default. Ping mode uses the same Data Ping ms as the watermark.
+-- Disabled by default. Data Ping RTT is split over hold and release phases.
 local Interval={};Interval.__index=Interval
 local function finite(value)
     return type(value)=="number"and value==value and value>=0 and value<math.huge
@@ -52429,6 +52029,14 @@ function Interval:Milliseconds()
     if self.LastValid and now-self.LastValid<=1 then return self.PingMs end
     return nil -- unavailable telemetry leaves native grabbing active
 end
+-- One period is snapshotted by KickLoop at Grab. A ping change affects the
+-- next cycle, not a half-completed release; no accumulated catch-up requests.
+function Interval:CycleSeconds()
+    if self.Closed or not self.Enabled then return nil end
+    self:Sample()
+    local ms=self:Milliseconds()
+    return ms and ms/1000 or nil
+end
 function Interval:Ready(player,character)
     if self.Closed or not self.Enabled then return true end
     if not player or not character then return false end
@@ -52446,31 +52054,23 @@ end
 function Interval:Render()
     if self.Closed or not self.Label or self.Rendering then return end
     self.Rendering=true
-    if self.ManualSlider.Value~=self.ManualMs then self.ManualSlider:SetValue(self.ManualMs)end
+    if self.ManualSlider and self.ManualSlider.Value~=self.ManualMs then self.ManualSlider:SetValue(self.ManualMs)end
     local ms=self:Milliseconds()
     local text
-    if not self.Enabled then text="Loop MS off: native kick cadence."
+    if not self.Enabled then text=self.Available and string.format("Ping: %d ms | Loop MS off",self.PingMs)or "Ping unavailable | Loop MS off"
     elseif not ms then text="Ping unavailable: native grabbing remains active."
     else
         local mode=self.Mode=="Ping"and(self.Available and "Ping"or "Last ping")or "Manual"
-        text=string.format("%s: %d ms. Ragdoll stays independent.",mode,ms)
+        text=string.format("%s: %d ms | cycle: %d ms",mode,ms,ms)
     end
     if text~=self.LastText then self.Label:SetText(text);self.LastText=text end
     self.Rendering=false
 end
 function Interval:BuildUI(group)
     if self.Closed or self.Label then return end
-    group:AddDivider("Loop MS")
-    local enabled=group:AddToggle("KickLoopIntervalEnabled",{Text="Loop MS",Default=false,
-        Tooltip="Optional repeat Grab/release cadence only. Ragdoll and pallet hits retain their original independent schedule.",
-        Callback=function(value)self:SetEnabled(value)end})
-    local settings=group:AddDependencyBox();settings:SetupDependencies({{enabled,true}})
-    local mode=settings:AddDropdown("KickLoopIntervalSource",{Text="Interval Source",Values={"Ping","Manual"},Default="Ping",AllowNull=false,
-        Tooltip="Ping uses Data Ping directly in milliseconds, with no added margin or smoothing. Actual execution is limited by frame timing.",
-        Callback=function(value)self:SetMode(value)end})
-    local manual=settings:AddDependencyBox();manual:SetupDependencies({{mode,"Manual"}})
-    self.ManualSlider=manual:AddSlider("KickLoopIntervalMs",{Text="Loop Interval (ms)",Default=200,Min=1,Max=1000,Rounding=0,Compact=true,Suffix=" ms",
-        Callback=function(value)if not self.Rendering then self:SetManual(value)end end})
+    group:AddToggle("KickLoopIntervalEnabled",{Text="Loop MS",Default=false,
+        Tooltip="Data Ping RTT controls the full Grab/release cycle: half before release, half before the next Grab. Each phase uses a separate physics frame; holding and ragdoll remain independent.",
+        Callback=function(value)if value then self:SetMode("Ping")end;self:SetEnabled(value)end})
     self.Label=group:AddLabel("Loop MS off: native kick cadence.",true)
     self:Render()
 end
@@ -96054,10 +95654,27 @@ end
 -- Native order from the supplied Resonance 2.9 cycle: Grab; delayed RNO;
 -- independent Ragdoll/RemoveSticky; collisions/limbs; delayed EKI. Scheduling
 -- is token-guarded so a stopped/respawned session cannot release a new root.
+-- The interval is a full cycle. Keep its sampled value until both halves
+-- complete; switch-off/unavailable telemetry returns to native timing promptly.
+function Loop:IntervalPeriod(session,now)
+    local callback=self.Context.IntervalSeconds
+    local ok,value=true,nil
+    if callback then ok,value=pcall(callback,session.Player,session.Character)end
+    local period=ok and finite(value)and value>0 and math.min(value,120)or nil
+    if not period and session.IntervalSeconds then
+        session.IntervalSeconds=nil
+        Handoff.CancelTiming(session,now)
+        for _,release in ipairs(session.Releases or{})do if release.Interval then
+            release.Time=nil;release.Frame=(session.Handoff and session.Handoff.Frame or self.Frame)+1;release.Interval=nil
+        end end
+    end
+    return period
+end
 function Loop:FlushReleases()
     if self.Excursion or self.CaptureAnchor or self.Context.OwnershipBusy()then return end
     local now=self.Context.Clock()
     for _,session in pairs(self.Sessions)do
+        self:IntervalPeriod(session,now)
         local queue=session.Releases
         local first=queue and queue[1]
         local due=first and(first.Frame and self.Frame>=first.Frame or first.Time and now>=first.Time)
@@ -96068,7 +95685,7 @@ function Loop:FlushReleases()
                 -- the bounded handoff timeout still recovers missing replies.
                 local owned=self.Context.Owned(session.Root)==true
                 if Handoff.CanRelease(session,self.Frame,now,owned)and self:Release(session)then
-                    Handoff.Released(session,self.Frame,now,self.Context.PingSeconds(),self.Context.NativePhases==true and'Native'or self.Context.LowLatency==true)
+                    Handoff.Released(session,self.Frame,now,self.Context.PingSeconds(),self.Context.NativePhases==true and'Native'or self.Context.LowLatency==true,session.IntervalSeconds)
                     table.remove(queue,1)
                     -- After a deliberate Gucci pause, discard overdue release
                     -- callbacks instead of replaying them as a same-frame burst.
@@ -96105,14 +95722,18 @@ function Loop:Update(session,position,now,ping)
     end
     -- Ownership phases gate only the next outgoing Grab. Hold updates,
     -- collision maintenance and the pallet worker continue while waiting.
+    local period=self:IntervalPeriod(session,now)
     local queued=session.Releases and #session.Releases>0
     local repeatReady=not queued and Handoff.CanGrab(session,self.Frame,now,(ctx.MarkerOwned or ctx.Owned)(root))
-    if repeatReady and ctx.IntervalReady then repeatReady=ctx.IntervalReady(session.Player,session.Character)end
+    if repeatReady and not ctx.IntervalSeconds and ctx.IntervalReady then repeatReady=ctx.IntervalReady(session.Player,session.Character)end
     if repeatReady then
         session.Requested=true;ctx.Grab(root);self.Calls+=1
-        Handoff.Grabbed(session,self.Frame,now,ping,ctx.NativePhases==true and'Native'or ctx.LowLatency==true)
+        session.IntervalSeconds=period
+        Handoff.Grabbed(session,self.Frame,now,ping,ctx.NativePhases==true and'Native'or ctx.LowLatency==true,period)
         session.Releases=session.Releases or {}
-        if self:Compatibility()then
+        if period then
+            session.Releases[#session.Releases+1]={Time=now+period*.5,Interval=true}
+        elseif self:Compatibility()then
             session.Releases[#session.Releases+1]={Time=now+.2}
         else session.Releases[#session.Releases+1]={Frame=self.Frame+1}end
     end
@@ -96197,7 +95818,7 @@ function Loop:Step(dt)
     else self.Status=string.format("Kick %s | held: %d | awaiting: %d\nNative Grab calls: %d | RNO calls: %d",self.MaximumSpeed and "2x"or "source timing",held,waiting,self.Calls,self.Released)end
 end
 function Loop:Evidence()
- local result={NativeFrames=self.Context.NativePhases==true,LowLatency=self.Context.LowLatency==true,GrabRequests=self.Calls,ReleaseRequests=self.Released,Targets={}}
+ local result={FullCycleTiming=self.Context.IntervalSeconds~=nil,NativeFrames=self.Context.NativePhases==true,LowLatency=self.Context.LowLatency==true,GrabRequests=self.Calls,ReleaseRequests=self.Released,Targets={}}
  for _,session in pairs(self.Sessions)do result.Targets[#result.Targets+1]={Name=session.Player.Name,Phase=session.Handoff and session.Handoff.Phase,
   LastObserved=session.LastHandoff and session.LastHandoff.Observed,PhysicsOwned=self.Context.NetworkOwned and self.Context.NetworkOwned(session.Root)==true,
   MarkerOwned=(self.Context.MarkerOwned or self.Context.Owned)(session.Root)==true,Acquiring=session.Acquiring==true}end

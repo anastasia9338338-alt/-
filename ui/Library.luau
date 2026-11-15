@@ -2753,6 +2753,11 @@ function Library:MakeBoxPopOut(Box: any, Options: {
                 ZIndex = 1,
                 Parent = Floats,
             })
+            Library:StylePopupSurface(Float)
+            Float.BackgroundTransparency=Library.Scheme.GlassTransparency
+            New("UICorner",{CornerRadius=UDim.new(0,Library.CornerRadius),Parent=Float})
+            Library:AddOutline(Float)
+            Library:RegisterArtworkSurface(Float)
             FloatScale = New("UIScale", {
                 Parent = Float,
             })
@@ -3305,6 +3310,7 @@ function Library:AddDraggableMenu(Name: string)
         BackgroundColor3 = "BackgroundColor",
         Position = UDim2.fromOffset(6, 6),
         Size = compact and UDim2.fromOffset(280, 64) or UDim2.fromOffset(0, 0),
+        ClipsDescendants = compact,
         ZIndex = 1,
         Parent = Floats,
     })
@@ -3363,18 +3369,25 @@ function Library:AddDraggableMenu(Name: string)
     if compact then
         Container.CanvasSize = UDim2.fromOffset(0,0)
         Container.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        Container.ScrollBarThickness = 3
+        Container.ScrollBarThickness = 0
+        Container.ScrollBarImageTransparency = 1
         Container.ScrollingDirection = Enum.ScrollingDirection.Y
         Container.BorderSizePixel = 0
+        Container.Position = UDim2.fromOffset(6,29)
+        Container.Size = UDim2.new(1,-12,1,-35)
         Container.ClipsDescendants = true
         local function resize()
             local camera = workspace.CurrentCamera
             local height = camera and camera.ViewportSize.Y / Library.DPIScale or 720
             local limit = math.max(28,math.min(300,height-65))
-            local content = List.AbsoluteContentSize.Y / Library.DPIScale + 14
-            Holder.Size = UDim2.fromOffset(280,29+math.clamp(content,28,limit))
+            local content = List.AbsoluteContentSize.Y / Library.DPIScale + 16
+            local width = camera and math.max(120,math.min(280,camera.ViewportSize.X / Library.DPIScale-12)) or 280
+            Holder.Size = UDim2.fromOffset(width,35+math.clamp(content,28,limit))
         end
         Library:GiveSignal(List:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize))
+        Library:GiveSignal(Holder:GetPropertyChangedSignal("Visible"):Connect(resize))
+        local camera=workspace.CurrentCamera
+        if camera and camera.GetPropertyChangedSignal then Library:GiveSignal(camera:GetPropertyChangedSignal("ViewportSize"):Connect(resize))end
         resize()
     end
 
@@ -6774,6 +6787,7 @@ do
                 Parent = Content,
             })
 
+            Content.ClipsDescendants=true
             Button.Content = Content
             Button.Label = New("TextLabel", {
                 AutomaticSize = Enum.AutomaticSize.X,
@@ -6794,6 +6808,24 @@ do
 
             ApplyButtonIcon(Button, Button.Icon)
 
+            -- A press action is visually distinct from a stateful checkbox.
+            -- Reuse the addon rail so shortcuts and the hand never overlap.
+            Button.Base=Base
+            local host=Library:GetAddonHost(Button)
+            local layout=host:FindFirstChildOfClass("UIListLayout")
+            if layout then layout.SortOrder=Enum.SortOrder.LayoutOrder end
+            local icon=Library:GetIcon("hand-pointer")or Library:GetIcon("hand")
+            if icon then
+                Button.PressIndicator=New("ImageLabel",{Name="PressIndicator",BackgroundTransparency=1,
+                    ImageColor3="FontColor",ImageTransparency=Button.Disabled and .8 or .35,
+                    LayoutOrder=1000,Size=UDim2.fromOffset(18,18),Parent=host})
+                Library:ApplyLucideIcon(Button.PressIndicator,icon)
+            else
+                Button.PressIndicator=New("TextLabel",{Name="PressIndicator",BackgroundTransparency=1,
+                    Text="☞",TextSize=18,TextColor3="FontColor",TextTransparency=Button.Disabled and .8 or .35,
+                    LayoutOrder=1000,Size=UDim2.fromOffset(18,18),Parent=host})
+            end
+            if Button.RefreshAddons then Button.RefreshAddons()end
             return Base, Stroke
         end
 
@@ -6926,6 +6958,10 @@ do
                 if SubButton.IconImage and SubButton.IconImage.Visible then
                     SubButton.IconImage.ImageTransparency = SubButton.Disabled and 0.8 or 0.4
                 end
+                if SubButton.PressIndicator then
+                    if SubButton.PressIndicator:IsA("ImageLabel")then SubButton.PressIndicator.ImageTransparency=SubButton.Disabled and .8 or .35
+                    else SubButton.PressIndicator.TextTransparency=SubButton.Disabled and .8 or .35 end
+                end
 
                 Library.Registry[SubButton.Base].BackgroundColor3 = SubButton.Disabled and "BackgroundColor"
                     or "MainColor"
@@ -7030,6 +7066,10 @@ do
 
             if Button.IconImage and Button.IconImage.Visible then
                 Button.IconImage.ImageTransparency = Button.Disabled and 0.8 or 0.4
+            end
+            if Button.PressIndicator then
+                if Button.PressIndicator:IsA("ImageLabel")then Button.PressIndicator.ImageTransparency=Button.Disabled and .8 or .35
+                else Button.PressIndicator.TextTransparency=Button.Disabled and .8 or .35 end
             end
 
             Library.Registry[Button.Base].BackgroundColor3 = Button.Disabled and "BackgroundColor" or "MainColor"
@@ -8010,6 +8050,7 @@ do
             Size = UDim2.new(1,-24,0,22),Text = "",Parent = Holder,
         })
         local Track = New("Frame", {
+            Name="SliderTrack",
             AnchorPoint = Vector2.new(0,.5),BackgroundColor3 = "MainColor",
             Position = UDim2.fromScale(0,.5),Size = UDim2.new(1,0,0,SliderDiameter),Parent = Bar,
         })
@@ -8049,12 +8090,14 @@ do
         end
 
         local Fill = New("Frame", {
+            Name="SliderFill",
             BackgroundColor3 = "AccentColor",Size = UDim2.fromScale(.5,1),
             ZIndex = Bar.ZIndex+1,Parent = Track,
         })
         New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Track})
         New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Fill})
         local Thumb = New("Frame", {
+            Name="SliderThumb",
             AnchorPoint = Vector2.new(.5,.5),BackgroundColor3 = "WhiteColor",
             Position = UDim2.fromScale(.5,.5),Size = UDim2.fromOffset(SliderDiameter,SliderDiameter),
             ZIndex = Bar.ZIndex+2,Parent = Track,
@@ -8077,8 +8120,8 @@ do
                 InputTextBox.TextTransparency = Slider.Disabled and 0.8 or 0
             end
 
-            Fill.BackgroundColor3 = Slider.Disabled and Library.Scheme.OutlineColor or Library.Scheme.AccentColor
-            Library.Registry[Fill].BackgroundColor3 = Slider.Disabled and "OutlineColor" or "AccentColor"
+            Fill.BackgroundColor3 = Slider.Disabled and Library.Scheme.OutlineColor or Library.GUICustomSlider and Library.GUICustomSlider.Fill or Library.Scheme.AccentColor
+            Library.Registry[Fill].BackgroundColor3 = function()return Slider.Disabled and Library.Scheme.OutlineColor or Library.GUICustomSlider and Library.GUICustomSlider.Fill or Library.Scheme.AccentColor end
         end
 
         function Slider:Display()
@@ -15002,7 +15045,10 @@ function Library:AllowsFunctionIcons(node)
     end
     return true
 end
-function Library:FunctionIcon() end
+function Library:FunctionIcon(label,text)
+    self.FunctionLabels=self.FunctionLabels or setmetatable({},{__mode='k'})
+    if label then self.FunctionLabels[label]=tostring(text or''):gsub('<[^>]*>','')end
+end
 
 function Library:BeginStartup() self.Starting=true end
 function Library:FinishStartup() self.Starting=false end
@@ -15017,9 +15063,17 @@ function Library:StylePopupSurface(frame)
         end,Parent=frame})
     end
 end
+function Library:RegisterArtworkSurface(frame)
+    self.ArtworkSurfaces=self.ArtworkSurfaces or setmetatable({},{__mode='k'})
+    self.ArtworkSurfaces[frame]=true
+    if self.AppearanceController then self.AppearanceController:AddSurface(frame)end
+end
 function Library:StyleFloatingPanel(frame)
     if not frame then return end
     self:StylePopupSurface(frame)
+    frame.BackgroundTransparency=self.Scheme.GlassTransparency
+    self:RegisterArtworkSurface(frame)
+    if self.AppearanceController then self.AppearanceController:ApplySurfaces()end
     frame.BorderSizePixel=0
     local corner=frame:FindFirstChildOfClass("UICorner") or New("UICorner",{Parent=frame})
     corner.CornerRadius=UDim.new(0,self.CornerRadius)
