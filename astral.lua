@@ -1,4 +1,4 @@
--- Astral v4.93 | Physical kick contacts and native toy-grid repairs.
+-- Astral v4.94 | Single-pallet lifecycle and kick contact recovery.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -19732,7 +19732,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.93 | FTAP")
+                                warn("Astral v4.94 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23067,26 +23067,34 @@ end
                     local root=part.AssemblyRootPart or part
                     return not root.Anchored and root.ReceiveAge==0
                 end
-                tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,Pulsed=true,
+                tbl12.PalletSupply=requireModule("PalletSupply").Install({Clock=os.clock,SpawnThread=task.spawn,
+                    WaitFrame=function()RunService.Heartbeat:Wait()end,
+                    Containers=function()
+                        local containers={}
+                        local inventory,plot
+                        if tbl12.GetInventory then inventory,plot=tbl12.GetInventory(localPlayer)else inventory=v17 end
+                        if inventory then containers[#containers+1]=inventory end
+                        if plot and plot~=inventory then containers[#containers+1]=plot end
+                        return containers
+                    end,
+                    CanSpawn=function()return not flag11 and requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
+                    Spawning=function(value)tbl7.States.Spawning=value end,
+                    Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value and true or nil end,
+                    Spawn=function()
+                        local _,root,hum=tbl12.Char()
+                        if flag11 or not root or not hum or hum.Health<=0 then return false end
+                        local rotate=workspace:FindFirstChild("RotateOrientPart")
+                        -- Exactly one RPC; the general spawner has a separate
+                        -- plot retry loop and cannot own this resource's lifetime.
+                        return tbl11.SpawnToy:InvokeServer("PalletLightBrown",CFrame.new(root.Position+Vector3.new(0,15,20)),rotate and rotate.Rotation or Vector3.zero)
+                    end,
+                    Destroy=function(model)tbl12.DestroyToy(model)end,
+                })
+                tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,Pulsed=false,SourceKick=true,
                     NativeTouch=typeof(firetouchinterest)=="function" and firetouchinterest or nil,
-                    InitialContactReady=function(character)
-                        local player=Players:GetPlayerFromCharacter(character)
-                        local loop=tbl12.KickLoop;local session=player and loop and loop.Sessions[player]
-                        if not session or not loop:Valid(session)or not session.SourceReady or session.Acquiring or loop.Excursion or loop.CaptureAnchor then return false end
-                        local _,root,hum=tbl12.Char(player);local _,actor,actorHum=tbl12.Char()
-                        return root==session.Root and hum==session.Humanoid and actor and actorHum and actorHum.Health>0
-                            and hum.Health>0 and not root.Anchored and tbl12.IsNetworkOwner(root)and(root.Position-actor.Position).Magnitude<=33
-                    end,
-                    Held=function(character)
-                        local player=Players:GetPlayerFromCharacter(character)
-                        local loop=tbl12.KickLoop
-                        if not player or not loop or not loop:IsPhysicallyHolding(player)then return false end
-                        local _,targetRoot=tbl12.Char(player);local _,localRoot=tbl12.Char()
-                        return targetRoot and localRoot and targetRoot.Position.Y-localRoot.Position.Y>=math.max(2,tbl9.NKOffset-2)
-                    end,
-                    Find=function()return v17 and v17:FindFirstChild("RagdollRSC")end,
+                    Find=function()return tbl12.PalletSupply:Find()end,
                     CanSpawn=function()return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
-                    Spawn=function(valid)return tbl12.SpawnToy("PalletLightBrown",nil,0,true,valid)end,
+                    Spawn=function(valid)return tbl12.PalletSupply:Get(valid)end,
                     Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value and true or nil end,
                     Owned=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
                     Overlaps=function(part,character)
@@ -23127,11 +23135,11 @@ end
                     Gravity=function()return workspace.Gravity end,
                     Notify=function(reason)fn18('Кик: '..reason)end,
                     Acquire=function(part,valid)if tbl7.States.Owning then return false end;return tbl12.SNO(part,.9,valid,true)end,
-                    Destroy=function(model)if model and model.Parent==v17 then tbl12.DestroyToy(model)end end,
-                    ParkPosition=function()local _,root=tbl12.Char();return root and root.Position+Vector3.new(0,5,-12)end,
+                    Destroy=function(model)tbl12.PalletSupply:Destroy(model)end,
+                    ParkPosition=function()return Vector3.new(0,1000,0)end,
                     PingSeconds=tbl12.KickPingSeconds,Busy=function(value)tbl7.States.Ragdolling=value end,
                 })
-                lib:OnUnload(function()tbl12.PalletRagdoll:Dispose()end)
+                lib:OnUnload(function()tbl12.PalletRagdoll:Dispose();tbl12.PalletSupply:Dispose()end)
                 tbl12.Ragdoll=function(character)return tbl12.PalletRagdoll:Apply(character)end
 
 				tbl12.RemoveSticky = function(arg, arg2)
@@ -35954,7 +35962,7 @@ Escape Timer: %*]]
                 until os.clock()>=deadline
                 return false
             end
-            tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,NativePhases=true,PreserveCharacterRig=true,StableHoldBeforeRefresh=true,
+            tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,NativePhases=true,PreserveCharacterRig=true,
                 SourceMode=function()return tbl9.NKSourceMode or "Faster"end,
                 Enabled=function()return not flag11 and (tbl8.LoopApplyMethodT or tbl8.LoopApplyMethodTServer)and tbl7.TargetMethods.Kick and not localPlayer.InPlot.Value end,
                 Selected=function(player)return player and player.Parent and (tbl8.LoopApplyMethodTServer or tbl7.SelectedPlayers[player]==true)and not tbl12.IsProtectedPlayer(player)end,
@@ -35969,12 +35977,21 @@ Escape Timer: %*]]
                 Collisions=function(character,enabled)
                     for _,part in ipairs(character:GetDescendants())do if part:IsA("BasePart")then part.CanCollide=enabled end end
                 end,
+                Stabilize=function(character)
+                    for _,part in ipairs(character:GetDescendants())do
+                        if part:IsA("BasePart")and tbl12.IsNetworkOwner(part)then
+                            part.AssemblyLinearVelocity=Vector3.zero;part.AssemblyAngularVelocity=Vector3.zero
+                        end
+                    end
+                end,
                 Limbs=tbl12.RepositionLimbs,
                 RestoreMotors=function(character)tbl12.ToggleMotor6D(character,true,true)end,
                 RequestRagdoll=function(character,valid)
-                    -- The same physical worker handles startup entry and held
-                    -- entry/exit; executor touch calls do not stand in for hits.
-                    return tbl12.PalletRagdoll:Maintain(character,valid)
+                    -- Use the supplied kick's spinning pallet / root contact.
+                    -- Ownership refresh does not wait for a sweep or hitbox exit.
+                    local started=tbl12.PalletRagdoll:SourceContact(character,valid)
+                    if started==nil then return tbl12.PalletRagdoll:Request(character,valid)end
+                    return started
                 end,
                 WarmRagdoll=function()tbl12.PalletRagdoll:Warm()end,
                 PausePallet=function(token,value)tbl12.PalletRagdoll:Pause(token,value)end,
@@ -36217,7 +36234,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.93",true)
+            box:AddLabel("Astral v4.94",true)
         end
 
         do
@@ -37967,7 +37984,7 @@ Escape Timer: %*]]
             Callback=function(value)tbl9.NKSourceMode=value end})
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
-            Tooltip="Experimental local retry limit. Each attempt still waits for physics and physical exit; server hit and kick timing are not measured by this setting. Use 10 for the previous polling interval.",
+            Tooltip="How often the prepared pallet attempts ragdoll during Kick. The server decides which contacts take effect.",
             Callback=function(value)tbl12.PalletRagdoll:SetContactRate(value)end})
 
 		v21:AddToggle("RagdollNK", {
@@ -37980,14 +37997,6 @@ Escape Timer: %*]]
 		})
 
         tbl8.EKI=false
-
-        local hitSettings=v21:AddDependencyBox();hitSettings:SetupDependencies({{toggles.RagdollNK,true}})
-        hitSettings:AddSlider("KickPulsePause",{Text="Single Hit Pause",Default=.25,Min=.05,Max=2,Rounding=2,Suffix=" s",Compact=true,
-            Callback=function(value)tbl12.PalletRagdoll:SetPulsePause(value)end})
-        hitSettings:AddSlider("KickPulseBurst",{Text="Burst Hits",Default=4,Min=1,Max=8,Rounding=0,Compact=true,
-            Callback=function(value)tbl12.PalletRagdoll:SetPulseBurst(value)end})
-        hitSettings:AddSlider("KickPulseRecovery",{Text="After Burst Pause",Default=.8,Min=.1,Max=3,Rounding=2,Suffix=" s",Compact=true,
-            Callback=function(value)tbl12.PalletRagdoll:SetPulseRecovery(value)end})
 
 		v21:AddSlider("HeightNK", {
 			Text = "Kick Height",
@@ -42043,6 +42052,7 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 		copyright = "Copyright (c) 2026 Project Resonance. All rights reserved.",
 	}
 end
+
 ]========]
 sources.PCLDAvatarESP = [========[
 -- Avatars are rendered in one GUI ViewportFrame/WorldModel, never Workspace.
@@ -46127,6 +46137,145 @@ function Guard:Dispose()
  self:SetEnabled(false);self.Closed=true;self.Connection:Disconnect()
 end
 return Guard
+
+]========]
+sources.PalletSupply = [========[
+-- One shared spawn transaction for kick preparation and one-shot ragdoll.
+-- A timeout is not a server rejection: keep listening for that request instead
+-- of sending another SpawnToy RPC and leaving late pallets on the floor.
+local Supply={};Supply.__index=Supply
+local function model(value)return typeof(value)=="Instance"and value:IsA("Model")and value.Parent~=nil end
+function Supply.Install(context)
+    return setmetatable({Context=context,Owned={},Removed={},Status="Pallet not requested"},Supply)
+end
+function Supply:Unlock(pending)
+    if pending.Locked then pending.Locked=false;self.Context.Spawning(false)end
+end
+function Supply:Disconnect(pending)
+    for _,connection in pairs(pending.Connections)do connection:Disconnect()end
+    table.clear(pending.Connections)
+end
+function Supply:Destroy(value)
+    if not value or not self.Owned[value]or self.Removed[value]then return end
+    self.Context.Destroy(value)
+    self.Removed[value]=true
+    self.Context.Reserve(value,false)
+    if self.Model==value then self.Model=nil end
+    if self.Pending and self.Pending.Model==value then self.Pending=nil end
+end
+function Supply:Accept(pending,value)
+    if not model(value)or pending.Before[value]then return end
+    if pending.Model then return end
+    pending.Model=value;self.Owned[value]=true
+    self.Context.Reserve(value,true)
+    value.Name="RagdollRSC" -- retain the handle before SoundPart/Main stream in
+    self:Unlock(pending);self:Disconnect(pending)
+    if self.Closed then self:Destroy(value)else self.Model=value;self.Status="Pallet received"end
+end
+function Supply:Watch(pending)
+    if pending.Model then return end
+    for _,container in ipairs(self.Context.Containers())do
+        if container and container.Parent and not pending.Connections[container]then
+            pending.Connections[container]=container.ChildAdded:Connect(function(value)
+                if value.Name=="PalletLightBrown"then self:Accept(pending,value)end
+            end)
+            -- Also covers a replaced inventory folder and delivery between calls.
+            for _,value in ipairs(container:GetChildren())do
+                if value.Name=="PalletLightBrown"and not pending.Before[value]then self:Accept(pending,value);if pending.Model then return end end
+            end
+        end
+    end
+end
+function Supply:Find()
+    if self.Closed then return end
+    if model(self.Model)and not self.Removed[self.Model]then return self.Model end
+    for _,container in ipairs(self.Context.Containers())do
+        local value=container and container:FindFirstChild("RagdollRSC")
+        if model(value)and not self.Removed[value]then
+            self.Model=value;self.Owned[value]=true;self.Context.Reserve(value,true);return value
+        end
+    end
+end
+function Supply:Start()
+    local allowed,reason=self.Context.CanSpawn()
+    if not allowed then self.Status=reason or "Waiting to spawn pallet";return end
+    local pending={Before={},Connections={},Started=self.Context.Clock(),Locked=true}
+    for _,container in ipairs(self.Context.Containers())do
+        for _,value in ipairs(container:GetChildren())do pending.Before[value]=true end
+    end
+    self.Pending=pending;self.Context.Spawning(true);self:Watch(pending)
+    if pending.Model then return pending end
+    self.Context.SpawnThread(function()
+        -- Cancellation can remove every Get caller while InvokeServer is still
+        -- yielding. Its late result remains tracked, but must not freeze all
+        -- unrelated toy spawning behind the global Spawning flag.
+        local deadline=pending.Started+2;local nextWatch=pending.Started+.25
+        while not self.Closed and self.Pending==pending and not pending.Model and not pending.Rejected do
+            local now=self.Context.Clock()
+            if now>=deadline then self:Unlock(pending)end
+            if now>=nextWatch then self:Watch(pending);nextWatch=now+.25 end
+            self.Context.WaitFrame()
+        end
+        self:Unlock(pending)
+    end)
+    self.Context.SpawnThread(function()
+        local ok,result=pcall(self.Context.Spawn)
+        pending.Finished=true;pending.Rejected=ok and result==false
+        if not ok then pending.Error=tostring(result)end
+        if model(result)then
+            if pending.Model and pending.Model~=result then
+                -- A returned model is tied to this RPC, unlike an arbitrary toy
+                -- another feature may add to the inventory later.
+                self.Owned[result]=true;self:Destroy(result)
+            else self:Accept(pending,result)end
+        end
+        self:Unlock(pending)
+        if pending.Rejected then
+            self:Disconnect(pending)
+            if self.Pending==pending and not pending.Model then self.Pending=nil;self.RetryAt=self.Context.Clock()+.5 end
+        end
+    end)
+    return pending
+end
+function Supply:Get(valid)
+    local function current()return not self.Closed and(not valid or valid())end
+    if not current()then return end
+    local existing=self:Find();if existing then return existing end
+    if self.Context.Clock()<(self.RetryAt or 0)then return end
+    local pending=self.Pending or self:Start();if not pending then return end
+    local deadline=self.Context.Clock()+2
+    while current()and self.Pending==pending do
+        self:Watch(pending)
+        if model(pending.Model)and not self.Removed[pending.Model]then return pending.Model end
+        if self.Context.Clock()>=deadline then
+            self:Unlock(pending)
+            self.Status=pending.Error and("Spawn reply error; awaiting late pallet: "..pending.Error)or "Awaiting the existing pallet request; no duplicate sent"
+            return
+        end
+        self.Context.WaitFrame()
+    end
+end
+function Supply:Dispose()
+    if self.Closed then return end
+    self.Closed=true
+    local pending=self.Pending
+    if pending then
+        self:Unlock(pending)
+        -- The RPC itself cannot be cancelled. A model returned afterwards is
+        -- destroyed by its completion handler; catch late ChildAdded as well.
+        self.Context.SpawnThread(function()
+            local deadline=self.Context.Clock()+3;local nextWatch=0
+            while not pending.Model and(not pending.Finished or self.Context.Clock()<deadline)do
+                if self.Context.Clock()>=nextWatch then self:Watch(pending);nextWatch=self.Context.Clock()+.25 end
+                if not pending.Finished then deadline=self.Context.Clock()+3 end
+                self.Context.WaitFrame()
+            end
+            self:Disconnect(pending)
+        end)
+    end
+    for value in pairs(self.Owned)do if value.Parent then pcall(self.Destroy,self,value)end end
+end
+return Supply
 
 ]========]
 sources.Bootstrap = [========[
@@ -93497,14 +93646,18 @@ function Pallet.Install(context)
         local entry=self.Active
         return self:EntryValid(entry)
     end
-    self.Native=Source.new({Data={States=self.States},Inventory={FindFirstChild=function()return self.Model and self.Model.Parent and self.Model or context.Find()end},Clock=context.Clock,
+    self.Native=Source.new({Data={States=self.States},Inventory={FindFirstChild=function()
+        local model=self.Model and self.Model.Parent and self.Model or context.Find()
+        if model then self:RetainModel(model)end
+        return model
+    end},Clock=context.Clock,
         API={
             SpawnToy=function()
                 if not valid()then return end
                 local allowed,reason=context.CanSpawn();if not allowed then self.Status=reason or "Waiting to spawn native pallet";return end
                 local model=context.Spawn(valid)
                 if model and not valid()then context.Destroy(model);return end
-                if model then self.Model=model;self:Bind(model)end
+                if model then self:RetainModel(model);self:Bind(model)end
                 return model
             end,
             SNO=function(part)
@@ -93942,6 +94095,11 @@ function Pallet:Park()
     local main=self.Model and self.Model:FindFirstChild("Main")
     local mover=main and main:FindFirstChild("RagdollBP")
     if mover then mover.MaxForce=Vector3.zero end
+    if self.Context.SourceKick then
+        if self.KickProfile and self.KickProfile.Model==self.Model then return end
+        self:ConfigureKickPallet()
+        return
+    end
     if not alive(sound)or sound.Anchored or not self.Context.Owned(sound)then return end
     local assembly=isolatedAssembly(sound,self.Model);if not assembly then return end
     assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=Vector3.zero
@@ -93951,6 +94109,43 @@ function Pallet:Park()
         assembly.CFrame=assembly.CFrame+(position-sound.Position)
         self.LastTransformPart=sound;self.LastTransformFrame=self.PhysicsFrame
     end
+end
+function Pallet:DisableKickProfile()
+    local profile=self.KickProfile
+    self.KickProfile=nil;self.NativeKickReady=false
+    if not profile then return end
+    for _,value in ipairs(profile.Created)do if value.Parent then value:Destroy()end end
+    for part,properties in pairs(profile.Parts)do if part.Parent then
+        for key,value in pairs(properties)do part[key]=value end
+    end end
+    if profile.Sound.Parent then profile.Sound.Size=profile.Size end
+end
+function Pallet:ConfigureKickPallet()
+    if self.NativeKickReady and self.KickProfile and self.KickProfile.Model==self.Model then return true end
+    local sound=self.Sound;local main=self.Model and self.Model:FindFirstChild('Main')
+    if not alive(sound)or not alive(main)or not self.Context.Owned(sound)then return false end
+    local assembly=isolatedAssembly(sound,self.Model);if not assembly then return false end
+    self:DisableKickProfile()
+    local profile={Model=self.Model,Sound=sound,Size=sound.Size,Parts={},Created={}}
+    self.KickProfile=profile
+    for _,part in ipairs(self.Model:GetChildren())do if part:IsA('BasePart')then
+        profile.Parts[part]={CanCollide=part.CanCollide,CanQuery=part.CanQuery,Massless=part.Massless}
+        part.CanCollide=false;part.CanQuery=false;part.Massless=true
+    end end
+    local attachment=Instance.new('Attachment');attachment.Name='KickPalletAttachment';attachment.Parent=sound
+    profile.Created[#profile.Created+1]=attachment
+    local angular=Instance.new('AngularVelocity');angular.Name='KickPalletRotation'
+    angular.MaxTorque=math.huge;angular.AngularVelocity=Vector3.new(5000,0,5000)
+    angular.RelativeTo=Enum.ActuatorRelativeTo.World;angular.Attachment0=attachment;angular.Parent=sound
+    profile.Created[#profile.Created+1]=angular
+    local lift=Instance.new('BodyPosition');lift.Name='KickPalletPosition';lift.D=100
+    lift.Position=Vector3.new(0,10000,0);lift.MaxForce=Vector3.new(math.huge,math.huge,math.huge);lift.Parent=main
+    profile.Created[#profile.Created+1]=lift
+    sound.Size=Vector3.new(6,2,6);sound.CanTouch=true
+    assembly.CFrame=assembly.CFrame+(Vector3.new(0,1000,0)-sound.Position)
+    assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=angular.AngularVelocity
+    self.NativeKickReady=true;self.Status='Source spinning pallet ready; root contacts enabled'
+    return true
 end
 function Pallet:SafePark()
     local ok,message=pcall(self.Park,self)
@@ -93972,6 +94167,7 @@ function Pallet:ShowPallet()
 end
 function Pallet:ForgetModel()
     for character,contact in pairs(self.SourcePending or{})do self:EndSourceContact(character,contact)end
+    self:DisableKickProfile()
     self.LastSweep=nil
     for p,value in pairs(self.Visuals or{})do if p.Parent and p.LocalTransparencyModifier==.45 then p.LocalTransparencyModifier=value end end
     self.Visuals=nil
@@ -93997,6 +94193,11 @@ function Pallet:Bind(model)
             if receiver and part==receiver then entry.ReceiverContactAt=self.Context.Clock();entry.ReceiverContacts=(entry.ReceiverContacts or 0)+1 end
         end
     end)
+end
+function Pallet:RetainModel(model)
+    if self.Model==model then return end
+    self:ForgetModel();self.Model=model
+    if self.Context.Reserve then self.Context.Reserve(model,true)end
 end
 function Pallet:Request(character,valid,continuous)
     if self.Closed or next(self.Pauses)then return end
@@ -94025,7 +94226,8 @@ function Pallet:SourceContact(character,valid)
     local root=character and(character:FindFirstChild('HumanoidRootPart')or character:FindFirstChild('saviHRP')or character:FindFirstChild('realHrp'))
     if not alive(root)or not state(character)then return false end
     if self.Active then return false end -- another real pallet operation owns it
-    if not alive(self.Sound)or not self.Context.Owned(self.Sound)then
+    local ready=alive(self.Sound)and(self.Context.SourceKick and self.NativeKickReady or not self.Context.SourceKick and self.Context.Owned(self.Sound))
+    if not ready then
         local now=self.Context.Clock()
         if now>=(self.SourceWarmAt or 0)then self.SourceWarmAt=now+.5;self:Warm()end
         return false
@@ -94033,17 +94235,20 @@ function Pallet:SourceContact(character,valid)
     self.SourceTimes=self.SourceTimes or setmetatable({},{__mode='k'})
     self.SourcePending=self.SourcePending or {}
     local now=self.Context.Clock()
-    if self.SourcePending[character]or now<(self.SourceTimes[character]or 0)then return false end
+    if self.SourcePending[character]or now+1e-7<(self.SourceTimes[character]or 0)then return false end
     self.SourceTimes[character]=now+self.IntervalSeconds
     local sound=self.Sound;sound.CanTouch=true
+    local originalTouch=root.CanTouch;root.CanTouch=true
     -- Keep the receiver touchable: the supplied Solo loop disables CanTouch
     -- immediately before its own touch call, preventing the requested hit.
+    self.SourceReactions=self.SourceReactions or {}
+    if not self.SourceReactions[character]then self.SourceReactions[character]=Reaction.new(character,self.Context.Clock)end
     local ok,why=pcall(self.Context.NativeTouch,sound,root,0)
-    if not ok then self.LastError=tostring(why);return false end
+    if not ok then if root.Parent and root.CanTouch==true then root.CanTouch=originalTouch end;self.LastError=tostring(why);return false end
     self.SourceBegins=(self.SourceBegins or 0)+1
-    local contact={Sound=sound,Root=root};self.SourcePending[character]=contact
+    local contact={Sound=sound,Root=root,OriginalTouch=originalTouch};self.SourcePending[character]=contact
     self.Context.SpawnThread(function()
-        self.FrameSignal:Wait()
+        self.PhysicsSignal:Wait()
         -- Ending an already issued contact is cleanup, including cancellation.
         self:EndSourceContact(character,contact)
     end)
@@ -94053,10 +94258,13 @@ function Pallet:EndSourceContact(character,contact)
     if not contact or contact.Ended then return end
     contact.Ended=true
     if alive(contact.Sound)and alive(contact.Root)then pcall(self.Context.NativeTouch,contact.Sound,contact.Root,1)end
+    if alive(contact.Root)and contact.Root.CanTouch==true and contact.OriginalTouch~=nil then contact.Root.CanTouch=contact.OriginalTouch end
+    self.SourceEnds=(self.SourceEnds or 0)+1
     if self.SourcePending and self.SourcePending[character]==contact then self.SourcePending[character]=nil end
 end
 function Pallet:Cancel(character)
     if self.SourcePending then self:EndSourceContact(character,self.SourcePending[character])end
+    if self.SourceReactions and self.SourceReactions[character]then self.SourceReactions[character]:Dispose();self.SourceReactions[character]=nil end
     local entry=self.Entries[character]
     if entry then
         entry.Pulse=nil;entry.InitialContact=nil;entry.InitialActive=nil;entry.ContactInFlight=nil
@@ -94097,6 +94305,7 @@ function Pallet:Step()
     self.Active=entry;entry.WorkerStartedAt=self.Context.Clock()
     local passesBefore=entry.Passes or 0
     self.Context.SpawnThread(function()
+        self:DisableKickProfile() -- one-shot native operation owns the same toy
         local ok,value=pcall(self.Native,entry.Character)
         self.States.Ragdolling=false
         if self.Context.Busy then
@@ -94164,10 +94373,11 @@ function Pallet:Prepare(valid)
             local allowed,why=self.Context.CanSpawn()
             if not allowed then self.Status=why or 'Cannot prepare pallet here';return false end
             model=self.Context.Spawn(current)
-            if model then self.Model=model end
+            if model then self:RetainModel(model)end
             if model and not current()then self.Context.Destroy(model);return false end
         end
         if not model or not model.Parent then return false end
+        self:RetainModel(model)
         local sound=model:WaitForChild('SoundPart',.75)
         if not current()then return false end
         local main=model:WaitForChild('Main',.75)
@@ -94178,7 +94388,9 @@ function Pallet:Prepare(valid)
             if not acquired then self.Status=why;self.OwnershipReason=why;return false end
         end
         if not current()or not alive(self.Sound)or not self.Context.Owned(self.Sound)then return false end
-        model.Name='RagdollRSC';self:SafePark();self.Status='Native pallet ready';return true
+        model.Name='RagdollRSC';self:SafePark()
+        if self.Context.SourceKick and not self.NativeKickReady then self.Status='Waiting for an isolated owned pallet assembly';return false end
+        self.Status='Native pallet ready';return true
     end)
     self.Preparing=false
     if not ok then self.LastError=tostring(ready);self.Status='Pallet preparation failed: '..self.LastError end
@@ -94189,7 +94401,8 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=7,Mechanism=self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
+    local info={Version=8,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
+        NativeContactBegins=self.SourceBegins or 0,NativeContactEnds=self.SourceEnds or 0,NativePalletReady=self.NativeKickReady==true,NativeTargets={},
         LocalRetryRateLimit=self.ContactRate,LocalRetryInterval=self.IntervalSeconds,Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
@@ -94201,6 +94414,7 @@ function Pallet:Evidence()
             ObservedRagdollRises=reaction and reaction.Rises or 0,Reason=entry.LastStateReason,
             StateAlreadyRagdolled=value and value.Value==true or false,ContinuousStrikes=entry.Continuous==true,Reaction=reaction}
     end end
+    for character,reaction in pairs(self.SourceReactions or{})do info.NativeTargets[#info.NativeTargets+1]={Character=character.Name,Reaction=reaction:Describe()}end
     return info
 end
 function Pallet:GetContactTime(character)local e=self.Entries[character];return e and e.ContactAt end
@@ -94211,6 +94425,9 @@ function Pallet:Describe()
         self.PassRate=(self.Passes-self.RatePasses)/dt;self.TouchRate=(self.Contacts-self.RateContacts)/dt
         self.RateAt=now;self.RatePasses=self.Passes;self.RateContacts=self.Contacts
     end
+    if self.Context.SourceKick then
+        return self.Status..string.format("\nroot contact calls: %d | ended: %d | one-shot ragdoll states: %d",self.SourceBegins or 0,self.SourceEnds or 0,self.Confirmed)
+    end
     return self.Status..string.format("\nplacements: %d | local touches: %d | one-shot ragdoll states: %d\nmeasured: %.1f placements/s | %.1f local touches/s",self.Passes,self.Contacts,self.Confirmed,self.PassRate,self.TouchRate)
 end
 function Pallet:Dispose()
@@ -94219,6 +94436,7 @@ function Pallet:Dispose()
     for _,entry in pairs(self.Entries)do entry.Pulse=nil;entry.InitialContact=nil;entry.InitialActive=nil;entry.ContactInFlight=nil;entry.Done=true;entry.Success=false;if entry.Reaction then entry.Reaction:Dispose()end end
     table.clear(self.Queue)
     self:SafePark()
+    for character,reaction in pairs(self.SourceReactions or{})do reaction:Dispose();self.SourceReactions[character]=nil end
     local model=self.Model
     local forgotten,forgetError=pcall(self.ForgetModel,self)
     if not forgotten then self.LastError="Pallet release: "..tostring(forgetError)end
@@ -94382,10 +94600,13 @@ function Loop:Create(player,character,root,humanoid)
     session.StackIndex=slot
     local position=root:FindFirstChild("KickAP");local orientation=root:FindFirstChild("KickAO")
     if position then position:Destroy()end;if orientation then orientation:Destroy()end
-    position=Instance.new("BodyPosition");position.Name="KickAP";position.D=200;position.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
+    position=Instance.new("BodyPosition");position.Name="KickAP";position.D=self.Context.SourceMode and 100 or 200;position.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
     position.Position=root.Position;position.Parent=root
-    orientation=Instance.new("BodyGyro");orientation.Name="KickAO";orientation.MaxTorque=Vector3.new(math.huge,math.huge,math.huge);orientation.D=200
-    orientation.CFrame=CFrame.new();orientation.Parent=root
+    orientation=nil
+    if not self.Context.SourceMode then
+        orientation=Instance.new("BodyGyro");orientation.Name="KickAO";orientation.MaxTorque=Vector3.new(math.huge,math.huge,math.huge);orientation.D=200
+        orientation.CFrame=CFrame.new();orientation.Parent=root
+    end
     session.Position,session.Orientation=position,orientation
     if self.Context.WarmRagdoll and self:RagdollRequired()then self.Context.WarmRagdoll()end
     self.Sessions[player]=session;return session
@@ -94406,6 +94627,9 @@ function Loop:Physics(session)
     end
     self.Context.Collisions(session.Character,false)
     if not self.Context.PreserveCharacterRig then self.Context.Limbs(session.Character,true)end
+    if self.Context.Stabilize and session.SourceReady and(self.Context.NetworkOwned or self.Context.Owned)(session.Root)then
+        self.Context.Stabilize(session.Character)
+    end
 end
 function Loop:Acquire(session,now)
     local ctx=self.Context
@@ -95179,7 +95403,9 @@ function Native.new(context)
   local main=model and model:WaitForChild('Main',.5)
   if not current()then return finish(false)end
   if completedState()then return finish(true)end
-  if not alive(sound)or not alive(main)then api.DestroyToy(model);return finish(false)end
+  -- A replicated model can arrive before its parts. Keep the same handle for
+  -- the next slice; a streaming delay must not destroy and respawn the pallet.
+  if not alive(sound)or not alive(main)then return finish(false)end
   local acquired=api.SNO(sound)
   if not current()then return finish(false)end
   if completedState()then return finish(true)end

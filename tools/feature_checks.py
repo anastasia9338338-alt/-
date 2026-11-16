@@ -159,19 +159,27 @@ def run_feature_checks(modules,runner,folder):
         assert 'IntervalSeconds=function()'in native_context and 'KickInterval:CycleSeconds()'in native_context,'Loop MS is not connected to full-cycle timing'
         assert modules['Main'].count('tbl12.KickInterval:BuildUI(')==1,'Loop MS settings are missing or duplicated'
         assert 'tbl12.KickInterval:BuildUI(v21)'in modules['Main'] and 'AddRightGroupbox("Loop MS"'not in modules['Main'],'Loop MS moved outside Kick Settings'
-        assert 'Pulsed=true'in modules['Main'] and ':IsPhysicallyHolding(player)'in modules['Main'],'Pulse profile lacks physical airborne hold integration'
-        assert 'SourceMode=function()return tbl9.NKSourceMode'in native_context and 'return tbl12.PalletRagdoll:Maintain(character,valid)'in native_context and 'SourceContact(character,valid)'not in native_context
+        assert 'Pulsed=false,SourceKick=true'in modules['Main'] and 'KickPulsePause'not in modules['Main'],'Primary kick still uses the discarded pulse/sweep profile'
+        assert 'SourceMode=function()return tbl9.NKSourceMode'in native_context and 'tbl12.PalletRagdoll:SourceContact(character,valid)'in native_context
+        assert ':Maintain(character,valid)'not in native_context and 'StableHoldBeforeRefresh=true'not in native_context,'Primary kick still waits for the removed sweep/hold gate'
         run('source_kick492',read('kick_mock.luau')+loop_source+read('source_kick492_body.luau'))
         main=modules['Main'];start=main.index('tbl12.KickLoop=requireModule')
-        a=main.index('Collisions=function(character,enabled)',start);b=main.index('\n                Limbs=',a)
+        a=main.index('Collisions=function(character,enabled)',start);b=main.index('\n                Stabilize=',a)
         collision=main[a+len('Collisions='):b].strip().rstrip(',')
         a=main.index('RequestRagdoll=function(character,valid)',start);b=main.index('\n                WarmRagdoll=',a)
         route=main[a+len('RequestRagdoll='):b].strip().rstrip(',')
         a=main.index('OwnershipBusy=function()',start);b=main.index('\n                Grab=',a)
         busy=main[a+len('OwnershipBusy='):b].strip().rstrip(',')
-        body=read('physical_hold493_body.luau').replace('__COLLISIONS__',collision).replace('__ROUTE__',route).replace('__OWNERSHIP_BUSY__',busy)
-        run('physical_hold493',read('model_mock.luau')+loop_source+body)
-        assert 'PreserveCharacterRig=true'in native_context and 'StableHoldBeforeRefresh=true'in native_context and 'InitialContactReady=function(character)'in main
+        a=main.index('Stabilize=function(character)',start);b=main.index('\n                Limbs=',a)
+        stabilize=main[a+len('Stabilize='):b].strip().rstrip(',')
+        body=read('kick_profile494_body.luau').replace('__COLLISIONS__',collision).replace('__ROUTE__',route).replace('__OWNERSHIP_BUSY__',busy).replace('__STABILIZE__',stabilize)
+        run('kick_profile494',read('model_mock.luau')+loop_source+body)
+        assert 'PreserveCharacterRig=true'in native_context and 'SourceKick=true'in main
+        supply_context=main.split('tbl12.PalletSupply=requireModule("PalletSupply").Install(',1)[1].split('tbl12.PalletRagdoll=',1)[0]
+        assert supply_context.count('SpawnToy:InvokeServer(')==1 and 'tbl12.SpawnToy('not in supply_context,'Pallet still uses the generic repeating spawner'
+        assert 'tbl12.PalletSupply:Get(valid)'in main and 'tbl12.PalletSupply:Dispose()'in main
+        run('pallet_supply494',read('kick_mock.luau')+'\n'+read('pallet_supply494_prefix.luau')+'\nlocal Supply=(function()\n'+modules['PalletSupply']+'\nend)()\n'+read('pallet_supply494_body.luau'))
+        run('native_contacts494',sweep_prefix+read('native_contacts494_body.luau'))
 
         run('kick_channel',read('kick_mock.luau')+loop_source+read('kick_channel_body.luau'))
         run('kick_handoff',read('kick_mock.luau')+loop_source+read('kick_handoff_body.luau'))

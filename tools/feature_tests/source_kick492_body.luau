@@ -100,4 +100,13 @@ do
  check(d.Marker and (session.Position.Position-Vector3.new(0,15,0)).Magnitude<1e-6,'Lost hold did not reacquire capture while retaining the overhead destination')
  d.Loop:Dispose()
 end
+do
+ local sim,d,t=setup('Faster',60)
+ t.Torso.Position=Vector3.zero;sim:Run(.4,60)
+ local releases=0;for _,event in ipairs(d.Log)do if event.Kind=='R'then releases+=1 end end
+ local session=d.Loop.Sessions[next(d.Loop.Sessions)]
+ check(releases>5,'Main source profile stalled waiting for the physical hold/sweep instead of refreshing ownership')
+ check(session.Position.D==100 and session.Orientation==nil,'Source hold profile gained a conflicting gyro or changed source damping')
+ d.Loop:Dispose()
+end
 print('PASS: '..checks..' source Faster/Normal sequences, initial capture, frame bounds, Loop MS, mode switching and lifecycle checks (mocked)')
