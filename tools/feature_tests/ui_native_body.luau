@@ -4,7 +4,9 @@ local calls=0
 check(type(Library.BeginStartup)=="function"and type(Library.FinishStartup)=="function","Native UI has no initialization guard")
 Library:BeginStartup()
 Library.ForceCheckbox=true
-local window=Library:CreateWindow({Title="astral",Footer="",Size=UDim2.fromOffset(680,540),ShowCustomCursor=false,ShowMobileButtons=false,AutoShow=true,Animations={ToggleWindow=true},CornerRadius=18,Icon="sparkles",Compact=true,IconSidebar=true,SidebarCompactWidth=52,MinContainerWidth=440})
+local info=UIStyle.Window();info.ShowCustomCursor=false
+local window=Library:CreateWindow(info)
+check(info.Size.X.Offset==600 and info.Size.Y.Offset==400 and info.SidebarWidth==120 and info.Font.Family=="Gotham","Main does not use the supplied BetterOrion window defaults")
 check(window.MainFrame.Visible and Library.Toggled and window.MainFrame.BackgroundTransparency==Library.Scheme.GlassTransparency,"AutoShow did not display the real window before any render tick")
 Library.Animations.ToggleWindow=false
 local tab=window:AddTab("Defense","shield")
@@ -43,11 +45,11 @@ check(window.MainFrame.AbsoluteSize.X<=workspace.CurrentCamera.ViewportSize.X-64
 check(Library.Tabs.Defense==tab and #Library.TabButtons==1,"Native sidebar tabs were not registered")
 local rail=Library.TabButtons[1].Label.Parent.Parent.Parent
 local surface=window.MainFrame:FindFirstChild("BodySurface")
-check(not Library.TabButtons[1].Label.Visible and Library.TabButtons[1].Icon.Visible,"Compact sidebar shows text or hides the original icon")
-check(rail.Size.X.Offset==52 and surface and surface.Position.X.Offset==0,"Icon rail is not separated by the requested unified body")
+check(Library.TabButtons[1].Label.Visible and Library.TabButtons[1].Icon.Visible,"BetterOrion sidebar hides its names or source icons")
+check(rail.Size.X.Offset==120 and surface and surface.Position.X.Offset==0,"Icon rail is not separated by the requested unified body")
 window.MainFrame.Size=UDim2.fromOffset(500,420);window:SetSidebarWidth(180)
-check(window:GetSidebarWidth()==52 and not Library.TabButtons[1].Label.Visible,"An old layout restored a full-width text sidebar")
-check(surface.Size.X.Offset==0 and Library.WindowContainer.Size.X.Offset==-53,"Sidebar and body resize independently and overlap")
+check(window:GetSidebarWidth()>=120 and Library.TabButtons[1].Label.Visible,"BetterOrion sidebar resize collapsed the named tabs")
+check(surface.Size.X.Offset==0 and Library.WindowContainer.Size.X.Offset==-window:GetSidebarWidth()+5,"Sidebar and body resize independently and overlap")
 resetButton.Base.MouseButton1Click:Fire();check(resets==1,"Explicit Respawn button click no longer works")
 check(resetButton.PressIndicator and resetButton.PressIndicator.Parent==resetButton.AddonHost,"Press action is missing its right-side hand indicator")
 check(resetButton.PressIndicator.LayoutOrder==1000 and resetButton.PressIndicator.Size.X.Offset==18,"Press marker does not share the shortcut rail")
@@ -56,6 +58,18 @@ resetButton:SetDisabled(true);check(resetButton.PressIndicator[resetButton.Press
 resetButton:SetDisabled(false)
 
 check(slider.Value==16 and dropdown.Value=="Pallet","Native controls lost declared defaults")
+do
+ local old={Value=.55,SetValue=function(self,value)self.Value=value end}
+ local custom={Value=.67,SetValue=old.SetValue}
+ local height={Value=16,SetValue=old.SetValue}
+ local fill={Value=Color3.fromRGB(180,189,199),SetValueRGB=function(self,value)self.Value=value end,SetValue=function()error('RGB migration used the HSV setter')end}
+ local fake={Options={AstralGUIWindowAlpha=old,AstralGUIRowAlpha=custom,AstralGUISliderHeight=height,AstralGUISliderFill=fill}}
+ UIStyle.MigrateLayoutDefaults(fake,nil)
+ check(old.Value==.35 and height.Value==26 and custom.Value==.67,"Layout migration erased a deliberate custom value or kept old factory defaults")
+ check(fill.Value:ToHex()=='323232','Palette migration lost source slider colour')
+ old.Value=.55;UIStyle.MigrateLayoutDefaults(fake,'BetterOrion')
+ check(old.Value==.55,"A saved BetterOrion layout was migrated again")
+end
 local itemImages={}
 for _,node in ipairs(Library.ScreenGui:GetDescendants())do
     if node:IsA("ImageLabel")and node.Visible then itemImages[node.Image]=true end
@@ -66,16 +80,35 @@ check(widget.Label and table.find(Library.DraggableElements,widget.Label),"Nativ
 check(widget.Label:FindFirstChildOfClass("UIPadding").PaddingLeft.Offset>=28,"Watermark icon has no reserved space")
 
 -- Reference skin checks run on the actual native instances, not a separate HTML UI.
-check(toggle.Holder.Size.Y.Offset==40 and toggle.TextLabel.FontFace.Family=="BuilderSansBold","Reference row height or bold caption changed")
+check(toggle.Holder.Size.Y.Offset==38 and toggle.TextLabel.FontFace.Family=="GothamBold","Reference row height or bold caption changed")
 check(toggle.TextLabel.TextTransparency==0,"Inactive captions are dimmed compared with the reference")
 check(toggle.Parent.Holder.BackgroundTransparency==1 and not toggle.Parent.Holder:FindFirstChildOfClass("UIStroke"),"The old outer section cards returned")
 local search=window.MainFrame:FindFirstChild("SearchField",true)
-check(search and search.PlaceholderText=="Search"and search.TextXAlignment==Enum.TextXAlignment.Left,"Header search is blank or misaligned")
+check(search and search.PlaceholderText=="Search"and search.TextXAlignment==Enum.TextXAlignment.Center,"Header search is blank or misaligned")
 check(window.MainFrame.ClassName=="Frame"and not surface:FindFirstChildOfClass("UICorner"),"The header/body are still separate rounded windows")
 local header=window.MainFrame:FindFirstChild("HeaderSurface")
-check(header and header.Size.Y.Offset==44 and surface.Position.Y.Offset==44,"Header and body do not use the reference geometry")
-check(header.BackgroundColor3:ToHex()=="17191c" and window.MainFrame:FindFirstChildOfClass("UIGradient"),"Reference palette or vertical body shading changed")
+check(header and header.Size.Y.Offset==50 and surface.Position.Y.Offset==55,"Header and body do not use the reference geometry")
+check(header.BackgroundColor3:ToHex()=="141414" and window.MainFrame:FindFirstChildOfClass("UIGradient"),"Reference palette or vertical body shading changed")
 check(window.MainFrame:FindFirstChild("MinimizeMenu",true)and window.MainFrame:FindFirstChild("CloseMenu",true),"Reference header controls are missing")
+check(Library.TabButtons[1].Button.Size.Y.Offset==30 and Library.TabButtons[1].Icon.Size.X.Offset==18,"BetterOrion tabs use old rail/card geometry")
+check(Library.TabButtons[1].Icon.Position.X.Offset==10 and Library.TabButtons[1].Label.Position.X.Offset==35,"Sidebar icon/text overlap")
+check(search.Size.Y.Scale==1 and search.AbsoluteSize.X==100 and search.TextXAlignment==Enum.TextXAlignment.Center,"Source header search geometry changed")
+local bar=slider.Holder:FindFirstChild("SliderTrack",true)
+local fill=bar and bar:FindFirstChild("SliderFill");local thumb=bar and bar:FindFirstChild("SliderThumb")
+check(slider.Holder.Size.Y.Offset==65 and bar.Size.Y.Offset==26 and thumb and not thumb.Visible,"Source slider is not the 65px card / 26px fill track")
+slider:SetValue(0);check(fill.Size.X.Scale==0 and fill.Size.X.Offset==0,"Source slider draws a false minimum fill")
+slider:SetValue(100);check(fill.Size.X.Scale==1 and fill.Size.X.Offset==0,"Source slider overflows at maximum")
+local touch={UserInputType=Enum.UserInputType.Touch,UserInputState=Enum.UserInputState.Begin,
+ Position=Vector2.new(bar.AbsolutePosition.X+bar.AbsoluteSize.X*.25,bar.AbsolutePosition.Y)}
+task.spawn(function()bar.Parent.InputBegan:Fire(touch)end)
+check(slider.Value==25,'BetterOrion slider drag uses the hidden round-thumb inset')
+touch.UserInputState=Enum.UserInputState.End;advance(.03)
+slider:SetValue(16)
+for _,side in ipairs(tab.Sides)do
+ local padding=side:FindFirstChildOfClass("UIPadding")
+ check(padding.PaddingLeft.Offset==10 and padding.PaddingTop.Offset==15,"Left/right section padding differs from BetterOrion")
+end
+
 local previousCalls,previousWatched=calls,watched
 local originalParent=dropdown.Holder.Parent
 local panel=Library:AttachSettings(toggle,{dropdown})
@@ -94,9 +127,9 @@ check(not toggle.Value and dependency.Visible,"Configuration cannot be opened wh
 local button=group:AddButton("Bound action",function()end)
 local buttonHolder=button.Base.Parent
 button:AddKeyPicker("BoundAction",{Default="None",Mode="Press"})
-check(button.Base.Parent==buttonHolder and buttonHolder.Size.Y.Offset==40,"Adding a bind wrapped the button in a second short row")
+check(button.Base.Parent==buttonHolder and buttonHolder.Size.Y.Offset==38,"Adding a bind wrapped the button in a second short row")
 local label=group:AddLabel("Label action");label:AddKeyPicker("LabelAction",{Default="Z",Mode="Press"})
-check(label.Holder.Name=="LabelRow"and label.Holder.Size.Y.Offset==40,"A labeled bind created a stray line or icon")
+check(label.Holder.Name=="LabelRow"and label.Holder.Size.Y.Offset==38,"A labeled bind created a stray line or icon")
 local panelSignals=table.clone(panel.Connections)
 panel.Gear.Activated:Fire();toggle:Destroy()
 check(panel.Disposed and not panel.Frame.Parent and dropdown.Holder.Parent==originalParent,"Destroying an owner leaked its panel or destroyed shared settings")
@@ -112,7 +145,7 @@ local insetOwner=group:AddToggle("OutlineInsetOwner",{Text="Settings outline",De
 local insetPanel=Library:AttachSettings(insetOwner,{})
 popupPadding=insetPanel.Body:FindFirstChildOfClass("UIPadding")
 check(popupPadding.PaddingLeft.Offset>=2 and popupPadding.PaddingRight.Offset>=2,"Gear settings clip their row outline")
-check(Library.Scheme.MainColor:ToHex()=="25272a" and Library.Scheme.FontColor.R>.85 and Library.Scheme.GlassTransparency>=.5 and group.Container.BackgroundTransparency==1,"GUI does not preserve the reference charcoal tint and visible game background")
+check(Library.Scheme.MainColor:ToHex()=="505050" and Library.Scheme.FontColor.R>.85 and Library.Scheme.GlassTransparency==.35 and group.Container.BackgroundTransparency==1,"GUI does not preserve the reference charcoal tint and visible game background")
 check(paletteToggle.Holder.BackgroundTransparency==Library.Scheme.RowTransparency and Library.Scheme.RowTransparency>=.9,"Opaque rows obscure the game through the glass menu")
 local settingsTab=window:AddTab("Settings","settings")
 ThemeManager:ApplyToTab(settingsTab)
@@ -167,8 +200,8 @@ if BuildExtraPCLDRow then
     check(updates==1,"The embedded PCLD color did not update its renderer")
 end
 -- Regression for the reported blue opaque window and disappearing icons.
-check(window.MainFrame.ClassName=="Frame"and window.MainFrame.BackgroundTransparency==.55,"The restored glass window regressed to an opaque/composited surface")
-check(Library.Scheme.FontColor:ToHex()=="e7eaee"and toggle.Destroyed,"The light reference palette was not retained after theme application")
+check(window.MainFrame.ClassName=="Frame"and window.MainFrame.BackgroundTransparency==.35,"The restored glass window regressed to an opaque/composited surface")
+check(Library.Scheme.FontColor:ToHex()=="ffffff"and toggle.Destroyed,"The light reference palette was not retained after theme application")
 for name,icon in pairs(UIStyle.Icons)do
     local original=window:AddTab("Original icon "..name,icon)
     local entry=Library.TabButtons[#Library.TabButtons]
@@ -181,7 +214,7 @@ Library:Toggle(false)
 for _=1,60 do RunService.RenderStepped:Fire(1/60)end
 Library:Toggle(true)
 for _=1,60 do RunService.RenderStepped:Fire(1/60)end
-check(window.MainFrame.Visible and window.MainFrame.BackgroundTransparency==.55,"Opening restored the wrong window transparency")
+check(window.MainFrame.Visible and window.MainFrame.BackgroundTransparency==.35,"Opening restored the wrong window transparency")
 for _,entry in ipairs(Library.TabButtons)do
     check(entry.Icon and entry.Icon.ImageTransparency<=.5,"Menu animation left a sidebar icon faded out")
 end
@@ -199,8 +232,8 @@ local config=Library:AttachSettings(action,{choices})
 config.Gear.Activated:Fire()
 check(config.Frame.Visible and config.Frame.Active and config.Frame.BackgroundTransparency==0,"Settings still blend with the window or click through")
 check(config.Frame.BackgroundColor3==Library.Scheme.WhiteColor and config.Frame:FindFirstChild("AstralPopupGradient")~=nil,"Popup introduced another palette")
-check(window.MainFrame.BackgroundTransparency==.55,"Popup styling changed the main glass window")
-check(Library.Scheme.HeaderTransparency==.45 and Library.Scheme.RowTransparency==.92,"Popup styling changed the watermark or normal rows")
+check(window.MainFrame.BackgroundTransparency==.35,"Popup styling changed the main glass window")
+check(Library.Scheme.HeaderTransparency==.35 and Library.Scheme.RowTransparency==.95,"Popup styling changed the watermark or normal rows")
 choices.Menu:Open()
 check(choices.Menu.Active and choices.Menu.Menu.Active and choices.Menu.Menu.BackgroundTransparency==0,"Dropdown menu still blends with settings")
 local marks=0;local names={}

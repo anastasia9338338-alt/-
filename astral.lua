@@ -1,4 +1,4 @@
--- Astral v4.94 | Single-pallet lifecycle and kick contact recovery.
+-- Astral v4.95 | BetterOrion layout and accelerated source kick cadence.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -2623,6 +2623,7 @@ local Templates = {
     },
     UIStroke = {
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Transparency=function()return Library.Presentation=="BetterOrion"and .5 or 0 end,
     },
 
     Window = {
@@ -6338,8 +6339,8 @@ function Library:GetAddonHost(control)
     local row=isButton and control.Base or control.Holder
     if control.Type=="Label" then
         row=New("Frame",{Name="LabelRow",BackgroundColor3="MainColor",BackgroundTransparency="RowTransparency",
-            Size=UDim2.new(1,0,0,40),Visible=control.Visible,Parent=label.Parent})
-        New("UICorner",{CornerRadius=UDim.new(0,8),Parent=row})
+            Size=UDim2.new(1,0,0,Library.Presentation=="BetterOrion"and 38 or 40),Visible=control.Visible,Parent=label.Parent})
+        New("UICorner",{CornerRadius=UDim.new(0,Library.Presentation=="BetterOrion"and 5 or 8),Parent=row})
         New("UIStroke",{Color="OutlineColor",Parent=row})
         label.Parent=row;label.Position=UDim2.fromOffset(12,0);label.Size=UDim2.new(1,-24,1,0)
         control.Holder=row;control.AddonRow=row
@@ -6386,7 +6387,7 @@ function Library:AttachSettings(owner, controls)
         Library:StylePopupSurface(frame)
         local title=New("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(12,0),
             Size=UDim2.new(1,-44,0,34),Text=owner.Text,TextXAlignment=Enum.TextXAlignment.Left,
-            TextSize=14,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),Parent=frame})
+            TextSize=14,FontFace=Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or Enum.Font.BuilderSansBold),Parent=frame})
         local close=New("TextButton",{BackgroundTransparency=1,Position=UDim2.new(1,-32,0,2),
             Size=UDim2.fromOffset(28,28),Text="×",TextSize=20,Parent=frame})
         local body=New("ScrollingFrame",{BackgroundTransparency=1,BorderSizePixel=0,
@@ -8958,7 +8959,7 @@ do
 
         local Holder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 40),
+            Size = UDim2.new(1, 0, 0, Library.Presentation=="BetterOrion"and 38 or 40),
             Parent = Container,
         })
 
@@ -9019,7 +9020,7 @@ do
             table.insert(
                 Library.Corners,
                 New("UICorner", {
-                    CornerRadius = UDim.new(0, 8),
+                    CornerRadius = UDim.new(0, Library.Presentation=="BetterOrion"and 5 or 8),
                     Parent = Base,
                 })
             )
@@ -9053,7 +9054,7 @@ do
                 LayoutOrder = 1,
                 Size = UDim2.fromOffset(0, 16),
                 Text = Button.Text,
-                FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),
+                FontFace=Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or Enum.Font.BuilderSansBold),
                 TextSize = 14,
                 TextTransparency = Button.Disabled and 0.6 or 0,
                 Parent = Content,
@@ -9211,7 +9212,7 @@ do
 
                 SubButton.Base.BackgroundColor3 = SubButton.Disabled and Library.Scheme.BackgroundColor or Library.Scheme.MainColor
                 SubButton.Label.TextTransparency = SubButton.Disabled and 0.8 or 0.4
-                SubButton.Stroke.Transparency = SubButton.Disabled and 0.5 or 0
+                SubButton.Stroke.Transparency = Library.Presentation=="BetterOrion"and .5 or SubButton.Disabled and 0.5 or 0
 
                 if SubButton.IconImage and SubButton.IconImage.Visible then
                     SubButton.IconImage.ImageTransparency = SubButton.Disabled and 0.8 or 0.4
@@ -9320,7 +9321,7 @@ do
 
             Button.Base.BackgroundColor3 = Button.Disabled and Library.Scheme.BackgroundColor or Library.Scheme.MainColor
             Button.Label.TextTransparency = Button.Disabled and 0.6 or 0
-            Button.Stroke.Transparency = Button.Disabled and 0.5 or 0
+            Button.Stroke.Transparency = Library.Presentation=="BetterOrion"and .5 or Button.Disabled and 0.5 or 0
 
             if Button.IconImage and Button.IconImage.Visible then
                 Button.IconImage.ImageTransparency = Button.Disabled and 0.8 or 0.4
@@ -9473,13 +9474,13 @@ do
             Name="ToggleRow",
             BackgroundColor3 = "MainColor",
             BackgroundTransparency = "RowTransparency",
-            Size = UDim2.new(1, 0, 0, 40),
+            Size = UDim2.new(1, 0, 0, Library.Presentation=="BetterOrion"and 38 or 40),
             Text = "",
             Visible = Toggle.Visible,
             Parent = Container,
         })
 
-        New("UICorner",{CornerRadius=UDim.new(0,8),Parent=Button})
+        New("UICorner",{CornerRadius=UDim.new(0,Library.Presentation=="BetterOrion"and 5 or 8),Parent=Button})
         Library:AddOutline(Button)
 
         local Label = New("TextLabel", {
@@ -9488,7 +9489,7 @@ do
             Size = UDim2.new(1, -52, 1, 0),
             Text = Toggle.Text,
             TextTruncate=Enum.TextTruncate.AtEnd,
-            FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),
+            FontFace=Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or Enum.Font.BuilderSansBold),
             TextSize = 14,
             TextTransparency = 0,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -9507,15 +9508,16 @@ do
         local Checkbox = New("Frame", {
             Name="Checkbox",
             BackgroundColor3 = "CheckColor",
+            BackgroundTransparency=Library.Presentation=="BetterOrion"and .7 or 0,
             AnchorPoint = Vector2.new(1,.5),
             Position = UDim2.new(1,-10,.5,0),
-            Size = UDim2.fromOffset(26,26),
+            Size = UDim2.fromOffset(Library.Presentation=="BetterOrion"and 24 or 26,Library.Presentation=="BetterOrion"and 24 or 26),
             Parent = Button,
         })
         table.insert(
             Library.Corners,
             New("UICorner", {
-                CornerRadius = UDim.new(0, 7),
+                CornerRadius = UDim.new(0, Library.Presentation=="BetterOrion"and 4 or 7),
                 Parent = Checkbox,
             })
         )
@@ -9545,7 +9547,7 @@ do
                 return
             end
 
-            CheckboxStroke.Transparency = Toggle.Disabled and 0.5 or 0
+            CheckboxStroke.Transparency = Library.Presentation=="BetterOrion"and .5 or Toggle.Disabled and 0.5 or 0
 
             if Toggle.Disabled then
                 Label.TextTransparency = 0.8
@@ -10031,7 +10033,7 @@ do
         local Label = New("TextLabel", {
             BackgroundTransparency = 1,
             Position=UDim2.fromOffset(12,4),Size=UDim2.new(1,-20,0,16),
-            FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),
+            FontFace=Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or Enum.Font.BuilderSansBold),
             ZIndex=3,
             Text = Input.Text,
             TextSize = 14,
@@ -10072,7 +10074,7 @@ do
         table.insert(
             Library.Corners,
             New("UICorner", {
-                CornerRadius = UDim.new(0, 8),
+                CornerRadius = UDim.new(0, Library.Presentation=="BetterOrion"and 5 or 8),
                 Parent = Holder,
             })
         )
@@ -10084,7 +10086,7 @@ do
 
             Label.TextTransparency = Input.Disabled and 0.8 or 0
             Box.TextTransparency = Input.Disabled and 0.8 or 0
-            BoxStroke.Transparency = Input.Disabled and 0.5 or 0
+            BoxStroke.Transparency = Library.Presentation=="BetterOrion"and .5 or Input.Disabled and 0.5 or 0
 
             Box.BackgroundColor3 = Input.Disabled and Library.Scheme.BackgroundColor or Library.Scheme.MainColor
             Library.Registry[Box].BackgroundColor3 = Input.Disabled and "BackgroundColor" or "MainColor"
@@ -10251,7 +10253,8 @@ do
         local Groupbox = self
         local Container = Groupbox.Container
         -- One diameter keeps the rounded track and its handle equally thick.
-        local SliderDiameter = 16
+        local Orion=Library.Presentation=="BetterOrion"
+        local SliderDiameter = Orion and 26 or 16
 
         local Slider = {
             Connections = {},
@@ -10286,17 +10289,17 @@ do
 
         local Holder = New("Frame", {
             Name="SliderRow",BackgroundColor3="MainColor",BackgroundTransparency="RowTransparency",
-            Size = UDim2.new(1,0,0,54),
+            Size = UDim2.new(1,0,0,Orion and 65 or 54),
             Visible = Slider.Visible,
             Parent = Container,
         })
 
-        New("UICorner",{CornerRadius=UDim.new(0,8),Parent=Holder})
+        New("UICorner",{CornerRadius=UDim.new(0,Orion and 4 or 8),Parent=Holder})
         New("UIStroke",{Color="OutlineColor",Thickness=1,Parent=Holder})
         local SliderLabel = New("TextLabel", {
             BackgroundTransparency = 1,
-            Position=UDim2.fromOffset(12,7),Size=UDim2.new(.65,-18,0,16),
-            Text = Slider.Text,TextSize = 14,FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),
+            Position=UDim2.fromOffset(12,Orion and 10 or 7),Size=UDim2.new(Orion and 1 or .65,Orion and -24 or -18,0,16),
+            Text = Slider.Text,TextSize = 14,FontFace=Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or Enum.Font.BuilderSansBold),
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
             Parent = Holder,
@@ -10304,21 +10307,22 @@ do
         -- The full-height button keeps the drag/touch hit area comfortable.
         local Bar = New("TextButton", {
             Active = not Slider.Disabled,AnchorPoint = Vector2.new(0,1),
-            BackgroundTransparency = 1,Position=UDim2.new(0,12,1,-5),
-            Size = UDim2.new(1,-24,0,22),Text = "",Parent = Holder,
+            BackgroundTransparency = 1,Position=UDim2.new(0,12,1,Orion and -9 or -5),
+            Size = UDim2.new(1,-24,0,Orion and 26 or 22),Text = "",Parent = Holder,
         })
         local Track = New("Frame", {
             Name="SliderTrack",
             AnchorPoint = Vector2.new(0,.5),BackgroundColor3 = "MainColor",
+            BackgroundTransparency=Orion and .9 or 0,
             Position = UDim2.fromScale(0,.5),Size = UDim2.new(1,0,0,SliderDiameter),Parent = Bar,
         })
         New("UIStroke",{Color="OutlineColor",Transparency=.15,Thickness=1,Parent=Track})
         local DisplayLabel = New("TextLabel", {
-            AnchorPoint = Vector2.new(1,0),BackgroundTransparency = 1,
-            Position=UDim2.new(1,-12,0,7),Size=UDim2.new(.35,-6,0,16),
-            Text = "",TextSize = 13,TextXAlignment = Enum.TextXAlignment.Right,
+            AnchorPoint = Orion and Vector2.zero or Vector2.new(1,0),BackgroundTransparency = 1,
+            Position=Orion and UDim2.fromOffset(12,0)or UDim2.new(1,-12,0,7),Size=Orion and UDim2.new(1,-24,1,0)or UDim2.new(.35,-6,0,16),
+            Text = "",TextSize = 13,TextXAlignment = Orion and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right,
             TextTruncate = Enum.TextTruncate.AtEnd,
-            ZIndex = Bar.ZIndex+2,Parent = Holder,
+            ZIndex = Bar.ZIndex+2,Parent = Orion and Track or Holder,
         })
         Library:FunctionIcon(SliderLabel,Slider.Text)
 
@@ -10349,13 +10353,15 @@ do
 
         local Fill = New("Frame", {
             Name="SliderFill",
+            BackgroundTransparency=Orion and .3 or 0,
             BackgroundColor3 = "AccentColor",Size = UDim2.fromScale(.5,1),
             ZIndex = Bar.ZIndex+1,Parent = Track,
         })
-        New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Track})
-        New("UICorner",{CornerRadius=UDim.new(1,0),Parent=Fill})
+        New("UICorner",{CornerRadius=Orion and UDim.new(0,5)or UDim.new(1,0),Parent=Track})
+        New("UICorner",{CornerRadius=Orion and UDim.new(0,5)or UDim.new(1,0),Parent=Fill})
         local Thumb = New("Frame", {
             Name="SliderThumb",
+            Visible=not Orion,
             AnchorPoint = Vector2.new(.5,.5),BackgroundColor3 = "WhiteColor",
             Position = UDim2.fromScale(.5,.5),Size = UDim2.fromOffset(SliderDiameter,SliderDiameter),
             ZIndex = Bar.ZIndex+2,Parent = Track,
@@ -10378,8 +10384,8 @@ do
                 InputTextBox.TextTransparency = Slider.Disabled and 0.8 or 0
             end
 
-            Fill.BackgroundColor3 = Slider.Disabled and Library.Scheme.OutlineColor or Library.GUICustomSlider and Library.GUICustomSlider.Fill or Library.Scheme.AccentColor
-            Library.Registry[Fill].BackgroundColor3 = function()return Slider.Disabled and Library.Scheme.OutlineColor or Library.GUICustomSlider and Library.GUICustomSlider.Fill or Library.Scheme.AccentColor end
+            Fill.BackgroundColor3 = Slider.Disabled and Library.Scheme.OutlineColor or Library.GUICustomSlider and Library.GUICustomSlider.Fill or Library.Scheme.SliderFillColor or Library.Scheme.AccentColor
+            Library.Registry[Fill].BackgroundColor3 = function()return Slider.Disabled and Library.Scheme.OutlineColor or Library.GUICustomSlider and Library.GUICustomSlider.Fill or Library.Scheme.SliderFillColor or Library.Scheme.AccentColor end
         end
 
         function Slider:Display()
@@ -10413,7 +10419,7 @@ do
             local X = (Slider.Value - Slider.Min) / (Slider.Max - Slider.Min)
             -- Use the same inset travel as the handle. The fill extends under
             -- its full diameter, so rounded caps never leave a moving gap.
-            Fill.Size = UDim2.new(X,SliderDiameter*(1-X),1,0)
+            Fill.Size = UDim2.new(X,Orion and 0 or SliderDiameter*(1-X),1,0)
             -- Inset the centre at both ends, so the entire circle stays in the track.
             Thumb.Position = UDim2.new(X,SliderDiameter*(.5-X),.5,0)
         end
@@ -10615,8 +10621,9 @@ do
 
             while IsDragInput(Input) and not Slider.Destroyed do
                 local Location = Input.UserInputType == Enum.UserInputType.Touch and Input.Position.X or Mouse.X
-                local Travel = math.max(1,Track.AbsoluteSize.X-SliderDiameter)
-                local Scale = math.clamp((Location-Track.AbsolutePosition.X-SliderDiameter*.5)/Travel,0,1)
+                local Inset=Orion and 0 or SliderDiameter*.5
+                local Travel = math.max(1,Track.AbsoluteSize.X-Inset*2)
+                local Scale = math.clamp((Location-Track.AbsolutePosition.X-Inset)/Travel,0,1)
 
                 local OldValue = Slider.Value
                 Slider.Value = Round(Slider.Min + ((Slider.Max - Slider.Min) * Scale), Slider.Rounding)
@@ -10735,7 +10742,7 @@ do
 
         local Holder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 40),
+            Size = UDim2.new(1, 0, 0, Library.Presentation=="BetterOrion"and 38 or 40),
             Visible = Dropdown.Visible,
             Parent = Container,
         })
@@ -10743,7 +10750,7 @@ do
         local Label = New("TextLabel", {
             BackgroundTransparency = 1,
             Position=UDim2.fromOffset(0,2),Size=UDim2.new(1,-22,0,16),
-            FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),
+            FontFace=Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or Enum.Font.BuilderSansBold),
             Text = Dropdown.Text,
             TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -10759,7 +10766,7 @@ do
             AnchorPoint = Vector2.new(0, 1),
             BackgroundColor3 = "MainColor",
             Position = UDim2.fromScale(0, 1),
-            Size = UDim2.new(1, 0, 0, 40),
+            Size = UDim2.new(1, 0, 0, Library.Presentation=="BetterOrion"and 38 or 40),
             Text = "",
             TextTransparency = 1,
             ZIndex = 2,
@@ -10780,10 +10787,10 @@ do
         })
 
         local DropdownCorner = New("UICorner", {
-            TopLeftRadius = UDim.new(0, 8),
-            TopRightRadius = UDim.new(0, 8),
-            BottomRightRadius = UDim.new(0, 8),
-            BottomLeftRadius = UDim.new(0, 8),
+            TopLeftRadius = UDim.new(0, Library.Presentation=="BetterOrion"and 5 or 8),
+            TopRightRadius = UDim.new(0, Library.Presentation=="BetterOrion"and 5 or 8),
+            BottomRightRadius = UDim.new(0, Library.Presentation=="BetterOrion"and 5 or 8),
+            BottomLeftRadius = UDim.new(0, Library.Presentation=="BetterOrion"and 5 or 8),
             Parent = DisplayContainer,
         }); table.insert(Library.SpecificCorners, DropdownCorner)
 
@@ -10800,10 +10807,10 @@ do
         local DisplayButton = New("TextButton", {
             Active = not Dropdown.Disabled,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 40),
+            Size = UDim2.new(1, 0, 0, Library.Presentation=="BetterOrion"and 38 or 40),
             Text = "---",
             TextSize = 14,
-            FontFace=Font.fromEnum(Enum.Font.BuilderSansBold),
+            FontFace=Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or Enum.Font.BuilderSansBold),
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 2,
             Parent = DisplayContainer,
@@ -11011,7 +11018,7 @@ do
 
             DisplayButton.Size=UDim2.new(1,ValueImage and -30 or -22,0,Dropdown.Text and 16 or 40)
             DisplayButton.Position=UDim2.fromOffset(ValueImage and 16 or 0,Dropdown.Text and 20 or 0)
-            DisplayButton.FontFace=Font.fromEnum(Dropdown.Text and Enum.Font.BuilderSans or Enum.Font.BuilderSansBold)
+            DisplayButton.FontFace=Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or(Dropdown.Text and Enum.Font.BuilderSans or Enum.Font.BuilderSansBold))
             DisplayButton.TextSize=Dropdown.Text and 12 or 14
             DisplayButton.TextTransparency=Dropdown.Disabled and .6 or (Dropdown.Text and .25 or 0)
         end
@@ -13320,6 +13327,9 @@ end
 
 function Library:CreateWindow(WindowInfo)
     WindowInfo = Library:Validate(WindowInfo, Templates.Window)
+    local Orion=Library.Presentation=="BetterOrion"
+    local HeaderHeight=Orion and 50 or 44
+    local ContentTop=Orion and 55 or 44
     WindowInfo.BackgroundImage=""
     local ViewportSize: Vector2 = workspace.CurrentCamera.ViewportSize
     if RunService:IsStudio() and ViewportSize.X <= 5 and ViewportSize.Y <= 5 then
@@ -13334,7 +13344,7 @@ function Library:CreateWindow(WindowInfo)
 
     Library.OriginalMinSize =
         Vector2.new(math.min(Library.OriginalMinSize.X, MaxX), math.min(Library.OriginalMinSize.Y, MaxY))
-    Library.MinSize = Vector2.new(math.min(WindowInfo.MinContainerWidth + WindowInfo.SidebarCompactWidth + (1), MaxX), Library.OriginalMinSize.Y)
+    Library.MinSize = Vector2.new(math.min(WindowInfo.MinContainerWidth + (Orion and(WindowInfo.SidebarWidth or 120)or WindowInfo.SidebarCompactWidth) + (Orion and 5 or 1), MaxX), Library.OriginalMinSize.Y)
 
     WindowInfo.Size = UDim2.fromOffset(
         math.clamp(WindowInfo.Size.X.Offset, Library.MinSize.X, MaxX),
@@ -13403,7 +13413,7 @@ function Library:CreateWindow(WindowInfo)
         AvoidCoreGui = WindowInfo.SnapAvoidCoreGui,
     }
 
-    local InitialLeftWidth = WindowInfo.SidebarCompacted and WindowInfo.SidebarCompactWidth or math.clamp(math.floor(WindowInfo.Size.X.Offset * .21), 132, 156)
+    local InitialLeftWidth = Orion and(WindowInfo.SidebarWidth or 120)or WindowInfo.SidebarCompacted and WindowInfo.SidebarCompactWidth or math.clamp(math.floor(WindowInfo.Size.X.Offset * .21), 132, 156)
     local IsCompact = WindowInfo.SidebarCompacted
     local LastExpandedWidth = InitialLeftWidth
 
@@ -13442,19 +13452,19 @@ function Library:CreateWindow(WindowInfo)
         end,Parent=MainFrame})
         Library:AddOutline(MainFrame)
         BodySurface=New("Frame",{Name="BodySurface",BackgroundTransparency=1,
-            Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,1,-44),Parent=MainFrame})
+            Position=UDim2.fromOffset(0,ContentTop),Size=UDim2.new(1,0,1,-ContentTop),Parent=MainFrame})
         HeaderSurface=New("Frame",{Name="HeaderSurface",BackgroundColor3="HeaderColor",BackgroundTransparency=1,
-            Size=UDim2.new(1,0,0,44),Parent=MainFrame})
+            Size=UDim2.new(1,0,0,HeaderHeight),Parent=MainFrame})
         New("UICorner",{CornerRadius=UDim.new(0,WindowInfo.CornerRadius),Parent=HeaderSurface})
         New("Frame",{BackgroundColor3="HeaderColor",BackgroundTransparency=1,Position=UDim2.fromScale(0,.5),
             Size=UDim2.fromScale(1,.5),Parent=HeaderSurface})
-        Library:MakeLine(MainFrame,{Position=UDim2.fromOffset(0,43),Size=UDim2.new(1,0,0,1)})
+        Library:MakeLine(MainFrame,{Position=UDim2.fromOffset(0,HeaderHeight-1),Size=UDim2.new(1,0,0,1),Visible=not Orion})
 
         DividerLine = New("Frame", {
             BackgroundColor3 = "OutlineColor",
-            Visible = true,
-            Position = UDim2.fromOffset(InitialLeftWidth,44),
-            Size = UDim2.new(0,1,1,-44),
+            Visible = not Orion,
+            Position = UDim2.fromOffset(InitialLeftWidth,ContentTop),
+            Size = UDim2.new(0,1,1,-ContentTop),
             Parent = MainFrame,
             ZIndex = 2
         })
@@ -13491,15 +13501,15 @@ function Library:CreateWindow(WindowInfo)
         TopBar = New("Frame", {
             BackgroundTransparency = 1,
             Position = UDim2.fromOffset(0,0),
-            Size = UDim2.new(1,0,0,44),
+            Size = UDim2.new(1,0,0,HeaderHeight),
             Parent = MainFrame,
         })
         Library:MakeDraggable(MainFrame, TopBar, false, true, WindowSnapConfig)
 
         TitleHolder = New("Frame", {
             BackgroundTransparency = 1,
-            Position=UDim2.fromOffset(16,0),
-            Size=UDim2.fromOffset(110,44),
+            Position=UDim2.fromOffset(Orion and 20 or 16,0),
+            Size=UDim2.fromOffset(Orion and 260 or 110,HeaderHeight),
             Visible = true,
             Parent = TopBar,
         })
@@ -13544,7 +13554,7 @@ function Library:CreateWindow(WindowInfo)
             BackgroundTransparency = 1,
             Size = UDim2.new(0, X, 1, 0),
             Text = WindowInfo.Title,
-            FontFace = Font.fromEnum(Enum.Font.BuilderSansBold),
+            FontFace = Font.fromEnum(Orion and Enum.Font.GothamBlack or Enum.Font.BuilderSansBold),
             TextSize = 20,
             Parent = TitleHolder,
         })
@@ -13558,8 +13568,8 @@ function Library:CreateWindow(WindowInfo)
         RightWrapper = New("Frame", {
             AnchorPoint = Vector2.new(1, 0.5),
             BackgroundTransparency = 1,
-            Position=UDim2.new(1,-82,.5,0),
-            Size=UDim2.new(1,-218,0,30),
+            Position=UDim2.new(1,Orion and -100 or -82,.5,0),
+            Size=Orion and UDim2.fromOffset(100,30)or UDim2.new(1,-218,0,30),
             Parent = TopBar,
         })
 
@@ -13624,11 +13634,11 @@ function Library:CreateWindow(WindowInfo)
             BackgroundColor3 = "MainColor",
             Name="SearchField",PlaceholderText = "Search",
             PlaceholderColor3=function()return Library.Scheme.FontColor:Lerp(Library.Scheme.MainColor,.35)end,
-            TextXAlignment=Enum.TextXAlignment.Left,
+            TextXAlignment=Orion and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left,
             Size = WindowInfo.SearchbarSize,
             TextScaled = false,
             TextSize = 13,
-            FontFace = Font.fromEnum(Enum.Font.BuilderSansBold),
+            FontFace = Font.fromEnum(Library.Presentation=="BetterOrion"and Enum.Font.GothamBold or Enum.Font.BuilderSansBold),
             Visible = not (WindowInfo.DisableSearch or false),
             Parent = RightWrapper,
         })
@@ -13670,7 +13680,7 @@ function Library:CreateWindow(WindowInfo)
         end))
 
         local SearchIcon = Library:GetIcon("search")
-        if SearchIcon and not WindowInfo.IconSidebar then
+        if SearchIcon and not WindowInfo.IconSidebar and not Orion then
             local SearchIconImage = New("ImageLabel", {
                 ImageColor3 = "FontColor",
                 ImageTransparency = 0.5,
@@ -13681,7 +13691,7 @@ function Library:CreateWindow(WindowInfo)
             Library:ApplyLucideIcon(SearchIconImage, SearchIcon)
         end
 
-        if MoveIcon and not WindowInfo.IconSidebar then
+        if MoveIcon and not WindowInfo.IconSidebar and not Orion then
             local MoveIconImage = New("ImageLabel", {
                 AnchorPoint = Vector2.new(1, 0.5),
                 ImageColor3 = "OutlineColor",
@@ -13720,18 +13730,28 @@ function Library:CreateWindow(WindowInfo)
             if Library.Toggled then Library:Toggle()end
         end))
 
-        for _,button in {CloseButton,MinimizeButton}do
-            New("UICorner",{CornerRadius=UDim.new(0,8),Parent=button})
-            New("UIStroke",{Color="OutlineColor",Transparency=.45,Parent=button})
+        if Orion then
+            local buttons=New("Frame",{Name="WindowButtons",AnchorPoint=Vector2.new(1,.5),Position=UDim2.new(1,-20,.5,0),
+                Size=UDim2.fromOffset(70,30),BackgroundColor3="MainColor",Parent=TopBar})
+            New("UICorner",{CornerRadius=UDim.new(0,7),Parent=buttons})
+            New("UIStroke",{Color="OutlineColor",Transparency=.5,Parent=buttons})
+            New("Frame",{Position=UDim2.fromScale(.5,0),Size=UDim2.new(0,1,1,0),BackgroundColor3="OutlineColor",BackgroundTransparency=.5,Parent=buttons})
+            CloseButton.Parent=buttons;CloseButton.AnchorPoint=Vector2.zero;CloseButton.Position=UDim2.fromScale(.5,0);CloseButton.Size=UDim2.fromScale(.5,1)
+            MinimizeButton.Parent=buttons;MinimizeButton.AnchorPoint=Vector2.zero;MinimizeButton.Position=UDim2.fromScale(0,0);MinimizeButton.Size=UDim2.fromScale(.5,1)
+        else
+            for _,button in {CloseButton,MinimizeButton}do
+                New("UICorner",{CornerRadius=UDim.new(0,8),Parent=button})
+                New("UIStroke",{Color="OutlineColor",Transparency=.45,Parent=button})
+            end
         end
         Tabs = New("ScrollingFrame", {
             AutomaticCanvasSize = Enum.AutomaticSize.Y,
             BackgroundTransparency=1,
             CanvasSize = UDim2.fromScale(0, 0),
-            Position=UDim2.fromOffset(0,44),
+            Position=UDim2.fromOffset(0,ContentTop),
             ScrollBarImageTransparency = 1,
-            ScrollBarThickness = 0,
-            Size=UDim2.new(0,InitialLeftWidth,1,-44),
+            ScrollBarThickness = Orion and 2 or 0,
+            Size=UDim2.new(0,InitialLeftWidth,1,-ContentTop),
             Parent = MainFrame,
         })
         New("UIListLayout", {
@@ -13740,8 +13760,8 @@ function Library:CreateWindow(WindowInfo)
         })
         New("UIPadding", {
             PaddingBottom = UDim.new(0, TabButtonsStyle.Padding),
-            PaddingLeft = UDim.new(0, TabButtonsStyle.Padding),
-            PaddingRight = UDim.new(0, TabButtonsStyle.Padding),
+            PaddingLeft = UDim.new(0, Orion and 0 or TabButtonsStyle.Padding),
+            PaddingRight = UDim.new(0, Orion and 0 or TabButtonsStyle.Padding),
             PaddingTop = UDim.new(0, TabButtonsStyle.Padding),
             Parent = Tabs,
         })
@@ -13752,17 +13772,17 @@ function Library:CreateWindow(WindowInfo)
                 return Library:GetBetterColor(Library.Scheme.BackgroundColor, 1)
             end,
             ClipsDescendants = true,
-            BackgroundTransparency = WindowInfo.IconSidebar and 1 or 0,
+            BackgroundTransparency = Orion and 1 or WindowInfo.IconSidebar and 1 or 0,
             Name = "Container",
-            Position=UDim2.new(1,0,0,44),
-            Size=UDim2.new(1,-InitialLeftWidth-1,1,-44),
+            Position=UDim2.new(1,0,0,ContentTop),
+            Size=UDim2.new(1,-InitialLeftWidth+(Orion and 5 or -1),1,-ContentTop),
             Parent = MainFrame,
         })
         New("UIPadding", {
             PaddingBottom = UDim.new(0, 6),
-            PaddingLeft = UDim.new(0, 8),
-            PaddingRight = UDim.new(0, 8),
-            PaddingTop = UDim.new(0, 4),
+            PaddingLeft = UDim.new(0, Orion and 0 or 8),
+            PaddingRight = UDim.new(0, Orion and 0 or 8),
+            PaddingTop = UDim.new(0, Orion and 0 or 4),
             Parent = Container,
         })
 
@@ -13973,14 +13993,14 @@ function Library:CreateWindow(WindowInfo)
             end
 
             Button.Label.Visible = not IsCompact
-            Button.Padding.PaddingBottom = UDim.new(0, IsCompact and 6 or 11)
-            Button.Padding.PaddingLeft = UDim.new(0, IsCompact and 6 or 12)
-            Button.Padding.PaddingRight = UDim.new(0, IsCompact and 6 or 12)
-            Button.Padding.PaddingTop = UDim.new(0, IsCompact and 6 or 11)
+            Button.Padding.PaddingBottom = UDim.new(0, Orion and 0 or IsCompact and 6 or 11)
+            Button.Padding.PaddingLeft = UDim.new(0, Orion and 0 or IsCompact and 6 or 12)
+            Button.Padding.PaddingRight = UDim.new(0, Orion and 0 or IsCompact and 6 or 12)
+            Button.Padding.PaddingTop = UDim.new(0, Orion and 0 or IsCompact and 6 or 11)
             Button.Icon.SizeConstraint=Enum.SizeConstraint.RelativeXY
-            Button.Icon.AnchorPoint=Vector2.new(.5,.5)
-            Button.Icon.Position=UDim2.fromScale(.5,.5)
-            Button.Icon.Size=UDim2.fromOffset(22,22)
+            Button.Icon.AnchorPoint=Orion and Vector2.new(0,.5)or Vector2.new(.5,.5)
+            Button.Icon.Position=Orion and UDim2.new(0,10,.5,0)or UDim2.fromScale(.5,.5)
+            Button.Icon.Size=UDim2.fromOffset(Orion and 18 or 22,Orion and 18 or 22)
         end
     end
 
@@ -13998,15 +14018,16 @@ function Library:CreateWindow(WindowInfo)
 
     function Window:SetSidebarWidth(Width)
         if WindowInfo.IconSidebar then Width = WindowInfo.SidebarCompactWidth end
-        Width = math.clamp(Width, 48, math.max(48, MainFrame.Size.X.Offset - WindowInfo.MinContainerWidth - (1)))
+        local minimum=Orion and WindowInfo.MinSidebarWidth or 48
+        Width = math.clamp(Width, minimum, math.max(minimum, MainFrame.Size.X.Offset - WindowInfo.MinContainerWidth - (Orion and 5 or 1)))
 
         DividerLine.Position = UDim2.fromOffset(Width, 0)
 
-        TitleHolder.Size=UDim2.fromOffset(110,44)
-        RightWrapper.Size=UDim2.new(1,-218,0,30)
-        Tabs.Size=UDim2.new(0,Width,1,-44)
-        Container.Size=UDim2.new(1,-Width-1,1,-44)
-        DividerLine.Position=UDim2.fromOffset(Width,44)
+        TitleHolder.Size=UDim2.fromOffset(Orion and math.min(260,MainFrame.Size.X.Offset-220)or 110,HeaderHeight)
+        RightWrapper.Size=Orion and UDim2.fromOffset(100,30)or UDim2.new(1,-218,0,30)
+        Tabs.Size=UDim2.new(0,Width,1,-ContentTop)
+        Container.Size=UDim2.new(1,-Width+(Orion and 5 or -1),1,-ContentTop)
+        DividerLine.Position=UDim2.fromOffset(Width,ContentTop)
 
         if WindowInfo.EnableCompacting then
             ApplyCompact()
@@ -14058,7 +14079,7 @@ function Library:CreateWindow(WindowInfo)
             TabButton = New("TextButton", {
                 BackgroundColor3 = "MainColor",
                 BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 0, 40),
+                Size = UDim2.new(1, 0, 0, Orion and 30 or 40),
                 Text = "",
                 LayoutOrder = Order,
                 Parent = Tabs,
@@ -14090,19 +14111,20 @@ function Library:CreateWindow(WindowInfo)
                 Parent = TabButton,
             })
             local ButtonPadding = New("UIPadding", {
-                PaddingBottom = UDim.new(0, IsCompact and 6 or 11),
-                PaddingLeft = UDim.new(0, IsCompact and 6 or 12),
-                PaddingRight = UDim.new(0, IsCompact and 6 or 12),
-                PaddingTop = UDim.new(0, IsCompact and 6 or 11),
+                PaddingBottom = UDim.new(0, Orion and 0 or IsCompact and 6 or 11),
+                PaddingLeft = UDim.new(0, Orion and 0 or IsCompact and 6 or 12),
+                PaddingRight = UDim.new(0, Orion and 0 or IsCompact and 6 or 12),
+                PaddingTop = UDim.new(0, Orion and 0 or IsCompact and 6 or 11),
                 Parent = ButtonHolder,
             })
             TabLabel = New("TextLabel", {
                 BackgroundTransparency = 1,
-                Position = UDim2.fromOffset(30, 0),
-                Size = UDim2.new(1, -30, 1, 0),
-                Text = Name,
-                TextSize = 16,
-                TextTransparency = 0.5,
+                Position = UDim2.fromOffset(Orion and 35 or 30, 0),
+                Size = UDim2.new(1, Orion and -35 or -30, 1, 0),
+                Text = Orion and Name:gsub("<[^>]+>","")or Name,
+                TextSize = Orion and 14 or 16,
+                TextTransparency = Orion and .4 or .5,
+                FontFace=Orion and Font.fromEnum(Enum.Font.GothamSemibold)or Library.Scheme.Font,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Visible = not IsCompact,
                 Parent = ButtonHolder,
@@ -14113,8 +14135,8 @@ function Library:CreateWindow(WindowInfo)
                     ImageColor3 = "FontColor",
                     ImageTransparency = 0.3,
                     ScaleType = Enum.ScaleType.Fit,
-                    AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),
-                    Size=UDim2.fromOffset(22,22),
+                    AnchorPoint=Orion and Vector2.new(0,.5)or Vector2.new(.5,.5),Position=Orion and UDim2.new(0,10,.5,0)or UDim2.fromScale(.5,.5),
+                    Size=UDim2.fromOffset(Orion and 18 or 22,Orion and 18 or 22),
                     Parent = ButtonHolder,
                 })
                 Library:ApplyLucideIcon(TabIcon, Icon)
@@ -14141,18 +14163,18 @@ function Library:CreateWindow(WindowInfo)
                 CanvasSize = UDim2.fromScale(0, 0),
                 ScrollBarImageTransparency = 1,
                 ScrollBarThickness = 0,
-                Size = UDim2.new(0.5, -3, 1, 0),
+                Size = UDim2.new(0.5, Orion and 5 or -3, 1, 0),
                 Parent = TabContainer,
             })
             New("UIListLayout", {
-                Padding = UDim.new(0, 2),
+                Padding = UDim.new(0, Orion and 6 or 2),
                 Parent = TabLeft,
             })
             New("UIPadding", {
-                PaddingBottom = UDim.new(0, 2),
-                PaddingLeft = UDim.new(0, 2),
-                PaddingRight = UDim.new(0, 2),
-                PaddingTop = UDim.new(0, 2),
+                PaddingBottom = UDim.new(0, Orion and 10 or 2),
+                PaddingLeft = UDim.new(0, Orion and 10 or 2),
+                PaddingRight = UDim.new(0, Orion and 10 or 2),
+                PaddingTop = UDim.new(0, Orion and 15 or 2),
                 Parent = TabLeft,
             })
             do
@@ -14178,18 +14200,18 @@ function Library:CreateWindow(WindowInfo)
                 Position = UDim2.fromScale(1, 0),
                 ScrollBarImageTransparency = 1,
                 ScrollBarThickness = 0,
-                Size = UDim2.new(0.5, -3, 1, 0),
+                Size = UDim2.new(0.5, Orion and 5 or -3, 1, 0),
                 Parent = TabContainer,
             })
             New("UIListLayout", {
-                Padding = UDim.new(0, 2),
+                Padding = UDim.new(0, Orion and 6 or 2),
                 Parent = TabRight,
             })
             New("UIPadding", {
-                PaddingBottom = UDim.new(0, 2),
-                PaddingLeft = UDim.new(0, 2),
-                PaddingRight = UDim.new(0, 2),
-                PaddingTop = UDim.new(0, 2),
+                PaddingBottom = UDim.new(0, Orion and 10 or 2),
+                PaddingLeft = UDim.new(0, Orion and 10 or 2),
+                PaddingRight = UDim.new(0, Orion and 10 or 2),
+                PaddingTop = UDim.new(0, Orion and 15 or 2),
                 Parent = TabRight,
             })
             do
@@ -14383,7 +14405,7 @@ function Library:CreateWindow(WindowInfo)
             local Offset = WarningBoxHolder.Visible and WarningBox.Size.Y.Offset + 8 or 0
             for _, Side in Tab.Sides do
                 Side.Position = UDim2.new(Side.Position.X.Scale, 0, 0, Offset)
-                Side.Size = UDim2.new(0.5, -3, 1, -Offset)
+                Side.Size = UDim2.new(0.5, Orion and 5 or -3, 1, -Offset)
             end
         end
 
@@ -14905,6 +14927,7 @@ function Library:CreateWindow(WindowInfo)
                     BackgroundTransparency = 1,
                     Size = UDim2.fromScale(1, 0),
                     Text = Info.Name,
+                    FontFace=Orion and Font.fromEnum(Enum.Font.GothamSemibold)or Library.Scheme.Font,
                     TextSize = 14,
                     TextWrapped = true,
                     TextXAlignment = Enum.TextXAlignment.Left,
@@ -14959,7 +14982,7 @@ function Library:CreateWindow(WindowInfo)
                 })
 
                 GroupboxList = New("UIListLayout", {
-                    Padding = UDim.new(0, 4),
+                    Padding = UDim.new(0, Orion and 6 or 4),
                     Parent = GroupboxContainer,
                 })
                 New("UIPadding", {
@@ -15238,7 +15261,7 @@ function Library:CreateWindow(WindowInfo)
             end
 
             TweenService:Create(TabButton, Library.TweenInfo, {
-                BackgroundTransparency = 0,
+                BackgroundTransparency = Orion and 1 or 0,
             }):Play()
             if TabIndicator then
                 TweenService:Create(TabIndicator, Library.TweenInfo, {
@@ -15248,6 +15271,7 @@ function Library:CreateWindow(WindowInfo)
             TweenService:Create(TabLabel, Library.TweenInfo, {
                 TextTransparency = 0,
             }):Play()
+            if Orion then TabLabel.FontFace=Font.fromEnum(Enum.Font.GothamBlack)end
             if TabIcon then
                 TweenService:Create(TabIcon, Library.TweenInfo, {
                     ImageTransparency = 0,
@@ -15280,12 +15304,13 @@ function Library:CreateWindow(WindowInfo)
             end
 
             TweenService:Create(TabLabel, Library.TweenInfo, {
-                TextTransparency = 0.5,
+                TextTransparency = Orion and .4 or .5,
             }):Play()
+            if Orion then TabLabel.FontFace=Font.fromEnum(Enum.Font.GothamSemibold)end
 
             if TabIcon then
                 TweenService:Create(TabIcon, Library.TweenInfo, {
-                    ImageTransparency = 0.15,
+                    ImageTransparency = Orion and .4 or .15,
                 }):Play()
             end
 
@@ -19732,7 +19757,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.94 | FTAP")
+                                warn("Astral v4.95 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23091,6 +23116,8 @@ end
                     Destroy=function(model)tbl12.DestroyToy(model)end,
                 })
                 tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,Pulsed=false,SourceKick=true,
+                    ContactMultiplier=function()return tbl9.NKSourceMode=="Normal"and 1 or 2 end,
+                    KickMode=function()return tbl9.NKSourceMode or "Faster"end,
                     NativeTouch=typeof(firetouchinterest)=="function" and firetouchinterest or nil,
                     Find=function()return tbl12.PalletSupply:Find()end,
                     CanSpawn=function()return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
@@ -36073,41 +36100,7 @@ Escape Timer: %*]]
 
 		lib.ForceCheckbox = true
 
-		v19 = lib:CreateWindow({
-			Title = "astral",
-			Footer = "",
-			ToggleKeybind = Enum.KeyCode.RightShift,
-			Center = true,
-			AutoShow = true,
-			EnableSidebarResize = false,
-			Icon = UIStyle.BrandIcon,
-            Font = Enum.Font.BuilderSans,
-            Size = UDim2.fromOffset(660, 624),
-            MinContainerWidth = 440,
-            ShowMobileButtons = false,
-			IconSize = UDim2.fromOffset(22, 22),
-			CornerRadius = 22,
-            BackgroundImage = "",
-            SidebarCompactWidth = 52,
-			Compact = true,
-            IconSidebar = true,
-			Animations = {
-				ToggleWindow = true,
-				TabSwitch = false,
-				Dropdown = false,
-				Groupbox = false,
-				KeyPicker = false,
-			},
-			TabSwipeFrom = "Auto",
-			TabButtonsStyle = {
-				Gap = 4,
-				Padding = 7,
-				CornerRadius = 10,
-				Indicator = true,
-				IndicatorWidth = 2,
-				IndicatorHeight = 20,
-			},
-		})
+		v19 = lib:CreateWindow(UIStyle.Window())
 
 
 		v21 = lib:AddDraggableLabel("Object Info")
@@ -36234,7 +36227,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.94",true)
+            box:AddLabel("Astral v4.95",true)
         end
 
         do
@@ -37979,12 +37972,12 @@ Escape Timer: %*]]
 
 
         local v21=v20
-        v21:AddDropdown("AstralOwnershipMode",{Text="Kick Mode",Values={"Faster","Normal"},Default="Faster",AllowNull=false,
-            Tooltip="TheWorst Faster / Stronger (Normal), with corrected capture and touch handling.",
-            Callback=function(value)tbl9.NKSourceMode=value end})
+        v21:AddDropdown("AstralOwnershipMode",{Text="Kick Mode",Values={"Faster","Normal","Super Fast"},Default="Faster",AllowNull=false,
+            Tooltip="Normal: v4.94 Faster. Faster: twice the same refresh cadence. Super Fast: brief pallet contact followed by upward flight, as in the reference video. Loop MS still controls full ownership cycles.",
+            Callback=function(value)tbl9.NKSourceMode=value;tbl12.PalletRagdoll:SetKickMode(value)end})
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
-            Tooltip="How often the prepared pallet attempts ragdoll during Kick. The server decides which contacts take effect.",
+            Tooltip="Base ragdoll retry rate for Normal. Faster uses twice this rate, up to one paired contact per physics step.",
             Callback=function(value)tbl12.PalletRagdoll:SetContactRate(value)end})
 
 		v21:AddToggle("RagdollNK", {
@@ -41591,6 +41584,7 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 			local sidebarWidth = v19:GetSidebarWidth()
 
 			local tbl16 = {
+				Presentation = "BetterOrion",
 				Position = mainFrame and fn21(mainFrame.Position),
 				ScreenPosition = mainFrame and fn23(mainFrame),
 				Size = mainFrame and fn21(mainFrame.Size),
@@ -41614,12 +41608,15 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 			if typeof(arg) ~= "table" then
 				return
 			end
+			UIStyle.MigrateLayoutDefaults(lib,arg.Presentation)
 			local mainFrame = v19.MainFrame
 			local v20 = fn22(arg.Size)
 			local v21 = fn22(arg.Position)
 			local v22 = fn22(arg.WatermarkPosition)
-			fn25(mainFrame, v20)
-			fn24(mainFrame, arg.ScreenPosition, v21)
+			if arg.Presentation=="BetterOrion"then
+				fn25(mainFrame, v20)
+				fn24(mainFrame, arg.ScreenPosition, v21)
+			end
 			if Watermark and not Watermark.Centered then fn24(Watermark.Label, arg.WatermarkScreenPosition, v22)end
 			local n36
 
@@ -41629,7 +41626,7 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 				n36 = arg.SidebarWidth
 			end
 
-			if typeof(n36) == "number" then
+			if arg.Presentation=="BetterOrion"and typeof(n36) == "number" then
 				v19:SetSidebarWidth(n36)
 			end
 
@@ -42806,6 +42803,7 @@ function Style.Install(ctx)
 end
 function Style:Build(tab)
  local lib=self.Library;local function changed()if not self.Building then self:Sync()end end
+ local orion=lib.Presentation=='BetterOrion'
  local text=tab:AddLeftGroupbox('Текст и шрифт','type')
  text:AddDropdown('AstralGUIFont',{Text='Шрифт',Values={'Original','BuilderSans','Gotham','SourceSans','Arial','Code','Cartoon','Fantasy'},Default='Original',AllowNull=false,Callback=changed})
  text:AddSlider('AstralGUITextScale',{Text='Размер текста',Default=1,Min=.75,Max=1.5,Rounding=2,Compact=true,Callback=changed})
@@ -42831,27 +42829,28 @@ function Style:Build(tab)
  end})
  local storage=icons:AddInput('AstralGUIIconMap',{Text='Saved icons',Default='{}',Callback=changed});storage:SetVisible(false)
  local slider=tab:AddLeftGroupbox('Ползунки','sliders-horizontal')
- slider:AddLabel('Заливка'):AddColorPicker('AstralGUISliderFill',{Default=lib.Scheme.AccentColor,Title='Цвет ползунков',Callback=changed})
- slider:AddLabel('Дорожка'):AddColorPicker('AstralGUISliderTrack',{Default=lib.Scheme.MainColor,Title='Дорожка',Callback=changed})
+ slider:AddLabel('Заливка'):AddColorPicker('AstralGUISliderFill',{Default=lib.Scheme.SliderFillColor or lib.Scheme.AccentColor,Title='Цвет ползунков',Callback=changed})
+ slider:AddLabel('Дорожка'):AddColorPicker('AstralGUISliderTrack',{Default=orion and Color3.fromRGB(50,50,50)or lib.Scheme.MainColor,Title='Дорожка',Callback=changed})
  slider:AddLabel('Бегунок'):AddColorPicker('AstralGUISliderThumb',{Default=Color3.new(1,1,1),Title='Бегунок',Callback=changed})
- slider:AddSlider('AstralGUISliderHeight',{Text='Толщина дорожки',Default=16,Min=4,Max=18,Rounding=0,Compact=true,Callback=changed})
+ slider:AddSlider('AstralGUISliderHeight',{Text='Толщина дорожки',Default=orion and 26 or 16,Min=4,Max=28,Rounding=0,Compact=true,Callback=changed})
+ slider:AddToggle('AstralGUIThumbVisible',{Text='Показывать бегунок',Default=not orion,Callback=changed})
  slider:AddToggle('AstralGUISliderSquare',{Text='Квадратный бегунок',Default=false,Callback=changed})
  local palette=tab:AddRightGroupbox('Прозрачность окна','blend')
- palette:AddSlider('AstralGUIWindowAlpha',{Text='Окно',Default=.55,Min=0,Max=.95,Rounding=2,Compact=true,Callback=changed})
- palette:AddSlider('AstralGUIRowAlpha',{Text='Строки функций',Default=.92,Min=0,Max=1,Rounding=2,Compact=true,Callback=changed})
+ palette:AddSlider('AstralGUIWindowAlpha',{Text='Окно',Default=orion and .35 or .55,Min=0,Max=.95,Rounding=2,Compact=true,Callback=changed})
+ palette:AddSlider('AstralGUIRowAlpha',{Text='Строки функций',Default=orion and .95 or .92,Min=0,Max=1,Rounding=2,Compact=true,Callback=changed})
  palette:AddButton({Text='Сбросить стиль',Func=function()
-  for id,value in pairs({AstralGUIFont='Original',AstralGUITextScale=1,AstralGUITextCustom=false,AstralGUIFunctionIcons=false,AstralGUISeparators=false,AstralGUISliderHeight=16,AstralGUISliderSquare=false,AstralGUIWindowAlpha=.55,AstralGUIRowAlpha=.92})do
+  for id,value in pairs({AstralGUIFont='Original',AstralGUITextScale=1,AstralGUITextCustom=false,AstralGUIFunctionIcons=false,AstralGUISeparators=false,AstralGUISliderHeight=orion and 26 or 16,AstralGUIThumbVisible=not orion,AstralGUISliderSquare=false,AstralGUIWindowAlpha=orion and .35 or .55,AstralGUIRowAlpha=orion and .95 or .92})do
    local control=lib.Options[id]or lib.Toggles[id];control:SetValue(value)
   end
  end})
 end
 function Style:Sync()
  if self.Closed then return end
- local lib=self.Library;local function v(id,default)local x=lib.Options[id]or lib.Toggles[id];return x and x.Value~=nil and x.Value or default end
+ local lib=self.Library;local function v(id,default)local x=lib.Options[id]or lib.Toggles[id];if x and x.Value~=nil then return x.Value end;return default end
  self.Config={Font=v('AstralGUIFont','Original'),Scale=v('AstralGUITextScale',1),CustomText=v('AstralGUITextCustom',false),TextColor=v('AstralGUITextColor',lib.Scheme.FontColor),
   Icons=v('AstralGUIFunctionIcons',false),IconSize=v('AstralGUIIconSize',16),IconColor=v('AstralGUIIconColor',lib.Scheme.FontColor),
   Separators=v('AstralGUISeparators',false),LineAlpha=v('AstralGUISeparatorAlpha',.6),LineColor=v('AstralGUISeparatorColor',lib.Scheme.OutlineColor),
-  Fill=v('AstralGUISliderFill',lib.Scheme.AccentColor),Track=v('AstralGUISliderTrack',lib.Scheme.MainColor),Thumb=v('AstralGUISliderThumb',Color3.new(1,1,1)),Height=v('AstralGUISliderHeight',16),Square=v('AstralGUISliderSquare',false)}
+  Fill=v('AstralGUISliderFill',lib.Scheme.SliderFillColor or lib.Scheme.AccentColor),Track=v('AstralGUISliderTrack',lib.Scheme.MainColor),Thumb=v('AstralGUISliderThumb',Color3.new(1,1,1)),Height=v('AstralGUISliderHeight',16),Square=v('AstralGUISliderSquare',false),ThumbVisible=v('AstralGUIThumbVisible',lib.Presentation~='BetterOrion')}
  local ok,map=pcall(self.Context.Decode,v('AstralGUIIconMap','{}'));self.Overrides=ok and type(map)=='table'and map or{}
  lib.GUICustomSlider={Fill=self.Config.Fill}
  lib.Scheme.GlassTransparency=v('AstralGUIWindowAlpha',.55);lib.Scheme.RowTransparency=v('AstralGUIRowAlpha',.92)
@@ -42878,7 +42877,7 @@ function Style:Apply()
   elseif node.Name=='SliderFill'then node.BackgroundColor3=c.Fill
   elseif node.Name=='SliderTrack'then node.BackgroundColor3=c.Track;node.Size=UDim2.new(node.Size.X.Scale,node.Size.X.Offset,0,c.Height)
   elseif node.Name=='SliderThumb'then
-   node.BackgroundColor3=c.Thumb
+   node.BackgroundColor3=c.Thumb;node.Visible=c.ThumbVisible
    local corner=node:FindFirstChildOfClass('UICorner');if corner then corner.CornerRadius=c.Square and UDim.new(0,2)or UDim.new(1,0)end
   end
  end
@@ -46307,9 +46306,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.93: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.95: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.93 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.95 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -46478,25 +46477,56 @@ Style.Icons = {
 
 function Style.Theme()
     return {
-        BackgroundColor=Color3.fromRGB(23,25,28),
-        MainColor=Color3.fromRGB(37,39,42),
-        AccentColor=Color3.fromRGB(180,189,199),
-        OutlineColor=Color3.fromRGB(75,80,84),
-        FontColor=Color3.fromRGB(231,234,238),
-        HeaderColor=Color3.fromRGB(23,25,28),
-        BodyTopColor=Color3.fromRGB(24,26,29),
-        BodyBottomColor=Color3.fromRGB(21,23,26),
-        CheckColor=Color3.fromRGB(59,65,71),
-        GlassTransparency=.55,RowTransparency=.92,HeaderTransparency=.45,
-        FontFace="BuilderSans",BackgroundImage="",
+        BackgroundColor=Color3.fromRGB(20,20,20),
+        MainColor=Color3.fromRGB(80,80,80),
+        AccentColor=Color3.fromRGB(200,200,200),
+        OutlineColor=Color3.fromRGB(100,100,100),
+        FontColor=Color3.fromRGB(255,255,255),
+        HeaderColor=Color3.fromRGB(20,20,20),
+        BodyTopColor=Color3.fromRGB(20,20,20),
+        BodyBottomColor=Color3.fromRGB(20,20,20),
+        CheckColor=Color3.fromRGB(40,40,40),SliderFillColor=Color3.fromRGB(50,50,50),
+        GlassTransparency=.35,RowTransparency=.95,HeaderTransparency=.35,
+        FontFace="Gotham",BackgroundImage="",
     }
 end
 
+function Style.Window()
+    -- BetterOrion is the main library used by the supplied TheWorst source.
+    -- Keep Astral's identity, control IDs and menu key on that presentation.
+    return {Title="astral",Subtitle="FTAP | v4.95",Footer="",Icon=Style.BrandIcon,
+        ToggleKeybind=Enum.KeyCode.RightShift,Center=true,AutoShow=true,
+        Font=Enum.Font.Gotham,Size=UDim2.fromOffset(600,400),MinContainerWidth=320,
+        ShowMobileButtons=false,IconSize=UDim2.fromOffset(22,22),CornerRadius=10,BackgroundImage="",
+        MinSidebarWidth=120,SidebarWidth=120,SidebarCompactWidth=52,Compact=false,IconSidebar=false,
+        EnableCompacting=false,EnableSidebarResize=true,
+        Animations={ToggleWindow=true,TabSwitch=false,Dropdown=false,Groupbox=false,KeyPicker=false},
+        TabButtonsStyle={Gap=0,Padding=8,CornerRadius=0,Indicator=false,IndicatorWidth=2,IndicatorHeight=20}}
+end
+
 function Style.ApplyBase(library)
+    library.Presentation="BetterOrion"
     for key, value in pairs(Style.Theme()) do
         if key ~= "FontFace" then library.Scheme[key] = value end
     end
     library:UpdateColorsUsingRegistry()
+end
+
+function Style.MigrateLayoutDefaults(library,presentation)
+    if presentation=="BetterOrion"then return end
+    -- Only old factory defaults migrate. Deliberately customised values stay.
+    local defaults={AstralGUIWindowAlpha={.55,.35},AstralGUIRowAlpha={.92,.95},AstralGUISliderHeight={16,26},
+        AstralGUISliderFill={Color3.fromRGB(180,189,199),Color3.fromRGB(50,50,50)},
+        AstralGUISliderTrack={Color3.fromRGB(37,39,42),Color3.fromRGB(50,50,50)}}
+    for id,pair in pairs(defaults)do
+        local option=library.Options[id]
+        if option then
+            local matches=typeof(option.Value)=="Color3"and typeof(pair[1])=="Color3"and option.Value:ToHex()==pair[1]:ToHex()or option.Value==pair[1]
+            if matches then
+                if typeof(pair[2])=="Color3"then option:SetValueRGB(pair[2])else option:SetValue(pair[2])end
+            end
+        end
+    end
 end
 
 function Style.ApplyStartupTheme(manager, library)
@@ -46536,6 +46566,7 @@ function Style.CreateYieldLauncher(context)
 end
 
 return Style
+
 ]========]
 sources.AppIdentity = [========[
 -- Astral owns its runtime state and storage. Legacy folders are not scanned.
@@ -93637,7 +93668,13 @@ function Pallet.Install(context)
     self.FrameSignal=available and physics or context.RunService.Heartbeat
     local postAvailable,postPhysics=pcall(function()return context.RunService.PostSimulation end)
     self.PhysicsSignal=postAvailable and postPhysics or context.RunService.Heartbeat
-    self.PhysicsConnection=self.PhysicsSignal:Connect(function(dt)self.PhysicsFrame+=1;if type(dt)=="number"and dt==dt and dt>0 then self.PhysicsDt=math.clamp(dt,1/240,.1)end end)
+    self.PhysicsConnection=self.PhysicsSignal:Connect(function(dt)
+        self.PhysicsFrame+=1;if type(dt)=="number"and dt==dt and dt>0 then self.PhysicsDt=math.clamp(dt,1/240,.1)end
+        if self.SuperFlight then
+            local ok,why=pcall(self.AdvanceSuperFlight,self)
+            if not ok then self.LastError=tostring(why);self:StopSuperFlight(true)end
+        end
+    end)
     self.Ownership=Ownership.new({Clock=context.Clock,Signal=self.FrameSignal,
         MarkerOwned=context.MarkerOwned or context.Owned,PhysicsOwned=context.PhysicsOwned or context.Owned,
         Grab=context.Grab or function()end,Busy=context.OwnershipBusy,Approach=context.Acquire,
@@ -93932,6 +93969,7 @@ local function verticalHalf(part)
  return (math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z)*.5
 end
 function Pallet:IsContactActive()
+ if self.SuperFlight then return true end
  local entry=self.Active
  return entry~=nil and entry.ContactInFlight==true and self:EntryValid(entry)
   and alive(self.Sound)and self.Context.Owned(self.Sound)==true or false
@@ -94140,6 +94178,7 @@ function Pallet:ConfigureKickPallet()
     profile.Created[#profile.Created+1]=angular
     local lift=Instance.new('BodyPosition');lift.Name='KickPalletPosition';lift.D=100
     lift.Position=Vector3.new(0,10000,0);lift.MaxForce=Vector3.new(math.huge,math.huge,math.huge);lift.Parent=main
+    profile.Lift=lift
     profile.Created[#profile.Created+1]=lift
     sound.Size=Vector3.new(6,2,6);sound.CanTouch=true
     assembly.CFrame=assembly.CFrame+(Vector3.new(0,1000,0)-sound.Position)
@@ -94166,6 +94205,7 @@ function Pallet:ShowPallet()
     end
 end
 function Pallet:ForgetModel()
+    self:StopSuperFlight(true)
     for character,contact in pairs(self.SourcePending or{})do self:EndSourceContact(character,contact)end
     self:DisableKickProfile()
     self.LastSweep=nil
@@ -94221,6 +94261,10 @@ function Pallet:Maintain(character,valid)
     return entry
 end
 function Pallet:SourceContact(character,valid)
+    if self.Context.KickMode and self.Context.KickMode()=='Super Fast'then return self:SuperContact(character,valid)end
+    return self:BeginRootContact(character,valid)
+end
+function Pallet:BeginRootContact(character,valid,prepare)
     if not self.Context.NativeTouch then return nil end
     if self.Closed or next(self.Pauses)or(valid and not valid())then return false end
     local root=character and(character:FindFirstChild('HumanoidRootPart')or character:FindFirstChild('saviHRP')or character:FindFirstChild('realHrp'))
@@ -94235,9 +94279,16 @@ function Pallet:SourceContact(character,valid)
     self.SourceTimes=self.SourceTimes or setmetatable({},{__mode='k'})
     self.SourcePending=self.SourcePending or {}
     local now=self.Context.Clock()
-    if self.SourcePending[character]or now+1e-7<(self.SourceTimes[character]or 0)then return false end
-    self.SourceTimes[character]=now+self.IntervalSeconds
+    local multiplier=1
+    if self.Context.ContactMultiplier then
+        local ok,value=pcall(self.Context.ContactMultiplier)
+        if ok and type(value)=='number'and value==value then multiplier=math.clamp(value,1,2)end
+    end
+    local interval=self.IntervalSeconds/multiplier
+    if self.SourcePending[character]or self.SourceTimes[character]and now+1e-7<self.SourceTimes[character]+interval then return false end
     local sound=self.Sound;sound.CanTouch=true
+    if prepare and not prepare(sound,root)then return false end
+    self.SourceTimes[character]=now
     local originalTouch=root.CanTouch;root.CanTouch=true
     -- Keep the receiver touchable: the supplied Solo loop disables CanTouch
     -- immediately before its own touch call, preventing the requested hit.
@@ -94254,6 +94305,84 @@ function Pallet:SourceContact(character,valid)
     end)
     return true
 end
+function Pallet:SetKickMode(value)
+    if value~='Super Fast'then self:StopSuperFlight(true);self.SuperStates=nil end
+end
+function Pallet:StopSuperFlight(park)
+    local flight=self.SuperFlight
+    self.SuperFlight=nil
+    if not flight then return end
+    if self.SourcePending then self:EndSourceContact(flight.Character,self.SourcePending[flight.Character])end
+    if alive(flight.Sound)and flight.Sound.CanQuery==true then flight.Sound.CanQuery=flight.Query end
+    local profile=self.KickProfile
+    local lift=profile and profile.Lift
+    if lift and lift.Parent then lift.Position=Vector3.new(0,10000,0)end
+    if park and alive(flight.Sound)and(self.Context.PhysicsOwned or self.Context.Owned)(flight.Sound)then
+        local assembly=isolatedAssembly(flight.Sound,self.Model)
+        if assembly then
+            assembly.CFrame=assembly.CFrame+(Vector3.new(0,1000,0)-flight.Sound.Position)
+            assembly.AssemblyLinearVelocity=Vector3.zero
+        end
+    end
+end
+function Pallet:AdvanceSuperFlight()
+    local flight=self.SuperFlight;if not flight then return end
+    local root,sound=flight.Root,flight.Sound
+    local current=not self.Closed and not next(self.Pauses)and flight.Character.Parent
+        and alive(root)and root.Parent==flight.Character and alive(sound)and sound==self.Sound
+        and(not self.Context.KickMode or self.Context.KickMode()=='Super Fast')
+    if current and flight.Valid then local ok,value=pcall(flight.Valid);current=ok and value==true end
+    if not current or not(self.Context.PhysicsOwned or self.Context.Owned)(sound)then self:StopSuperFlight(true);return end
+    -- Bounding spheres include rotation of the rapidly spinning transmitter.
+    -- Completion requires an observed solver frame and real upward clearance.
+    local clear=(root.Size.Magnitude+sound.Size.Magnitude)*.5+1
+    if self.PhysicsFrame>flight.Frame and sound.Position.Y-root.Position.Y>clear then
+        self.SuperDepartures=(self.SuperDepartures or 0)+1
+        self.Status='Super Fast: upward departure observed'
+        self:StopSuperFlight(false)
+    elseif self.Context.Clock()-flight.Started>.35 then
+        self.Status='Super Fast: pallet did not clear; contact cancelled'
+        self:StopSuperFlight(true)
+        local entry=self.SuperStates and self.SuperStates[flight.Character]
+        if entry then entry.RetryAt=self.Context.Clock()+.15 end
+    end
+end
+function Pallet:SuperContact(character,valid)
+    if not self.Context.NativeTouch then return nil end
+    if self.Closed or next(self.Pauses)or self.Active or self.SuperFlight or(valid and not valid())then return false end
+    local value=state(character);if not value then return false end
+    self.SuperStates=self.SuperStates or setmetatable({},{__mode='k'})
+    local entry=self.SuperStates[character]
+    if not entry or entry.Value~=value then entry={Value=value};self.SuperStates[character]=entry end
+    -- Refresh an expired game ragdoll, with one initial strike also allowed
+    -- when switching modes during an already-ragdolled hold. No local setter
+    -- or invented "imminent kick" counter substitutes for the game state.
+    if entry.Struck and value.Value or self.Context.Clock()<(entry.RetryAt or 0)then return false end
+    local flight
+    local started=self:BeginRootContact(character,valid,function(sound,root)
+        if not(self.Context.PhysicsOwned or self.Context.Owned)(sound)or root.Anchored
+            or not(self.Context.PhysicsOwned or self.Context.Owned)(root)then
+            self.Status='Super Fast: waiting for pallet simulation ownership';return false
+        end
+        local assembly=isolatedAssembly(sound,self.Model)
+        local profile=self.KickProfile
+        local lift=profile and profile.Lift
+        if not assembly or not lift or not lift.Parent then return false end
+        flight={Character=character,Root=root,Sound=sound,Valid=valid,Frame=self.PhysicsFrame,Started=self.Context.Clock(),Query=sound.CanQuery}
+        self.SuperFlight=flight;sound.CanQuery=true
+        -- Reuse the one real pallet, its source rotation and its source lift.
+        -- Place at the body once, then leave its upward motion to the solver.
+        lift.Position=Vector3.new(root.Position.X,10000,root.Position.Z)
+        assembly.CFrame=assembly.CFrame+(root.Position-sound.Position)
+        assembly.AssemblyLinearVelocity=Vector3.zero
+        return true
+    end)
+    if started then
+        entry.Struck=true;self.SuperStrikes=(self.SuperStrikes or 0)+1
+        self.Status='Super Fast: contact; lifting away'
+    elseif flight then self:StopSuperFlight(true)end
+    return started
+end
 function Pallet:EndSourceContact(character,contact)
     if not contact or contact.Ended then return end
     contact.Ended=true
@@ -94263,6 +94392,8 @@ function Pallet:EndSourceContact(character,contact)
     if self.SourcePending and self.SourcePending[character]==contact then self.SourcePending[character]=nil end
 end
 function Pallet:Cancel(character)
+    if self.SuperFlight and self.SuperFlight.Character==character then self:StopSuperFlight(true)end
+    if self.SuperStates then self.SuperStates[character]=nil end
     if self.SourcePending then self:EndSourceContact(character,self.SourcePending[character])end
     if self.SourceReactions and self.SourceReactions[character]then self.SourceReactions[character]:Dispose();self.SourceReactions[character]=nil end
     local entry=self.Entries[character]
@@ -94401,8 +94532,9 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=8,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
+    local info={Version=9,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
         NativeContactBegins=self.SourceBegins or 0,NativeContactEnds=self.SourceEnds or 0,NativePalletReady=self.NativeKickReady==true,NativeTargets={},
+        SuperFastPlacements=self.SuperStrikes or 0,SuperFastObservedDepartures=self.SuperDepartures or 0,SuperFastFlightActive=self.SuperFlight~=nil,
         LocalRetryRateLimit=self.ContactRate,LocalRetryInterval=self.IntervalSeconds,Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
@@ -94477,6 +94609,14 @@ function Loop.Install(context)
             return
         end
         local ok,err=pcall(self.Step,self,dt)
+        if not ok then self.LastError=tostring(err);self.Status="Kick error: "..self.LastError;self:Clear()end
+    end)
+    local hasPost,post=pcall(function()return context.RunService.PostSimulation end)
+    local postSignal=hasPost and post or context.RunService.Heartbeat
+    self.DistinctPhysicsPhases=postSignal~=signal
+    self.PostConnection=postSignal:Connect(function()
+        if self.Closed then return end
+        local ok,err=pcall(self.AfterPhysics,self)
         if not ok then self.LastError=tostring(err);self.Status="Kick error: "..self.LastError;self:Clear()end
     end)
     return self
@@ -94730,7 +94870,7 @@ function Loop:Update(session,position,now,ping)
     local repeatReady=not queued and Handoff.CanGrab(session,self.Frame,now,(ctx.MarkerOwned or ctx.Owned)(root))
     if repeatReady and not ctx.IntervalSeconds and ctx.IntervalReady then repeatReady=ctx.IntervalReady(session.Player,session.Character)end
     if ctx.SourceMode then
-        self:SourceCycle(session,now,period,networkOwned)
+        if self:SourceCycle(session,now,period,networkOwned)then session.SourcePrimaryFrame=self.Frame end
     elseif repeatReady then
         session.Requested=true;ctx.Grab(root);self.Calls+=1
         session.IntervalSeconds=period
@@ -94787,14 +94927,15 @@ function Loop:Update(session,position,now,ping)
     elseif session.EKI then self:RestoreEKI(session)end
     session.OwnedAt=ctx.Owned(root)and(session.OwnedAt or now)or nil
 end
--- Port of TheWorst Solo Faster / Solo Stronger. Keep the source's distinct
--- sequences, but never mistake another player's marker for initial capture
--- or release the first acquisition in the same transport tick.
-local sourceSteps={Faster={{'G','R'}},Normal={{'G'},{'G','R','G'},{'G','G'},{'G','R'}}}
+-- Both modes retain v4.94 Faster's confirmed-capture -> Grab/Release cycle.
+-- Normal keeps its old pre-physics cadence; Faster repeats that same pair once
+-- after the solver, without same-callback bursts or catch-up traffic.
+local sourceSteps={Faster={{'G','R'}},Normal={{'G','R'}},['Super Fast']={{'G','R'}}}
 function Loop:SourceCycle(session,now,period,networkOwned)
     local ctx=self.Context;local root=session.Root
     if not self:Valid(session)then return end
-    local mode=ctx.SourceMode()=='Normal'and'Normal'or'Faster'
+    local requested=ctx.SourceMode()
+    local mode=requested=='Normal'and'Normal'or requested=='Super Fast'and'Super Fast'or'Faster'
     if session.SourceMode~=mode then
         if session.SourceMode and session.Requested and not self:Release(session)then return end
         session.SourceMode=mode;session.SourcePhase=1;session.SourceNextAt=nil
@@ -94848,6 +94989,27 @@ function Loop:SourceCycle(session,now,period,networkOwned)
     end
     session.SourcePhase=phase%#steps+1
     session.SourceNextAt=now+(session.SourcePeriod or 0)/#steps
+    return true
+end
+function Loop:AfterPhysics()
+    local ctx=self.Context
+    local mode=ctx.SourceMode and ctx.SourceMode()
+    if self.Closed or not self.DistinctPhysicsPhases or(mode~='Faster'and mode~='Super Fast')or not ctx.Enabled()
+        or self.Excursion or self.CaptureAnchor or ctx.OwnershipBusy()then return end
+    local _,actor,hum=ctx.LocalCharacter()
+    if not actor or not hum or hum.Health<=0 then return end
+    local now=ctx.Clock()
+    for _,session in pairs(self.Sessions)do
+        if session.SourceMode~=mode or session.SourcePrimaryFrame~=self.Frame or session.SourceSecondaryFrame==self.Frame
+            or not session.SourceReady or session.Acquiring or not self:Valid(session)then continue end
+        if session.Root.Anchored or(session.Root.Position-actor.Position).Magnitude>33 then continue end
+        local owned=(ctx.NetworkOwned or ctx.Owned)(session.Root)==true
+        if not owned then continue end
+        -- This runs after an actual solver callback. A missing acknowledgement,
+        -- ownership loss or unfinished initial capture never gets this extra pair.
+        session.SourceSecondaryFrame=self.Frame
+        self:SourceCycle(session,now,self:IntervalPeriod(session,now),owned)
+    end
 end
 function Loop:Step(dt)
     local ctx=self.Context
@@ -94905,6 +95067,7 @@ function Loop:Dispose()
     if self.Closed then return end
     if self.Excursion then self:EndExcursion(self.Excursion.Token)end
     self.Closed=true;self.CloseDeadline=self.Context.Clock()+2;self:Clear();self:FlushCleanup()
+    if self.PostConnection then self.PostConnection:Disconnect()end
     if not next(self.Cleanup)and self.InFlight==0 then self.Connection:Disconnect()end
 end
 return Loop

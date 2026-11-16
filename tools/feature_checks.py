@@ -162,7 +162,8 @@ def run_feature_checks(modules,runner,folder):
         assert 'Pulsed=false,SourceKick=true'in modules['Main'] and 'KickPulsePause'not in modules['Main'],'Primary kick still uses the discarded pulse/sweep profile'
         assert 'SourceMode=function()return tbl9.NKSourceMode'in native_context and 'tbl12.PalletRagdoll:SourceContact(character,valid)'in native_context
         assert ':Maintain(character,valid)'not in native_context and 'StableHoldBeforeRefresh=true'not in native_context,'Primary kick still waits for the removed sweep/hold gate'
-        run('source_kick492',read('kick_mock.luau')+loop_source+read('source_kick492_body.luau'))
+        baseline='\nlocal BaselineLoop=(function(...)\n'+read('kick494_baseline.luau')+'\nend)(function()return Handoff end)\n'
+        run('source_kick495',read('kick_mock.luau')+loop_source+baseline+read('source_kick492_body.luau'))
         main=modules['Main'];start=main.index('tbl12.KickLoop=requireModule')
         a=main.index('Collisions=function(character,enabled)',start);b=main.index('\n                Stabilize=',a)
         collision=main[a+len('Collisions='):b].strip().rstrip(',')
@@ -180,6 +181,7 @@ def run_feature_checks(modules,runner,folder):
         assert 'tbl12.PalletSupply:Get(valid)'in main and 'tbl12.PalletSupply:Dispose()'in main
         run('pallet_supply494',read('kick_mock.luau')+'\n'+read('pallet_supply494_prefix.luau')+'\nlocal Supply=(function()\n'+modules['PalletSupply']+'\nend)()\n'+read('pallet_supply494_body.luau'))
         run('native_contacts494',sweep_prefix+read('native_contacts494_body.luau'))
+        run('super_fast495',sweep_prefix+read('super_fast495_body.luau'))
 
         run('kick_channel',read('kick_mock.luau')+loop_source+read('kick_channel_body.luau'))
         run('kick_handoff',read('kick_mock.luau')+loop_source+read('kick_handoff_body.luau'))

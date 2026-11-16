@@ -12,5 +12,6 @@ The user requires a code review and fixes before every delivered script revision
 
 # Preserve the requested presentation
 
-- The user requires the transparent charcoal/gray GUI, watermark and original icons from v4.76 (e99250a77c14888c380ced88d12e11f66bd396e0).
-- Do not redesign colors, transparency, layout, icons or watermark while adding gameplay functions unless explicitly asked. Verify the UI modules against this reference.
+- The user explicitly requested the BetterOrion GUI from their TheWorst reference for v4.95, superseding the earlier v4.76 main-window layout preference.
+- Preserve this main presentation, Astral branding, original icons, watermark and feature/settings IDs unless the user asks for changes. Preserve the game's shop unless separately requested.
+- GUI/physics CLI mocks do not establish live Roblox rendering, server contacts or kick speed.

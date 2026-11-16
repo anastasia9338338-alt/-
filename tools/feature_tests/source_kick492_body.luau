@@ -2,7 +2,7 @@
 function Node:GetDescendants()
  local found={};for _,v in ipairs(self:GetChildren())do found[#found+1]=v;for _,child in ipairs(v:GetDescendants())do found[#found+1]=child end end;return found
 end
-local function setup(mode,fps,period)
+local function setup(mode,fps,period,controller)
  local sim=Sim.new();currentSim=sim
  local t=target('Victim');local actor=newNode('Part','Actor',WORLD);local player={Name='Victim'}
  local data={Mode=mode,Physical=false,Marker=false,Enabled=true,Selected=true,Grant=true,Log={},Period=period}
@@ -24,7 +24,7 @@ local function setup(mode,fps,period)
   StickyEnabled=function()return false end,Height=function()return 15 end,
   EKIEnabled=function()return false end,PingSeconds=function()return .1 end,
   IntervalSeconds=function()return data.Period end}
- data.Loop=Loop.Install(ctx)
+ data.Loop=(controller or Loop).Install(ctx)
  return sim,data,t
 end
 for _,fps in ipairs({30,60,144,240})do for _,mode in ipairs({'Faster','Normal'})do
@@ -36,7 +36,7 @@ for _,fps in ipairs({30,60,144,240})do for _,mode in ipairs({'Faster','Normal'})
  local seen=0
  for frame=2,d.Loop.Frame do if perFrame[frame]then
   seen+=1
-  local expected=mode=='Faster'and'GR'or({'G','GRG','GG','GR'})[(seen-1)%4+1]
+  local expected=mode=='Faster'and'GRGR'or'GR'
   check(perFrame[frame]==expected,'Wrong '..mode..' source phase: '..perFrame[frame]..' expected '..expected)
  end end
  check(seen>=10 and seen<=60,'Source cadence became render-FPS-dependent or stopped')
@@ -109,4 +109,37 @@ do
  check(session.Position.D==100 and session.Orientation==nil,'Source hold profile gained a conflicting gyro or changed source damping')
  d.Loop:Dispose()
 end
-print('PASS: '..checks..' source Faster/Normal sequences, initial capture, frame bounds, Loop MS, mode switching and lifecycle checks (mocked)')
+
+
+-- Compare the new Normal against the immutable, user-confirmed v4.94 Faster
+-- controller, including the initial acquisition and every outgoing event.
+for _,fps in ipairs({20,30,60,144,240})do
+ local before,baseline=setup('Faster',fps,nil,BaselineLoop);before:Run(1.2,fps)
+ local after,normal=setup('Normal',fps);after:Run(1.2,fps)
+ check(#baseline.Log==#normal.Log,'Normal no longer matches v4.94 Faster request count')
+ for i,event in ipairs(baseline.Log)do
+  local observed=normal.Log[i]
+  check(event.Kind==observed.Kind and event.Frame==observed.Frame and math.abs(event.Time-observed.Time)<1e-8,'Normal changed the previous Faster event order/timing')
+ end
+ local accelerated,faster=setup('Faster',fps);accelerated:Run(1.2,fps)
+ check(#faster.Log==2*#normal.Log-1,'Faster does not add exactly one matching pair after each steady primary cycle')
+ normal.Loop:Dispose();faster.Loop:Dispose();baseline.Loop:Dispose()
+ check(not faster.Loop.PostConnection.Connected,'Unloaded Faster retained its post-physics request callback')
+end
+do
+ local sim,d=setup('Faster',60)
+ local ctx=d.Loop.Context;local order={};local stage='before'
+ sim.Before=function()stage='before'end;sim.Physics=function()stage='after'end
+ local grab,release=ctx.Grab,ctx.Release
+ ctx.Grab=function(root)order[#order+1]={Kind='G',Stage=stage,Frame=d.Loop.Frame};return grab(root)end
+ ctx.Release=function(root)order[#order+1]={Kind='R',Stage=stage,Frame=d.Loop.Frame};return release(root)end
+ sim:Run(.3,60)
+ local groups={}
+ for _,event in ipairs(order)do local key=event.Frame..event.Stage;groups[key]=(groups[key]or'')..event.Kind end
+ for frame=2,d.Loop.Frame do check(groups[frame..'before']=='GR'and groups[frame..'after']=='GR','Faster coalesced both pairs before the solver')end
+ local count=#d.Log;ctx.OwnershipBusy=function()return true end;sim:Run(.1,60)
+ check(#d.Log==count,'Extra phase ignored the shared ownership lock')
+ ctx.OwnershipBusy=function()return false end;d.Selected=false;sim:Run(.1,60)
+ count=#d.Log;sim:Run(.1,60);check(#d.Log==count,'Unselected target retained extra phase traffic');d.Loop:Dispose()
+end
+print('PASS: '..checks..' source mode sequences, exact v4.94 Normal baseline, separated Faster physics phases, Loop MS and lifecycle checks (mocked)')
