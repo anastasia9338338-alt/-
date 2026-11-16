@@ -74,4 +74,30 @@ do
  end
  check(count==3,'Source mode did not maintain all three targets');d.Loop:Dispose()
 end
+do
+ local sim,d=setup('Faster',60);local _,actor=d.Loop.Context.LocalCharacter()
+ actor.Position=Vector3.new(3,0,4);sim:Run(.2,60)
+ local session=d.Loop.Sessions[next(d.Loop.Sessions)]
+ check(session.Position.Position.X==actor.Position.X and session.Position.Position.Z==actor.Position.Z,
+  'Single kick target is offset to the side instead of directly overhead')
+ check(session.Position.Position.Y-actor.Position.Y==15,'Centering the target changed selected kick height')
+ d.Loop:Dispose()
+end
+-- The main physical path must not release a merely captured ground-level
+-- target before the real body reaches its overhead holding position.
+do
+ local sim,d,t=setup('Faster',60);d.Loop.Context.StableHoldBeforeRefresh=true
+ t.Torso.Position=Vector3.zero;sim:Run(.4,60)
+ for _,event in ipairs(d.Log)do check(event.Kind~='R','Ground-level capture was released before physical hold settled')end
+ local session=d.Loop.Sessions[next(d.Loop.Sessions)]
+ check((session.Position.Position-Vector3.new(0,15,0)).Magnitude<1e-6 and t.Torso.Position.Magnitude<1e-6,'Holding logic teleported the target instead of maintaining the mover goal')
+ t.Torso.Position=Vector3.new(0,15,0)
+ local count=#d.Log;sim:Tick(1/60)
+ check(#d.Log==count,'First close observation immediately released an unsettled target')
+ sim:Tick(1/60);check(d.Log[#d.Log].Kind=='R','Stable overhead hold did not begin the normal refresh sequence')
+ t.Torso.Position=Vector3.new(8,15,0);local before=#d.Log;sim:Run(.3,60)
+ for i=before+1,#d.Log do check(d.Log[i].Kind~='R','Target drifting from the hold goal kept receiving refresh releases')end
+ check(d.Marker and (session.Position.Position-Vector3.new(0,15,0)).Magnitude<1e-6,'Lost hold did not reacquire capture while retaining the overhead destination')
+ d.Loop:Dispose()
+end
 print('PASS: '..checks..' source Faster/Normal sequences, initial capture, frame bounds, Loop MS, mode switching and lifecycle checks (mocked)')

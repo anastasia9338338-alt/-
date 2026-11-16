@@ -1,4 +1,4 @@
--- Astral v4.92 | Source kick modes, defense repairs and shop optimization.
+-- Astral v4.93 | Physical kick contacts and native toy-grid repairs.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -19732,7 +19732,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.92 | FTAP")
+                                warn("Astral v4.93 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23069,6 +23069,14 @@ end
                 end
                 tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,Pulsed=true,
                     NativeTouch=typeof(firetouchinterest)=="function" and firetouchinterest or nil,
+                    InitialContactReady=function(character)
+                        local player=Players:GetPlayerFromCharacter(character)
+                        local loop=tbl12.KickLoop;local session=player and loop and loop.Sessions[player]
+                        if not session or not loop:Valid(session)or not session.SourceReady or session.Acquiring or loop.Excursion or loop.CaptureAnchor then return false end
+                        local _,root,hum=tbl12.Char(player);local _,actor,actorHum=tbl12.Char()
+                        return root==session.Root and hum==session.Humanoid and actor and actorHum and actorHum.Health>0
+                            and hum.Health>0 and not root.Anchored and tbl12.IsNetworkOwner(root)and(root.Position-actor.Position).Magnitude<=33
+                    end,
                     Held=function(character)
                         local player=Players:GetPlayerFromCharacter(character)
                         local loop=tbl12.KickLoop
@@ -35946,7 +35954,7 @@ Escape Timer: %*]]
                 until os.clock()>=deadline
                 return false
             end
-            tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,NativePhases=true,
+            tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,NativePhases=true,PreserveCharacterRig=true,StableHoldBeforeRefresh=true,
                 SourceMode=function()return tbl9.NKSourceMode or "Faster"end,
                 Enabled=function()return not flag11 and (tbl8.LoopApplyMethodT or tbl8.LoopApplyMethodTServer)and tbl7.TargetMethods.Kick and not localPlayer.InPlot.Value end,
                 Selected=function(player)return player and player.Parent and (tbl8.LoopApplyMethodTServer or tbl7.SelectedPlayers[player]==true)and not tbl12.IsProtectedPlayer(player)end,
@@ -35954,23 +35962,19 @@ Escape Timer: %*]]
                 LocalCharacter=function()return tbl12.Char()end,Character=tbl12.Char,
                 Owned=function(root)return tbl12.IsNetworkOwner(root)and tbl12.IsPartOwner(root)end,
                 NetworkOwned=tbl12.IsNetworkOwner,MarkerOwned=tbl12.IsPartOwner,
-                OwnershipBusy=function()return tbl7.States.Owning==true or tbl12.PalletRagdoll.Preparing or tbl12.PalletRagdoll.Ownership.InFlight end,
+                OwnershipBusy=function()return tbl7.States.Owning==true or tbl12.PalletRagdoll.Preparing or tbl12.PalletRagdoll.Ownership.InFlight or tbl12.PalletRagdoll:IsContactActive()end,
                 Grab=tbl12.RequestNativeOwnership,Release=tbl12.RNO,
                 Acquire=function(root,valid)return tbl12.SNO(root,.65,valid,true)end,
                 Teleport=function(root,position)tbl12.Teleport(root,position)end,
-                Collisions=tbl12.ToggleCollisions,Limbs=tbl12.RepositionLimbs,
+                Collisions=function(character,enabled)
+                    for _,part in ipairs(character:GetDescendants())do if part:IsA("BasePart")then part.CanCollide=enabled end end
+                end,
+                Limbs=tbl12.RepositionLimbs,
                 RestoreMotors=function(character)tbl12.ToggleMotor6D(character,true,true)end,
                 RequestRagdoll=function(character,valid)
-                    local player=Players:GetPlayerFromCharacter(character)
-                    local loop=tbl12.KickLoop;local session=player and loop.Sessions[player]
-                    local _,root=tbl12.Char(player)
-                    if not session or not session.SourceReady or not root or not tbl12.IsNetworkOwner(root)then return end
-                    local used=tbl12.PalletRagdoll:SourceContact(character,valid)
-                    if used==nil then
-                        if loop:IsPhysicallyHolding(player)then return tbl12.PalletRagdoll:Maintain(character,valid)end
-                        return tbl12.PalletRagdoll:Request(character,valid)
-                    end
-                    return used
+                    -- The same physical worker handles startup entry and held
+                    -- entry/exit; executor touch calls do not stand in for hits.
+                    return tbl12.PalletRagdoll:Maintain(character,valid)
                 end,
                 WarmRagdoll=function()tbl12.PalletRagdoll:Warm()end,
                 PausePallet=function(token,value)tbl12.PalletRagdoll:Pause(token,value)end,
@@ -36213,7 +36217,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.92",true)
+            box:AddLabel("Astral v4.93",true)
         end
 
         do
@@ -42926,12 +42930,14 @@ end
 local function gui(v)return v and v:IsA('GuiObject')end
 local function under(v,parent)return v==parent or v and v:IsDescendantOf(parent)end
 local function children(v)return v and v:GetChildren()or{}end
-local function descendants(v)
+local function descendants(v,skip,quick)
  if not v then return {}end
  local result,stack={},{}
  local first=v:GetChildren();for i=#first,1,-1 do stack[#stack+1]=first[i]end
  while #stack>0 do
-  local node=table.remove(stack);result[#result+1]=node
+  local node=table.remove(stack)
+  if node==skip or node==quick then continue end
+  result[#result+1]=node
   -- Toy preview meshes are rendered by Roblox. Skinning their GUI never
   -- needs to walk thousands of parts/attachments inside each WorldModel.
   if not node:IsA('WorldModel')and not node:IsA('Model')and not node:IsA('BasePart')and not node:IsA('Camera')then
@@ -42978,7 +42984,7 @@ function Shop:Descendants(node)
  self.DescCache=self.DescCache or setmetatable({},{__mode='k'})
  local cache=self.DescCache[node];local version=self.TreeVersion or 0
  if cache and cache.Version==version then return cache.Nodes end
- local nodes=descendants(node);self.TreeScans=(self.TreeScans or 0)+1
+ local nodes=descendants(node,self.Layer,self.Quick and self.Quick.Host);self.TreeScans=(self.TreeScans or 0)+1
  self.DescCache[node]={Version=version,Nodes=nodes};return nodes
 end
 function Shop:Invalidate(node)
@@ -43013,11 +43019,64 @@ function Shop:Queue()
  if self.Closed or self.Applying or not self.Enabled or self.Queued then return end;self.Queued=true
  self.Context.Defer(function()self.Queued=false;if not self.Closed and self.Enabled then self:Find()end end)
 end
+-- Native hover/filter/viewport code can rewrite geometry after the first
+-- styled frame. Repair only the affected recorded properties; routing every
+-- overwrite through Find used to walk/repaint the entire shop on interaction.
+function Shop:QueueRepair(node,key,record)
+ if self.Closed or not self.Enabled then return end
+ self.PendingRepairs=self.PendingRepairs or{}
+ local entry=self.PendingRepairs[node]
+ if not entry or entry.Record~=record then entry={Record=record,Keys={}};self.PendingRepairs[node]=entry end
+ entry.Keys[key]=true
+ if self.RepairQueued then return end
+ self.RepairQueued=true
+ self.Context.Defer(function()
+  self.RepairQueued=false
+  local pending=self.PendingRepairs;self.PendingRepairs={}
+  if self.Closed or not self.Enabled then return end
+  local applying=self.Applying;self.Applying=true
+  for object,work in pairs(pending)do
+   local owner=self.CellOwners and self.CellOwners[object]
+   if object.Parent and self.Records[object]==work.Record and(not owner or under(owner,self.Menu))then
+    for property in pairs(work.Keys)do
+     local saved=work.Record.Properties[property]
+     if saved and object[property]~=saved.Forced then
+      local ok,why=pcall(function()object[property]=saved.Forced end)
+      if ok then self.GeometryRepairs=(self.GeometryRepairs or 0)+1 else self.LastRepairError=tostring(why)end
+     end
+    end
+   end
+  end
+  self.Applying=applying
+ end)
+end
+function Shop:WatchCell(node,key,cell)
+ if not cell then return end
+ self.CellOwners=self.CellOwners or setmetatable({},{__mode='k'})
+ self.CellMaintained=self.CellMaintained or setmetatable({},{__mode='k'})
+ self.CellWatches=self.CellWatches or{}
+ self.CellOwners[node]=cell
+ local maintained=self.CellMaintained[node]or{};self.CellMaintained[node]=maintained;maintained[key]=true
+ if self.CellWatches[node]then return end
+ -- One observer for a GUI/constraint instance, rather than one per styled
+ -- property. Native content changes (Text/Image) do not request a repaint.
+ self.CellWatches[node]=node.Changed:Connect(function(property)
+  if self.Closed or self.Applying or not self.Enabled or not maintained[property]then return end
+  local owner=self.CellOwners[node]
+  local record=self.Records[node];local saved=record and record.Properties[property]
+  if owner and under(owner,self.Menu)and saved and node[property]~=saved.Forced then self:QueueRepair(node,property,record)end
+ end)
+end
 function Shop:Watch(node,property)
  local map=self.Watches[node];if not map then map={};self.Watches[node]=map end
  if map[property]then return end
  map[property]=node:GetPropertyChangedSignal(property):Connect(function()
   if self.Closed or self.Applying or not self.Enabled then return end
+  -- Our gradient/icon layer is maintained by Draw and the theme registry.
+  -- Its own color/rounding writes must not schedule another native page pass.
+  if self.Layer and under(node,self.Layer)then return end
+  local record=self.Records[node];local saved=record and record.Properties[property]
+  if saved and node[property]~=saved.Forced then self:QueueRepair(node,property,record);return end
   if self.FooterNodes and self.FooterNodes[node]then self.FooterDirty=true else
    self.Dirty=true
    for _,record in ipairs(self.Pages)do if under(node,record.Node)and property~='Visible'then record.Styled=nil end end
@@ -43032,7 +43091,9 @@ function Shop:Write(node,key,value,scope,maintain)
  if not r then r={Scope=scope or'page',Properties={}};self.Records[node]=r end
  local p=r.Properties[key];if not p then p={Original=node[key]};r.Properties[key]=p end
  if node[key]~=value then node[key]=value end;p.Forced=value
- if maintain and not self.ItemStyling then self:Watch(node,key)end
+ if maintain then
+  if self.ItemStyling then self:WatchCell(node,key,self.StylingCell)else self:Watch(node,key)end
+ end
 end
 function Shop:Restore(scope)
  for node,r in pairs(self.Records)do if not scope or r.Scope==scope then
@@ -43422,6 +43483,7 @@ function Shop:Grid(record)
   if saved and saved.Width==plan.Cell and saved.Height==rowHeight then continue end
   self.CellStyles[cell]={Width=plan.Cell,Height=rowHeight}
   self.CellPasses=(self.CellPasses or 0)+1
+  self.StylingCell=cell
   self:Rect(cell,{X=0,Y=0,W=plan.Cell,H=rowHeight})
   self:Write(cell,'ClipsDescendants',true,nil,true);self:Watch(cell,'Visible')
   local texts={}
@@ -43454,7 +43516,7 @@ function Shop:Grid(record)
    end
   end
  end
- self.ItemStyling=false
+ self.StylingCell=nil;self.ItemStyling=false
 end
 function Shop:PanelContent(record)
  local plan=self.Plan;local page=record.Node;local size=record.NativeSize
@@ -43484,7 +43546,7 @@ function Shop:Footer(record)
  local count='';local root=self.GuiRoot or self.Menu.Parent
  local nodes=self:Descendants(root);local groups={}
  local function nativeText(v)
-  return not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))
+  return v.Parent~=nil and under(v,root)and not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))
  end
  local function caption(v)
   local value=textValue(v)
@@ -43684,7 +43746,7 @@ function Shop:Find()
   local stroke=menu:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,'shared')end
   self:Page(active);self.LastMenuScale=self.MenuScale;self.Dirty=false;self.Status:SetText(active.Node.Name..': единое оформление включено.')
  end)
- self.ItemStyling=false;self.Applying=false
+ self.StylingCell=nil;self.ItemStyling=false;self.Applying=false
  if not ok then self.LastError=tostring(why);self.Status:SetText('Магазин: '..self.LastError)end
 end
 function Shop:Detach()
@@ -43693,6 +43755,8 @@ function Shop:Detach()
  if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
  for _,c in ipairs(self.Bound)do c:Disconnect()end;self.Bound={}
  for _,map in pairs(self.Watches)do for _,c in pairs(map)do c:Disconnect()end end;self.Watches={}
+ for _,connection in pairs(self.CellWatches or{})do connection:Disconnect()end
+ self.CellWatches={};self.CellOwners=nil;self.CellMaintained=nil;self.PendingRepairs={}
  self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self:DestroyArtwork(self.Layer);self.Layer=nil end
  self.DescCache=nil;self.CellStyles=nil;self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
 end
@@ -46094,9 +46158,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.92: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.93: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.92 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.93 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -93521,7 +93585,7 @@ function Pallet:SetContactRate(value)
 end
 function Pallet:SetPulsed(value)
     self.Pulsed=value==true
-    for _,entry in pairs(self.Entries)do entry.Pulse=nil end
+    for _,entry in pairs(self.Entries)do entry.Pulse=nil;entry.InitialContact=nil;entry.InitialActive=nil end
     self:SafePark()
 end
 function Pallet:SetPulsePause(value)
@@ -93541,10 +93605,43 @@ function Pallet:PulseHeld(entry)
     local ok,held=pcall(self.Context.Held,entry.Character)
     return ok and held==true
 end
+function Pallet:InitialContactReady(entry)
+    if not entry or not entry.Continuous or type(self.Context.InitialContactReady)~='function'then return false end
+    local ok,ready=pcall(self.Context.InitialContactReady,entry.Character)
+    return ok and ready==true
+end
 function Pallet:PulseBefore(entry,current,deadline)
     if not self:PulseEnabled()then entry.Pulse=nil;return true end
     if not self:PulseHeld(entry)then
-        entry.Pulse=nil;self:SafePark();entry.ContactPhase='waiting for physical airborne hold';return false
+        entry.Pulse=nil;entry.InitialActive=nil
+        local now=self.Context.Clock();local game=entry.Reaction:Describe();local initial=entry.InitialContact
+        if initial and initial.Generation~=game.Generation then initial=nil;entry.InitialContact=nil end
+        if initial and initial.Pulse then
+            local first=initial.Pulse
+            -- The game reaction can arrive after Touched and after the first
+            -- sweep finishes. Observe that real edge before admitting a retry.
+            if first.Counter and game.Rises>first.Counter then
+                initial.GameObserved=true;first.GameObserved=true;first.GameAt=now;first.Evidence='fresh-ragdoll-rise'
+            elseif first.AlreadyTrue and game.Ragdolled then
+                initial.GameObserved=true;first.GameObserved=true;first.GameAt=now;first.Evidence='existing-ragdoll-state'
+            end
+        end
+        -- First ragdoll may be necessary before a captured avatar can rise to
+        -- its hold position. Permit an isolated physical pass for a genuine
+        -- nearby capture, then park rather than burst against an unheld avatar.
+        if self:InitialContactReady(entry)and now>=(initial and initial.NextAt or 0)
+            and not(initial and initial.GameObserved and game.Ragdolled)then
+            entry.InitialActive=true
+            entry.Pulse={Phase='first',TouchEvents=0,Generation=game.Generation}
+            entry.ContactPhase='initial physical contact for captured target'
+            return true
+        end
+        self:SafePark();entry.ContactPhase='waiting for physical airborne hold';return false
+    end
+    if entry.InitialContact then
+        local initial=entry.InitialContact
+        if initial.Generation==entry.Reaction:Describe().Generation then entry.Pulse=initial.Pulse end
+        entry.InitialContact=nil;entry.InitialActive=nil
     end
     local pulse=entry.Pulse
     if not pulse then pulse={Phase='first',TouchEvents=0,Generation=entry.Reaction:Describe().Generation};entry.Pulse=pulse end
@@ -93587,6 +93684,7 @@ end
 function Pallet:PulseAfter(entry,contactBaseline,attempt)
     if not self:PulseEnabled()then return end
     local pulse=entry.Pulse;if not pulse then return end
+    local initial=entry.InitialActive==true
     local touched=(entry.ReceiverContacts or 0)>contactBaseline
     local observed=entry.Reaction:ObservedSince(attempt)
     local game=entry.Reaction:Describe();local now=self.Context.Clock()
@@ -93609,6 +93707,11 @@ function Pallet:PulseAfter(entry,contactBaseline,attempt)
     pulse.NextAt=now+math.max(pulse.Phase=='rest'and self.PulseRecovery or self.PulsePause,ping)
     pulse.RecoverAt=now+math.max(self.PulsePause,self.PulseRecovery,ping*2)
     pulse.Parked=nil
+    if initial then
+        entry.InitialContact={Generation=game.Generation,Pulse=pulse,
+            NextAt=now+math.max(self.PulseRecovery,ping*2),GameObserved=pulse.GameObserved}
+        entry.InitialActive=nil;entry.Pulse=nil
+    end
 end
 function Pallet:WaitPhysics()
     if self.Context.WaitPhysics then return self.Context.WaitPhysics()end
@@ -93675,17 +93778,32 @@ local function verticalHalf(part)
  local cf,size=part.CFrame,part.Size
  return (math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z)*.5
 end
+function Pallet:IsContactActive()
+ local entry=self.Active
+ return entry~=nil and entry.ContactInFlight==true and self:EntryValid(entry)
+  and alive(self.Sound)and self.Context.Owned(self.Sound)==true or false
+end
 function Pallet:ContinuousStrike(part,main,character,current,sliceDeadline)
+ local entry=self.Active
+ local ok,result=pcall(self._ContinuousStrike,self,part,main,character,current,sliceDeadline)
+ if entry then entry.ContactInFlight=nil end
+ if not ok then error(result,0)end
+ return result
+end
+function Pallet:_ContinuousStrike(part,main,character,current,sliceDeadline)
  local ctx=self.Context;local entry=self.Active
+ local initialPass=self:PulseEnabled()and not self:PulseHeld(entry)and self:InitialContactReady(entry)
  local function allowed()
   local owned=alive(part)and ctx.Owned(part)
   local held=not self:PulseEnabled()or self:PulseHeld(entry)
-  if not owned or not held then entry.Pulse=nil end
+  local initial=initialPass and self:InitialContactReady(entry)
+  if not owned or not held and not initial then entry.Pulse=nil;entry.InitialContact=nil;entry.InitialActive=nil end
   return current()and self:EntryValid(entry)and alive(part)and alive(main)and not part.Anchored and not main.Anchored
-   and part.Parent==self.Model and main.Parent==self.Model and owned and held
+   and part.Parent==self.Model and main.Parent==self.Model and owned and(held or initial)
  end
  if not allowed()then return false end
  if not self:PulseBefore(entry,current,sliceDeadline)then return false end
+ initialPass=entry.InitialActive==true
  local receiver,kind,reason=Reaction.Resolve(character)
  if not alive(receiver)or receiver.CanTouch~=true then entry.ContactPhase='receiver unavailable';self.Status=reason or 'Waiting for ragdoll receiver';return false end
  local assembly=isolatedAssembly(part,self.Model)
@@ -93721,6 +93839,9 @@ function Pallet:ContinuousStrike(part,main,character,current,sliceDeadline)
   if not nextPhysics(self.PhysicsFrame,sliceDeadline)then return false end
  end
  if not stillReceiver()or ctx.Clock()>=sliceDeadline then return false end
+ -- Reserve the shared native grab channel only during actual stage/entry/exit.
+ -- Isolated-hit pauses and recovery above are deliberately outside this lock.
+ entry.ContactInFlight=true
  local lift=main:FindFirstChild('RagdollBP');if lift then lift.MaxForce=Vector3.zero end
  local half=verticalHalf(part)+verticalHalf(receiver)
  local direction=1
@@ -93742,6 +93863,11 @@ function Pallet:ContinuousStrike(part,main,character,current,sliceDeadline)
   local destination=receiver.Position-Vector3.new(0,half+.75,0)
   if not finiteVector(destination)or not finiteVector(receiver.AssemblyLinearVelocity)then return false end
   stop();assembly.CFrame=assembly.CFrame+(destination-part.Position)
+  -- Keep this clear staging frame in the receiver's moving reference frame.
+  -- Zeroing it until the next solver step lets an ascending/running receiver
+  -- leave the staged board behind before the bounded relative sweep begins.
+  local inherited=receiver.AssemblyLinearVelocity
+  assembly.AssemblyLinearVelocity=inherited;part.AssemblyLinearVelocity=inherited
   self.LastTransformPart=part;self.LastTransformFrame=self.PhysicsFrame
   entry.ContactPhase='staged below receiver';entry.Receiver=receiver;entry.ReceiverKind=kind
   local stagedFrame=self.PhysicsFrame
@@ -93933,6 +94059,7 @@ function Pallet:Cancel(character)
     if self.SourcePending then self:EndSourceContact(character,self.SourcePending[character])end
     local entry=self.Entries[character]
     if entry then
+        entry.Pulse=nil;entry.InitialContact=nil;entry.InitialActive=nil;entry.ContactInFlight=nil
         entry.Done=true;entry.Success=false
         if entry.Reaction then entry.Reaction:Dispose()end
         if self.Active==entry then self:SafePark()end
@@ -94089,7 +94216,7 @@ end
 function Pallet:Dispose()
     if self.Closed then return end
     self.Closed=true;self.Connection:Disconnect();self.PhysicsConnection:Disconnect();self.Ownership:Dispose()
-    for _,entry in pairs(self.Entries)do entry.Done=true;entry.Success=false;if entry.Reaction then entry.Reaction:Dispose()end end
+    for _,entry in pairs(self.Entries)do entry.Pulse=nil;entry.InitialContact=nil;entry.InitialActive=nil;entry.ContactInFlight=nil;entry.Done=true;entry.Success=false;if entry.Reaction then entry.Reaction:Dispose()end end
     table.clear(self.Queue)
     self:SafePark()
     local model=self.Model
@@ -94220,9 +94347,10 @@ function Loop:Remove(player)
     if session.EKI then restores.EKI=function()assert(self:RestoreEKI(session),session.EKIError or 'Replication reset rejected')end end
     if session.Weld then restores.Weld=function()if session.Weld.Parent then session.Weld.Enabled=session.WeldEnabled end end end
     if session.Physics then
-        restores.Motors=function()self.Context.RestoreMotors(session.Character)end
+        if not self.Context.PreserveCharacterRig then restores.Motors=function()self.Context.RestoreMotors(session.Character)end end
         for part,props in pairs(session.Physics)do restores[part]=function()if part.Parent then
-            part.CanCollide=props.CanCollide;part.CustomPhysicalProperties=props.CustomPhysicalProperties
+            if not self.Context.PreserveCharacterRig or part.CanCollide==false then part.CanCollide=props.CanCollide end
+            if not self.Context.PreserveCharacterRig then part.CustomPhysicalProperties=props.CustomPhysicalProperties end
         end end end
     end
     restores.Pallet=function()self.Context.CancelRagdoll(session.Character)end
@@ -94263,19 +94391,21 @@ function Loop:Create(player,character,root,humanoid)
     self.Sessions[player]=session;return session
 end
 function Loop:Physics(session)
-    if not session.Physics then
-        session.Physics={}
-        for _,part in ipairs(session.Character:GetDescendants())do if part:IsA("BasePart")then
-            session.Physics[part]={CanCollide=part.CanCollide,CustomPhysicalProperties=part.CustomPhysicalProperties}
+    if not session.Physics or self.Context.PreserveCharacterRig then
+        session.Physics=session.Physics or{}
+        for _,part in ipairs(session.Character:GetDescendants())do if part:IsA("BasePart")and not session.Physics[part]then
+            local props={CanCollide=part.CanCollide}
+            if not self.Context.PreserveCharacterRig then props.CustomPhysicalProperties=part.CustomPhysicalProperties end
+            session.Physics[part]=props
         end end
     end
     local weld=session.Root:FindFirstChild("WeldHRP")
-    if weld then
+    if weld and not self.Context.PreserveCharacterRig then
         if session.Weld~=weld then session.Weld,session.WeldEnabled=weld,weld.Enabled end
         weld.Enabled=false
     end
     self.Context.Collisions(session.Character,false)
-    self.Context.Limbs(session.Character,true)
+    if not self.Context.PreserveCharacterRig then self.Context.Limbs(session.Character,true)end
 end
 function Loop:Acquire(session,now)
     local ctx=self.Context
@@ -94444,11 +94574,11 @@ function Loop:SourceCycle(session,now,period,networkOwned)
     if session.SourceMode~=mode then
         if session.SourceMode and session.Requested and not self:Release(session)then return end
         session.SourceMode=mode;session.SourcePhase=1;session.SourceNextAt=nil
-        session.SourceReady=nil;session.SourceDeadline=nil
+        session.SourceReady=nil;session.SourceDeadline=nil;session.SourceHoldFrame=nil
     end
     if not networkOwned then
         if session.SourceReady then session.SourceNextAt=nil;session.SourceDeadline=nil end
-        session.SourceReady=nil;session.SourcePhase=1
+        session.SourceReady=nil;session.SourcePhase=1;session.SourceHoldFrame=nil
     end
     if ctx.Owned(root)then
         if not session.SourceReady then session.SourceNextAt=nil;session.SourceDeadline=nil end
@@ -94464,6 +94594,22 @@ function Loop:SourceCycle(session,now,period,networkOwned)
             session.SourceNextAt=now+.1;session.SourceDeadline=session.SourceDeadline or now+.65
         end
         return
+    end
+    if ctx.StableHoldBeforeRefresh then
+        if not self:IsPhysicallyHolding(session.Player)then
+            -- Initial capture is not yet a stable physical hold. Keep that
+            -- capture while the mover lifts the real rig; a refresh release
+            -- here can hand it back before the body reaches its destination.
+            session.SourceHoldFrame=nil;session.SourcePhase=1
+            session.SourceNextAt=nil;session.SourcePeriod=nil
+            if not(ctx.MarkerOwned or ctx.Owned)(root)and now>=(session.HoldGrabAt or 0)then
+                if ctx.Grab(root)~=false then session.Requested=true;self.Calls+=1 end
+                session.HoldGrabAt=now+.1
+            end
+            return
+        end
+        if not session.SourceHoldFrame then session.SourceHoldFrame=self.Frame;return end
+        if self.Frame<=session.SourceHoldFrame then return end
     end
     if session.SourcePeriod and not period then session.SourceNextAt=nil end
     if now<(session.SourceNextAt or 0)then return end
@@ -94513,7 +94659,7 @@ function Loop:Step(dt)
                 if #targets>1 then
                     local angle=(index-1)*math.pi*2/#targets
                     destination=origin+Vector3.new(math.cos(angle)*7,ctx.Height(),math.sin(angle)*7)
-                else destination=origin+Vector3.new(0,ctx.Height(),5)end
+                else destination=origin+Vector3.new(0,ctx.Height(),0)end
             end
             if self.Excursion then destination=self.Excursion.Goals[session]or session.Position.Position end
             self:Update(session,destination,now,ping)

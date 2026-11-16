@@ -160,8 +160,19 @@ def run_feature_checks(modules,runner,folder):
         assert modules['Main'].count('tbl12.KickInterval:BuildUI(')==1,'Loop MS settings are missing or duplicated'
         assert 'tbl12.KickInterval:BuildUI(v21)'in modules['Main'] and 'AddRightGroupbox("Loop MS"'not in modules['Main'],'Loop MS moved outside Kick Settings'
         assert 'Pulsed=true'in modules['Main'] and ':IsPhysicallyHolding(player)'in modules['Main'],'Pulse profile lacks physical airborne hold integration'
-        assert 'SourceMode=function()return tbl9.NKSourceMode'in native_context and 'SourceContact(character,valid)'in native_context
+        assert 'SourceMode=function()return tbl9.NKSourceMode'in native_context and 'return tbl12.PalletRagdoll:Maintain(character,valid)'in native_context and 'SourceContact(character,valid)'not in native_context
         run('source_kick492',read('kick_mock.luau')+loop_source+read('source_kick492_body.luau'))
+        main=modules['Main'];start=main.index('tbl12.KickLoop=requireModule')
+        a=main.index('Collisions=function(character,enabled)',start);b=main.index('\n                Limbs=',a)
+        collision=main[a+len('Collisions='):b].strip().rstrip(',')
+        a=main.index('RequestRagdoll=function(character,valid)',start);b=main.index('\n                WarmRagdoll=',a)
+        route=main[a+len('RequestRagdoll='):b].strip().rstrip(',')
+        a=main.index('OwnershipBusy=function()',start);b=main.index('\n                Grab=',a)
+        busy=main[a+len('OwnershipBusy='):b].strip().rstrip(',')
+        body=read('physical_hold493_body.luau').replace('__COLLISIONS__',collision).replace('__ROUTE__',route).replace('__OWNERSHIP_BUSY__',busy)
+        run('physical_hold493',read('model_mock.luau')+loop_source+body)
+        assert 'PreserveCharacterRig=true'in native_context and 'StableHoldBeforeRefresh=true'in native_context and 'InitialContactReady=function(character)'in main
+
         run('kick_channel',read('kick_mock.luau')+loop_source+read('kick_channel_body.luau'))
         run('kick_handoff',read('kick_mock.luau')+loop_source+read('kick_handoff_body.luau'))
         run('kick_eki',read('kick_mock.luau')+loop_source+read('kick_eki_body.luau'))

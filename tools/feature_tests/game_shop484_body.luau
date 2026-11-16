@@ -1,7 +1,32 @@
 local originalIsA=Node.IsA
 function Node:IsA(class)
  if class=='GuiObject'and(self.ClassName=='UIPadding'or self.ClassName=='UISizeConstraint'or self.ClassName=='UIAspectRatioConstraint')then return false end
+ if class=='GuiObject'and table.find({'Model','WorldModel','Part','MeshPart','Camera','Attachment','Motor6D','Weld'},self.ClassName)then return false end
+ if class=='BasePart'and(self.ClassName=='Part'or self.ClassName=='MeshPart')then return true end
+ if class=='JointInstance'and(self.ClassName=='Motor6D'or self.ClassName=='Weld')then return true end
  return originalIsA(self,class)
+end
+-- Native property/hierarchy signals matter for post-layout streaming. The
+-- generic UI fixture omits these events; use faithful shop-local delivery.
+local originalNewindex=mt.__newindex
+mt.__newindex=function(node,key,value)
+ local old=node[key]
+ if key=='Parent'and old~=value and old then
+  local removed={node};for _,descendant in ipairs(node:GetDescendants())do removed[#removed+1]=descendant end
+  local ancestor=old
+  while ancestor do for _,descendant in ipairs(removed)do ancestor.DescendantRemoving:Fire(descendant)end;ancestor=ancestor.Parent end
+  old.ChildRemoved:Fire(node)
+ end
+ originalNewindex(node,key,value)
+ if old~=value then
+  if key=='Parent'and value then
+   value.ChildAdded:Fire(node)
+   local added={node};for _,descendant in ipairs(node:GetDescendants())do added[#added+1]=descendant end
+   local ancestor=value
+   while ancestor do for _,descendant in ipairs(added)do ancestor.DescendantAdded:Fire(descendant)end;ancestor=ancestor.Parent end
+  end
+  node.Changed:Fire(key)
+ end
 end
 -- Engine constraint semantics: ScaleWithParentSize has the parent's maximum
 -- bounds; FitWithinMaxSize uses the requested own bounds (Creator Hub AspectType).
@@ -31,6 +56,7 @@ local toys=add(pages,'Frame','Toys');toys.Visible=false;toys.Size=UDim2.fromScal
 local list=add(toys,'ScrollingFrame','Contents');local grid=add(list,'UIGridLayout','Grid');grid.CellSize=UDim2.fromOffset(100,100)
 local toy=add(list,'ImageButton','Chair');toy.Image='rbxassetid://star';toy.ImageTransparency=1;toy.ImageRectOffset=Vector2.new(20,30)
 local art=add(toy,'ImageLabel','Preview');art.Image='rbxassetid://chair'
+local toyScale=add(toy,'UIScale','NativeToyScale');toyScale.Scale=1.3
 local nativeAspect=add(toy,'UIAspectRatioConstraint','Aspect');nativeAspect.AspectType=Enum.AspectType.ScaleWithParentSize;nativeAspect.DominantAxis=Enum.DominantAxis.Height;nativeAspect.AspectRatio=1
 local minA=add(toy,'UISizeConstraint','MinA');minA.MinSize=Vector2.new(80,80)
 local minB=add(toy,'UISizeConstraint','MinB');minB.MinSize=Vector2.new(90,90)
@@ -109,6 +135,39 @@ check(controller.TextCopies.ToyLimitCount.Text=='5/100'and controller.Panels.Lim
 check(not controller.HasFavorite and not globalStar.Visible and not controller.TextCopies.FavoritesStar,'Global top-right star was not removed')
 check(toy.AbsoluteSize.X<=controller.Plan.Cell+.001 and minA.MinSize==Vector2.zero and minB.MinSize==Vector2.zero and nativeAspect.AspectType==Enum.AspectType.FitWithinMaxSize,'Native parent-relative aspect or duplicate minimum breaks ten-column cell fit')
 check(toy.AbsoluteSize.X*10+controller.Plan.Gap*9<=controller.Plan.Grid.W+.001,'Ten rendered cell widths do not fit viewport')
+local desiredCell,desiredArt,desiredGap=toy.Size,art.Size,grid.CellPadding
+local beforeLayouts,beforeTrees,beforeCells=controller.LayoutPasses,controller.TreeScans,controller.CellPasses
+-- Native inventory code runs after the first skin pass when selecting,
+-- spawning or refreshing previews. Cached cell dimensions must stay enforced.
+toy.Size=UDim2.fromOffset(130,130);art.Size=UDim2.fromOffset(160,160);toyScale.Scale=1.8
+minA.MinSize=Vector2.new(110,110);nativeAspect.AspectType=Enum.AspectType.ScaleWithParentSize
+grid.CellSize=UDim2.fromOffset(130,130);grid.CellPadding=UDim2.fromOffset(35,35)
+list.CanvasSize=UDim2.fromOffset(1000,8000)
+advance(.02)
+check(toy.Size==desiredCell and art.Size==desiredArt and toyScale.Scale==1 and minA.MinSize==Vector2.zero,
+ 'Post-paint native geometry overwrite leaves large toy previews or constraints')
+check(nativeAspect.AspectType==Enum.AspectType.FitWithinMaxSize and grid.CellSize.X.Offset==controller.Plan.Cell and grid.CellPadding==desiredGap,
+ 'Native layout overwrite leaves oversized cells or wide gaps')
+check(controller.LayoutPasses==beforeLayouts and controller.TreeScans==beforeTrees and controller.CellPasses==beforeCells,
+ 'Repairing native toy geometry repaints or rescans the entire shop')
+check((controller.GeometryRepairs or 0)>=8,'Native geometry overwrites were never observed')
+local beforeHover=controller.LayoutPasses
+for i=1,20 do toy.BackgroundTransparency=.3;navButtons[1].BackgroundTransparency=.4;advance(.001)end
+check(controller.LayoutPasses==beforeHover,'Native hover/interaction styling starts full page passes')
+local streamedLimit=add(toy,'UISizeConstraint','StreamedMin');streamedLimit.MinSize=Vector2.new(180,180)
+advance(.02)
+check(streamedLimit.MinSize==Vector2.zero and toy.AbsoluteSize.X<=controller.Plan.Cell+.001,
+ 'Late native constraints bypass the cached cell styling')
+local streamedLayouts=controller.LayoutPasses
+streamedLimit.MinSize=Vector2.new(190,190);advance(.02)
+check(streamedLimit.MinSize==Vector2.zero and controller.LayoutPasses==streamedLayouts,
+ 'A streamed constraint is either unguarded or triggers a full page repaint')
+-- The game may replace its category layout without replacing the toy buttons.
+grid:Destroy();grid=add(list,'UIGridLayout','ReplacementGrid')
+grid.CellSize=UDim2.fromOffset(140,140);grid.CellPadding=UDim2.fromOffset(45,45)
+advance(.02)
+check(controller.Current.Grid==grid and grid.CellSize.X.Offset==controller.Plan.Cell and grid.CellPadding==desiredGap,
+ 'A late/replaced native grid is not discovered and corrected')
 check(controller.Panels.Body.Node.BackgroundColor3==library.Scheme.WhiteColor and controller.Panels.Body.Node.BackgroundTransparency==library.Scheme.GlassTransparency and controller.Panels.Body.Node.AstralShopGradient.Color.Keypoints[1].Value==library.Scheme.BodyTopColor,'Shop does not use Astral glass gradient/opacity')
 check(chat.Visible and chat.Position.Y.Offset>nav.Position.Y.Offset,'Detached native Chat tab is outside strip')
 local corner=nav:FindFirstChild('AstralShopCorner');check(corner~=nil,'Sidebar not rounded')
@@ -214,6 +273,7 @@ quick.Clock.Activated:Fire();quick.Rows.Chair.Bind.Activated:Fire();menu.Visible
 check(not library.IsPicking and not quick.Open and toys.Visible,'Closing the game menu leaves key capture or native pages stuck')
 menu.Visible=true;controller:Find()
 local watches={};for _,map in pairs(controller.Watches)do for _,connection in pairs(map)do watches[#watches+1]=connection end end
+for _,connection in pairs(controller.CellWatches or{})do watches[#watches+1]=connection end
 local layer=controller.Layer;controller:Dispose();check(not layer.Parent,'Style survives unload')
 for _,connection in ipairs(watches)do check(not connection.Connected,'Observer survives unload')end
 check(savedOptions.AstralShopQuickItems==nil,'Quick config options survive unload')

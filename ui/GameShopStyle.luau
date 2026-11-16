@@ -16,12 +16,14 @@ end
 local function gui(v)return v and v:IsA('GuiObject')end
 local function under(v,parent)return v==parent or v and v:IsDescendantOf(parent)end
 local function children(v)return v and v:GetChildren()or{}end
-local function descendants(v)
+local function descendants(v,skip,quick)
  if not v then return {}end
  local result,stack={},{}
  local first=v:GetChildren();for i=#first,1,-1 do stack[#stack+1]=first[i]end
  while #stack>0 do
-  local node=table.remove(stack);result[#result+1]=node
+  local node=table.remove(stack)
+  if node==skip or node==quick then continue end
+  result[#result+1]=node
   -- Toy preview meshes are rendered by Roblox. Skinning their GUI never
   -- needs to walk thousands of parts/attachments inside each WorldModel.
   if not node:IsA('WorldModel')and not node:IsA('Model')and not node:IsA('BasePart')and not node:IsA('Camera')then
@@ -68,7 +70,7 @@ function Shop:Descendants(node)
  self.DescCache=self.DescCache or setmetatable({},{__mode='k'})
  local cache=self.DescCache[node];local version=self.TreeVersion or 0
  if cache and cache.Version==version then return cache.Nodes end
- local nodes=descendants(node);self.TreeScans=(self.TreeScans or 0)+1
+ local nodes=descendants(node,self.Layer,self.Quick and self.Quick.Host);self.TreeScans=(self.TreeScans or 0)+1
  self.DescCache[node]={Version=version,Nodes=nodes};return nodes
 end
 function Shop:Invalidate(node)
@@ -103,11 +105,64 @@ function Shop:Queue()
  if self.Closed or self.Applying or not self.Enabled or self.Queued then return end;self.Queued=true
  self.Context.Defer(function()self.Queued=false;if not self.Closed and self.Enabled then self:Find()end end)
 end
+-- Native hover/filter/viewport code can rewrite geometry after the first
+-- styled frame. Repair only the affected recorded properties; routing every
+-- overwrite through Find used to walk/repaint the entire shop on interaction.
+function Shop:QueueRepair(node,key,record)
+ if self.Closed or not self.Enabled then return end
+ self.PendingRepairs=self.PendingRepairs or{}
+ local entry=self.PendingRepairs[node]
+ if not entry or entry.Record~=record then entry={Record=record,Keys={}};self.PendingRepairs[node]=entry end
+ entry.Keys[key]=true
+ if self.RepairQueued then return end
+ self.RepairQueued=true
+ self.Context.Defer(function()
+  self.RepairQueued=false
+  local pending=self.PendingRepairs;self.PendingRepairs={}
+  if self.Closed or not self.Enabled then return end
+  local applying=self.Applying;self.Applying=true
+  for object,work in pairs(pending)do
+   local owner=self.CellOwners and self.CellOwners[object]
+   if object.Parent and self.Records[object]==work.Record and(not owner or under(owner,self.Menu))then
+    for property in pairs(work.Keys)do
+     local saved=work.Record.Properties[property]
+     if saved and object[property]~=saved.Forced then
+      local ok,why=pcall(function()object[property]=saved.Forced end)
+      if ok then self.GeometryRepairs=(self.GeometryRepairs or 0)+1 else self.LastRepairError=tostring(why)end
+     end
+    end
+   end
+  end
+  self.Applying=applying
+ end)
+end
+function Shop:WatchCell(node,key,cell)
+ if not cell then return end
+ self.CellOwners=self.CellOwners or setmetatable({},{__mode='k'})
+ self.CellMaintained=self.CellMaintained or setmetatable({},{__mode='k'})
+ self.CellWatches=self.CellWatches or{}
+ self.CellOwners[node]=cell
+ local maintained=self.CellMaintained[node]or{};self.CellMaintained[node]=maintained;maintained[key]=true
+ if self.CellWatches[node]then return end
+ -- One observer for a GUI/constraint instance, rather than one per styled
+ -- property. Native content changes (Text/Image) do not request a repaint.
+ self.CellWatches[node]=node.Changed:Connect(function(property)
+  if self.Closed or self.Applying or not self.Enabled or not maintained[property]then return end
+  local owner=self.CellOwners[node]
+  local record=self.Records[node];local saved=record and record.Properties[property]
+  if owner and under(owner,self.Menu)and saved and node[property]~=saved.Forced then self:QueueRepair(node,property,record)end
+ end)
+end
 function Shop:Watch(node,property)
  local map=self.Watches[node];if not map then map={};self.Watches[node]=map end
  if map[property]then return end
  map[property]=node:GetPropertyChangedSignal(property):Connect(function()
   if self.Closed or self.Applying or not self.Enabled then return end
+  -- Our gradient/icon layer is maintained by Draw and the theme registry.
+  -- Its own color/rounding writes must not schedule another native page pass.
+  if self.Layer and under(node,self.Layer)then return end
+  local record=self.Records[node];local saved=record and record.Properties[property]
+  if saved and node[property]~=saved.Forced then self:QueueRepair(node,property,record);return end
   if self.FooterNodes and self.FooterNodes[node]then self.FooterDirty=true else
    self.Dirty=true
    for _,record in ipairs(self.Pages)do if under(node,record.Node)and property~='Visible'then record.Styled=nil end end
@@ -122,7 +177,9 @@ function Shop:Write(node,key,value,scope,maintain)
  if not r then r={Scope=scope or'page',Properties={}};self.Records[node]=r end
  local p=r.Properties[key];if not p then p={Original=node[key]};r.Properties[key]=p end
  if node[key]~=value then node[key]=value end;p.Forced=value
- if maintain and not self.ItemStyling then self:Watch(node,key)end
+ if maintain then
+  if self.ItemStyling then self:WatchCell(node,key,self.StylingCell)else self:Watch(node,key)end
+ end
 end
 function Shop:Restore(scope)
  for node,r in pairs(self.Records)do if not scope or r.Scope==scope then
@@ -512,6 +569,7 @@ function Shop:Grid(record)
   if saved and saved.Width==plan.Cell and saved.Height==rowHeight then continue end
   self.CellStyles[cell]={Width=plan.Cell,Height=rowHeight}
   self.CellPasses=(self.CellPasses or 0)+1
+  self.StylingCell=cell
   self:Rect(cell,{X=0,Y=0,W=plan.Cell,H=rowHeight})
   self:Write(cell,'ClipsDescendants',true,nil,true);self:Watch(cell,'Visible')
   local texts={}
@@ -544,7 +602,7 @@ function Shop:Grid(record)
    end
   end
  end
- self.ItemStyling=false
+ self.StylingCell=nil;self.ItemStyling=false
 end
 function Shop:PanelContent(record)
  local plan=self.Plan;local page=record.Node;local size=record.NativeSize
@@ -574,7 +632,7 @@ function Shop:Footer(record)
  local count='';local root=self.GuiRoot or self.Menu.Parent
  local nodes=self:Descendants(root);local groups={}
  local function nativeText(v)
-  return not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))
+  return v.Parent~=nil and under(v,root)and not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))
  end
  local function caption(v)
   local value=textValue(v)
@@ -774,7 +832,7 @@ function Shop:Find()
   local stroke=menu:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,'shared')end
   self:Page(active);self.LastMenuScale=self.MenuScale;self.Dirty=false;self.Status:SetText(active.Node.Name..': единое оформление включено.')
  end)
- self.ItemStyling=false;self.Applying=false
+ self.StylingCell=nil;self.ItemStyling=false;self.Applying=false
  if not ok then self.LastError=tostring(why);self.Status:SetText('Магазин: '..self.LastError)end
 end
 function Shop:Detach()
@@ -783,6 +841,8 @@ function Shop:Detach()
  if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
  for _,c in ipairs(self.Bound)do c:Disconnect()end;self.Bound={}
  for _,map in pairs(self.Watches)do for _,c in pairs(map)do c:Disconnect()end end;self.Watches={}
+ for _,connection in pairs(self.CellWatches or{})do connection:Disconnect()end
+ self.CellWatches={};self.CellOwners=nil;self.CellMaintained=nil;self.PendingRepairs={}
  self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self:DestroyArtwork(self.Layer);self.Layer=nil end
  self.DescCache=nil;self.CellStyles=nil;self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
 end

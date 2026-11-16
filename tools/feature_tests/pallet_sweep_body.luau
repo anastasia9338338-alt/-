@@ -243,3 +243,118 @@ do
  f.Pallet:Dispose()
 end
 print('PASS: state-aware isolated hits, pause/second hit/bounded burst/recovery, actual contacts, airborne hold, missing-reaction retries and cancellation (mocked; no server kick prediction)')
+
+-- A captured avatar may need a real first ragdoll before its hold mover can
+-- lift it. This is a bounded initial pass, never an unheld burst stream.
+local function initialCaptured(accepted)
+ local f,root,receiver=gravitational();f.Data.GameAccept=accepted;f.Data.Held=false;f.Data.InitialReady=true
+ f.Pallet.Context.Held=function(character)return character==f.Target.Character and f.Data.Held end
+ f.Pallet.Context.InitialContactReady=function(character)return character==f.Target.Character and f.Data.InitialReady end
+ f.Pallet.Context.PingSeconds=function()return .05 end
+ f.Pallet:SetPulsed(true);f.Pallet:SetPulsePause(.15);f.Pallet:SetPulseBurst(3);f.Pallet:SetPulseRecovery(.4)
+ return f,root,receiver
+end
+for _,fps in ipairs({20,60,240})do
+ local f,root,receiver=initialCaptured(true);local rootPosition=root.Position;local torsoPosition=f.Target.Torso.Position
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid)
+ f.Sim:Run(.35,fps)
+ check(#f.Data.Crossings==1 and(entry.PhysicalEntries or 0)==1 and(entry.PhysicalExits or 0)==1,'Captured initial contact did not physically enter/exit exactly once before airborne hold at '..fps)
+ check(not entry.Pulse and entry.InitialContact and entry.InitialContact.Pulse.Phase=='pause_first','Initial pass started an unheld burst or lost its first-contact observation')
+ check(root.Position==rootPosition and f.Target.Torso.Position==torsoPosition,'Initial contact moved target anatomy instead of the pallet')
+ f.Data.Held=true;f.Sim:Run(2,fps)
+ check(#f.Data.Crossings>=4 and not entry.InitialContact,'A stable airborne hold did not promote the initial physical contact into maintained pulses')
+ check(f.Data.Crossings[2].At-f.Data.Crossings[1].At>=.15-1/fps-1e-5,'Initial-to-maintained handoff skipped the existing isolated-hit pause')
+ f.Pallet:Dispose()
+end
+do
+ local f=initialCaptured(false);local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(2,60)
+ check(#f.Data.Crossings>=1 and #f.Data.Crossings<=5,'Missing game reaction caused unbounded unheld initial contacts')
+ for i=2,#f.Data.Crossings do check(f.Data.Crossings[i].At-f.Data.Crossings[i-1].At>=.4-1/60-1e-5,'Initial retry ignored the existing recovery window')end
+ check(not entry.Pulse and f.Data.GameReactions==0 and f.Pallet.Confirmed==0,'Unheld initial pass fabricated a game reaction or burst')
+ f.Pallet:Dispose()
+end
+for _,mode in ipairs({'capture','cancel','pause','dispose','dead','respawn','ownership'})do
+ local f=initialCaptured(false);local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.01,1000)
+ if mode=='capture'then f.Data.InitialReady=false
+ elseif mode=='cancel'then f.Pallet:Cancel(f.Target.Character)
+ elseif mode=='pause'then f.Pallet:Pause('initial-contact-test',true)
+ elseif mode=='dispose'then f.Pallet:Dispose()
+ elseif mode=='dead'then f.Target.Humanoid.Health=0
+ elseif mode=='respawn'then f.Target.Character.Parent=nil
+ else f.Data.Owned=false;f.Data.Acquire=false end
+ local passes=f.Pallet.Passes;f.Sim:Run(.5,240)
+ check(f.Pallet.Passes==passes,'An invalidated initial capture launched a new physical pass: '..mode)
+ check(not entry.Pulse and not entry.InitialActive,'Initial pulse state survived loss/cancellation: '..mode)
+ f.Pallet:Dispose()
+end
+print('PASS: captured first physical entry/exit, airborne promotion, isolated recovery and initial-contact lifecycle (mocked; no faster rate values)')
+
+do
+ local f=initialCaptured(false);local delayed=false
+ f.Sim.After=function()
+  if not delayed and #f.Data.Crossings>0 and f.Sim.Now>=f.Data.Crossings[1].At+.05 then
+   delayed=true;f.Target.Flag.Value=true -- independent delayed GAME input
+  end
+ end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(1.1,60)
+ check(delayed and entry.Reaction.Rises==1,'Fixture did not expose a delayed ragdoll reaction')
+ check(#f.Data.Crossings==1 and entry.InitialContact and entry.InitialContact.GameObserved,'Delayed accepted first reaction was ignored and retried while unheld')
+ check(not entry.Pulse and f.Pallet.Confirmed==0,'Delayed game input was fabricated into a fresh burst/kick acknowledgement')
+ f.Pallet:Dispose()
+end
+for _,fps in ipairs({20,60,240})do
+ local f,root,receiver=controlled();local velocity=Vector3.new(22,12,6);local gravity=196.2
+ receiver.AssemblyLinearVelocity=velocity;f.Pallet.Context.Gravity=function()return gravity end
+ local physics=f.Sim.Physics;local entry;local stages=0
+ f.Sim.Physics=function(dt)
+  -- Integrate both bodies in the SAME physical substeps; PreSimulation does
+  -- not teleport the receiver ahead of the board's later solver step.
+  local steps=math.max(1,math.ceil(dt*480));local step=dt/steps
+  for _=1,steps do
+   local delta=velocity*step;receiver.Position=receiver.Position+delta;root.Position=root.Position+delta
+   if f.Data.Owned and not f.Data.Blocked and f.Main.Parent then
+    local v=f.Main.AssemblyLinearVelocity-Vector3.new(0,gravity*step,0)
+    f.Main.AssemblyLinearVelocity=v;f.Sound.AssemblyLinearVelocity=v
+   end
+   physics(step)
+  end
+  if entry and entry.ContactPhase=='staged below receiver'then
+   stages+=1;local delta=receiver.Position-f.Sound.Position
+   check(math.abs(delta.X)<1e-6 and math.abs(delta.Z)<1e-6,'Clear staging lost the moving receiver reference frame at '..fps)
+   check(not overlap(f.Sound,receiver),'Co-moving staging teleported into the receiver')
+  end
+ end
+ entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(1.5,fps)
+ check(stages>0 and(entry.PhysicalEntries or 0)>0 and(entry.PhysicalExits or 0)>0,'Moving-reference staging did not produce real entry/exit at '..fps)
+ check(f.Target.Flag.Value==false and f.Pallet.Confirmed==0,'Co-moving staging manufactured game acceptance')
+ f.Pallet:Dispose()
+end
+print('PASS: delayed first-reaction observation and co-moving clear staging with unchanged relative sweep/rate limits (mocked)')
+
+do
+ local f=pulsed(true,true,false);local entry;local locked,waiting=0,0
+ f.Sim.After=function()
+  if f.Pallet:IsContactActive()then locked+=1 end
+  if entry and entry.ContactPhase and entry.ContactPhase:match('^pulse ')then
+   waiting+=1;check(not f.Pallet:IsContactActive(),'Isolated-hit recovery monopolized the shared ownership channel')
+  end
+ end
+ entry=f.Pallet:Maintain(f.Target.Character,f.Valid);check(f.Pallet:IsContactActive(),'Actual staging failed to reserve the native ownership channel')
+ f.Sim:Run(2,60);check(locked>0 and waiting>0,'Reservation fixture did not cover physical crossing and pulse waits')
+ f.Pallet:Cancel(f.Target.Character);check(not f.Pallet:IsContactActive()and not entry.ContactInFlight,'Cancellation retained the contact reservation')
+ f.Pallet:Dispose()
+end
+do
+ local f=controlled();local oldWrite=Node.__newindex;local thrown=false
+ Node.__newindex=function(node,key,value)
+  if not thrown and node==f.Main and key=='CFrame'and f.Pallet:IsContactActive()then
+   thrown=true;error('simulated physical stage failure')
+  end
+  return oldWrite(node,key,value)
+ end
+ local entry=f.Pallet:Maintain(f.Target.Character,f.Valid);f.Sim:Run(.02,1000)
+ Node.__newindex=oldWrite
+ check(thrown and f.Pallet.LastError and not f.Pallet:IsContactActive()and not entry.ContactInFlight,'Physical-stage error leaked the shared grab reservation')
+ f.Pallet:Dispose()
+end
+print('PASS: narrow physical-contact reservation, unlocked pulse recovery and guaranteed error/cancel cleanup (mocked)')
