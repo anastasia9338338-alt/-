@@ -16,7 +16,20 @@ end
 local function gui(v)return v and v:IsA('GuiObject')end
 local function under(v,parent)return v==parent or v and v:IsDescendantOf(parent)end
 local function children(v)return v and v:GetChildren()or{}end
-local function descendants(v)return v and v:GetDescendants()or{}end
+local function descendants(v)
+ if not v then return {}end
+ local result,stack={},{}
+ local first=v:GetChildren();for i=#first,1,-1 do stack[#stack+1]=first[i]end
+ while #stack>0 do
+  local node=table.remove(stack);result[#result+1]=node
+  -- Toy preview meshes are rendered by Roblox. Skinning their GUI never
+  -- needs to walk thousands of parts/attachments inside each WorldModel.
+  if not node:IsA('WorldModel')and not node:IsA('Model')and not node:IsA('BasePart')and not node:IsA('Camera')then
+   local nested=node:GetChildren();for i=#nested,1,-1 do stack[#stack+1]=nested[i]end
+  end
+ end
+ return result
+end
 local function find(v,names)
  for _,name in ipairs(names)do local x=v:FindFirstChild(name);if x then return x end end
  return nil
@@ -48,6 +61,32 @@ local function visible(v,stop)
  end
  return false
 end
+-- Cache native tree snapshots until an external structural mutation. One menu
+-- event previously scanned every page several times and restyled all cells.
+function Shop:Descendants(node)
+ if not node then return {}end
+ self.DescCache=self.DescCache or setmetatable({},{__mode='k'})
+ local cache=self.DescCache[node];local version=self.TreeVersion or 0
+ if cache and cache.Version==version then return cache.Nodes end
+ local nodes=descendants(node);self.TreeScans=(self.TreeScans or 0)+1
+ self.DescCache[node]={Version=version,Nodes=nodes};return nodes
+end
+function Shop:Invalidate(node)
+ if self.Applying or(self.Quick and self.Quick:Owns(node))then return end
+ if node:IsA('WorldModel')or node:IsA('Model')or node:IsA('BasePart')or node:IsA('Camera')or node:IsA('Attachment')or node:IsA('JointInstance')then return end
+ self.TreeVersion=(self.TreeVersion or 0)+1;self.StructureDirty=true
+ local owner
+ for _,record in ipairs(self.Pages)do if under(node,record.Node)then owner=record;break end end
+ if owner then
+  owner.Styled=nil;owner.Controls=nil
+  local holder=owner.Grid and owner.Grid.Parent
+  local cell=node
+  while cell and cell.Parent~=holder and cell~=owner.Node do cell=cell.Parent end
+  if cell and self.CellStyles then self.CellStyles[cell]=nil end
+ end
+ if not owner or owner==self.Current then self.Dirty=true end
+ self:Queue()
+end
 function Shop.Install(ctx)
  local self=setmetatable({Context=ctx,Records={},Connections={},Bound={},Watches={},Pages={},Created={},Enabled=false},Shop)
  local box=ctx.Tab:AddRightGroupbox('Игровой магазин','shopping-bag')
@@ -55,7 +94,7 @@ function Shop.Install(ctx)
  self.Status=box:AddLabel('Открой Your Toys в игровом меню.',true)
  if ctx.Input and ctx.SpawnQuick then self.Quick=Quick.Install(self,ctx)end
  self.Connections[#self.Connections+1]=ctx.PlayerGui.DescendantAdded:Connect(function(v)
-  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu'or v.Name=='TabContents'or self.Menu and under(v,self.Menu))then self:Queue()end
+  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu'or v.Name=='TabContents')then self:Queue()end
  end)
  if ctx.Library.ScreenGui then self.Connections[#self.Connections+1]=ctx.Library.ScreenGui:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()self:Queue()end)end
  return self
@@ -69,7 +108,13 @@ function Shop:Watch(node,property)
  if map[property]then return end
  map[property]=node:GetPropertyChangedSignal(property):Connect(function()
   if self.Closed or self.Applying or not self.Enabled then return end
-  if self.FooterNodes and self.FooterNodes[node]then self.FooterDirty=true else self.Dirty=true end;self:Queue()
+  if self.FooterNodes and self.FooterNodes[node]then self.FooterDirty=true else
+   self.Dirty=true
+   for _,record in ipairs(self.Pages)do if under(node,record.Node)and property~='Visible'then record.Styled=nil end end
+   if property=='Visible'then
+    for _,record in ipairs(self.Pages)do if node~=record.Node and under(node,record.Node)then record.Styled=nil end end
+   end
+  end;self:Queue()
  end)
 end
 function Shop:Write(node,key,value,scope,maintain)
@@ -137,7 +182,7 @@ end
 function Shop:DestroyArtwork(node)
  if not node then return end
  if self.Context.Library.RemoveFromRegistry then
-  for _,child in ipairs(descendants(node))do self.Context.Library:RemoveFromRegistry(child)end
+  for _,child in ipairs(self:Descendants(node))do self.Context.Library:RemoveFromRegistry(child)end
   self.Context.Library:RemoveFromRegistry(node)
  end
  node:Destroy()
@@ -182,9 +227,9 @@ function Shop:Draw()
  end
 end
 function Shop:Bind(menu,contents)
- self:Detach();self.Menu=menu;self.Contents=contents
- self.Bound[#self.Bound+1]=menu.DescendantAdded:Connect(function(v)if not(self.Quick and self.Quick:Owns(v))then self.Dirty=true;self:Queue()end end)
- self.Bound[#self.Bound+1]=menu.DescendantRemoving:Connect(function(v)if not self.Applying and not(self.Quick and self.Quick:Owns(v))then self.Dirty=true;self:Queue()end end)
+ self:Detach();self.Menu=menu;self.Contents=contents;self.StructureDirty=true;self.TreeVersion=(self.TreeVersion or 0)+1
+ self.Bound[#self.Bound+1]=menu.DescendantAdded:Connect(function(v)self:Invalidate(v)end)
+ self.Bound[#self.Bound+1]=menu.DescendantRemoving:Connect(function(v)self:Invalidate(v)end)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()if self.Active and self.Plan and live(self.Layer)then self:Draw()end end)
  self.Bound[#self.Bound+1]=menu.Destroying:Connect(function()
@@ -202,7 +247,7 @@ local function rootScale(node,stop)
 end
 function Shop:CollectionGrid(root)
  local best,score=nil,-1
- for _,node in ipairs(descendants(root))do if node:IsA('UIGridLayout')then
+ for _,node in ipairs(self:Descendants(root))do if node:IsA('UIGridLayout')then
   local count,known,interactive=0,0,0
   for _,child in ipairs(children(node.Parent))do if gui(child)then
    count+=1
@@ -216,6 +261,7 @@ function Shop:CollectionGrid(root)
  return best
 end
 function Shop:Discover()
+ self.DiscoveryPasses=(self.DiscoveryPasses or 0)+1
  local seen={};for _,r in ipairs(self.Pages)do seen[r.Node]=true end
  for _,page in ipairs(children(self.Contents))do
   local name=fold(page.Name)
@@ -281,9 +327,10 @@ function Shop:ResetArtwork()
  self.IconCopies={};self.IconMeta={};self.TextCopies={};self.CardCopies={}
 end
 function Shop:Controls(record)
+ if record.Controls and record.ControlsVersion==(self.TreeVersion or 0)then return record.Controls end
  local title,categories,favorite,limit,sidebar
  local buttons={}
- for _,node in ipairs(descendants(self.Menu))do
+ for _,node in ipairs(self:Descendants(self.Menu))do
   if gui(node)and not(record.Grid and under(node,record.Items))then
    local inPage=under(node,record.Node)
    local shared=not under(node,self.Contents)
@@ -297,27 +344,27 @@ function Shop:Controls(record)
     if(node:IsA('Frame')or node:IsA('ScrollingFrame')or node:IsA('Folder'))and(name:find('categor',1,true)or name=='filters')then categories=categories or node end
     if node:IsA('ImageButton')or node:IsA('TextButton')then
      if favoriteName(node)then favorite=favorite or node else
-      for _,child in ipairs(descendants(node))do if favoriteName(child)then favorite=favorite or node;break end end
+      for _,child in ipairs(self:Descendants(node))do if favoriteName(child)then favorite=favorite or node;break end end
      end
     end
    end
   end
  end
  -- Locate category buttons from a named group, or from the horizontal strip.
- if categories then for _,v in ipairs(descendants(categories))do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end end
+ if categories then for _,v in ipairs(self:Descendants(categories))do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end end
  if #buttons==0 then
   local groups={}
-  for _,v in ipairs(descendants(record.Node))do if not under(v,record.Items)and(v:IsA('ImageButton')or v:IsA('TextButton'))and v~=favorite then
+  for _,v in ipairs(self:Descendants(record.Node))do if not under(v,record.Items)and(v:IsA('ImageButton')or v:IsA('TextButton'))and v~=favorite then
    local p=v.Parent;groups[p]=groups[p]or{};groups[p][#groups[p]+1]=v
   end end
   for p,group in pairs(groups)do if #group>=4 and #group<=12 then categories=p;buttons=group;break end end
  end
  -- Sidebar may be a Folder, a Frame, or a set of direct native buttons.
  local nav=find(self.Menu,{'Tabs','TabButtons','Navigation','Sidebar'})
- if nav then for _,v in ipairs(descendants(nav))do if v:IsA('ImageButton')or v:IsA('TextButton')then sidebar=sidebar or{};sidebar[#sidebar+1]=v end end end
+ if nav then for _,v in ipairs(self:Descendants(nav))do if v:IsA('ImageButton')or v:IsA('TextButton')then sidebar=sidebar or{};sidebar[#sidebar+1]=v end end end
  if not sidebar then
   local groups={}
-  for _,v in ipairs(descendants(self.Menu))do if not under(v,self.Contents)and(v:IsA('ImageButton')or v:IsA('TextButton'))then
+  for _,v in ipairs(self:Descendants(self.Menu))do if not under(v,self.Contents)and(v:IsA('ImageButton')or v:IsA('TextButton'))then
    local p=v.Parent;groups[p]=groups[p]or{};groups[p][#groups[p]+1]=v
   end end
   for _,group in pairs(groups)do if #group>=4 and #group<=8 then sidebar=group;break end end
@@ -326,11 +373,12 @@ function Shop:Controls(record)
  -- Some native versions keep Chat/Settings beside Tabs rather than inside it.
  -- Keep those real controls in the strip instead of inventing substitute tabs.
  local included={};for _,v in ipairs(sidebar or{})do included[v]=true end
- for _,v in ipairs(descendants(self.Menu))do if button(v)and not under(v,self.Contents)and not included[v]then
+ for _,v in ipairs(self:Descendants(self.Menu))do if button(v)and not under(v,self.Contents)and not included[v]then
   local name=v.Name:lower()
   if name=='chat'or name=='chatbutton'or name=='settingsbutton'then sidebar=sidebar or{};sidebar[#sidebar+1]=v;included[v]=true end
  end end
- return{Title=title,Categories=categories,CategoryButtons=buttons,Favorite=favorite,Limit=limit,Sidebar=sidebar or{},Nav=nav}
+ record.Controls={Title=title,Categories=categories,CategoryButtons=buttons,Favorite=favorite,Limit=limit,Sidebar=sidebar or{},Nav=nav}
+ record.ControlsVersion=self.TreeVersion or 0;return record.Controls
 end
 function Shop:Icon(node,r,scope)
  local visual=node
@@ -411,6 +459,8 @@ function Shop:Group(nodes,container,rect,direction,scope,page)
  end
 end
 function Shop:Grid(record)
+ self.GridPasses=(self.GridPasses or 0)+1
+ self.CellStyles=self.CellStyles or setmetatable({},{__mode="k"})
  local plan=self.Plan;local list=record.List
  -- Contents is not necessarily the actual collection: the native inventory
  -- also places its grid under a ScrollingFrame and an inner canvas Frame.
@@ -458,10 +508,14 @@ function Shop:Grid(record)
  end
  self.ItemStyling=true
  for _,cell in ipairs(cells)do
+  local saved=self.CellStyles[cell]
+  if saved and saved.Width==plan.Cell and saved.Height==rowHeight then continue end
+  self.CellStyles[cell]={Width=plan.Cell,Height=rowHeight}
+  self.CellPasses=(self.CellPasses or 0)+1
   self:Rect(cell,{X=0,Y=0,W=plan.Cell,H=rowHeight})
   self:Write(cell,'ClipsDescendants',true,nil,true);self:Watch(cell,'Visible')
   local texts={}
-  for _,v in ipairs(descendants(cell))do if(v:IsA('TextLabel')or v:IsA('TextButton'))and not favoriteName(v)and v.Text~=''then texts[#texts+1]=v end end
+  for _,v in ipairs(self:Descendants(cell))do if(v:IsA('TextLabel')or v:IsA('TextButton'))and not favoriteName(v)and v.Text~=''then texts[#texts+1]=v end end
   if cell:IsA('TextButton')and cell.Text~=''then self:Text(cell,7*plan.Scale);self:Write(cell,'TextYAlignment',Enum.TextYAlignment.Bottom,nil,true)end
   for i,v in ipairs(texts)do
    self:Text(v,math.max(7,7*plan.Scale));self:Write(v,'ClipsDescendants',true,nil,true)
@@ -471,7 +525,7 @@ function Shop:Grid(record)
   end
   -- A fixed-size image/ViewportFrame inside a correctly sized grid cell still
   -- renders the old 100-pixel toy. Fit the visual subtree, not just CellSize.
-  for _,v in ipairs(descendants(cell))do
+  for _,v in ipairs(self:Descendants(cell))do
    if v:IsA('UIScale')then self:Write(v,'Scale',1,nil,true)
    elseif gui(v)then
     if favorite(v)and(button(v)or v:IsA('ImageLabel')or v:IsA('TextLabel'))then
@@ -502,7 +556,7 @@ function Shop:PanelContent(record)
  local scale=page:FindFirstChildOfClass('UIScale')
  if not scale then scale=Instance.new('UIScale');scale.Name='AstralPanelScale';scale.Parent=page;self.Created[scale]='page' end
  self:Write(scale,'Scale',fit,'page',true)
- for _,v in ipairs(descendants(page))do
+ for _,v in ipairs(self:Descendants(page))do
   if gui(v)then
    if v:IsA('Frame')or v:IsA('ScrollingFrame')then self:Write(v,'BackgroundTransparency',1,'page',true)
    elseif v:IsA('TextBox')or button(v)then
@@ -518,7 +572,7 @@ function Shop:PanelContent(record)
 end
 function Shop:Footer(record)
  local count='';local root=self.GuiRoot or self.Menu.Parent
- local nodes=descendants(root);local groups={}
+ local nodes=self:Descendants(root);local groups={}
  local function nativeText(v)
   return not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))
  end
@@ -542,7 +596,7 @@ function Shop:Footer(record)
    self.FooterNodes=self.FooterNodes or{};self.FooterNodes[v]=true
    if fraction then count=v.Text end
    self:HideText(v,'shared');self:Watch(v,'Text');self:Watch(v,'AutoLocalize');self:Watch(v,'ContentText')
-   if footerRoot then for _,piece in ipairs(descendants(footerRoot))do
+   if footerRoot then for _,piece in ipairs(self:Descendants(footerRoot))do
     if piece:IsA('UIStroke')then self:Write(piece,'Transparency',1,'shared',true)end
     if gui(piece)then self:Write(piece,'BackgroundTransparency',1,'shared',true);if piece:IsA('ImageLabel')then self:Write(piece,'ImageTransparency',1,'shared',true)end end
    end end
@@ -562,7 +616,7 @@ end
 function Shop:Page(record)
  self.LayoutPasses=(self.LayoutPasses or 0)+1
  local plan=self.Plan;local list=record.List;self:Surface()
- for _,v in ipairs(descendants(self.Menu))do if gui(v)and not under(v,self.Contents)then
+ for _,v in ipairs(self:Descendants(self.Menu))do if gui(v)and not under(v,self.Contents)then
   self:Write(v,'BackgroundTransparency',1,'shared',true);self:Write(v,'BorderSizePixel',0,'shared')
   if v:IsA('ImageLabel')then
    local p=v.Parent;local glyph=false;while p and p~=self.Menu do if button(p)then glyph=true;break end;p=p.Parent end
@@ -571,13 +625,14 @@ function Shop:Page(record)
  end end
  for _,image in pairs(self.IconCopies)do image.Visible=false end
  for _,label in pairs(self.TextCopies)do label.Visible=false end
- if record.Grid then
+ local styled=record.Styled and record.Styled.Width==plan.Width and record.Styled.Height==plan.Height
+ if record.Grid and not styled then
  self:Normalize(list,'page');self:Rect(list,plan.Body)
  self:Write(list,'BackgroundTransparency',1,nil,true);self:Write(list,'BorderSizePixel',0);self:Write(list,'ClipsDescendants',true)
  if list:IsA('ScrollingFrame')then self:Write(list,'ScrollBarThickness',0);self:Write(list,'ScrollingDirection',Enum.ScrollingDirection.Y);self:Write(list,'AutomaticCanvasSize',Enum.AutomaticSize.Y)end
  -- Remove native panel fills throughout this page. Their old sibling header
  -- and footer backgrounds otherwise cover the smaller rounded skin.
- for _,v in ipairs(descendants(self.Menu))do if gui(v)and(under(v,record.Node)or not under(v,self.Contents))then
+ for _,v in ipairs(self:Descendants(self.Menu))do if gui(v)and(under(v,record.Node)or not under(v,self.Contents))then
   local scope=under(v,record.Node)and'page'or'shared'
   self:Write(v,'BackgroundTransparency',1,scope,true);self:Write(v,'BorderSizePixel',0,scope)
   local stroke=v:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,scope,true)end
@@ -594,11 +649,13 @@ function Shop:Page(record)
   end
  end end
  self:Grid(record)
- elseif not record.Quick then self:PanelContent(record)end
- local controls=self:Controls(record)
+ elseif not record.Grid and not record.Quick and not styled then self:PanelContent(record)end
+ record.Styled={Width=plan.Width,Height=plan.Height}
+ local discoveredControls=self:Controls(record)
+ local controls=table.clone(discoveredControls)
  -- Hide every original page title, including localized shadow copies.
  local nativeRoot=self.GuiRoot or self.Menu
- for _,node in ipairs(descendants(nativeRoot))do
+ for _,node in ipairs(self:Descendants(nativeRoot))do
   if(node:IsA('TextLabel')or node:IsA('TextButton'))and not under(node,self.Layer)and not(self.Quick and self.Quick:Owns(node))then
    local name=fold(node.Name)
    local scoped=under(node,record.Node)or not under(node,self.Contents)
@@ -637,7 +694,7 @@ function Shop:Page(record)
  self:Footer(record)
 
  local top=self.Menu.AbsolutePosition;local width=self.Menu.AbsoluteSize.X
- for _,node in ipairs(descendants(self.GuiRoot or self.Menu))do
+ for _,node in ipairs(self:Descendants(self.GuiRoot or self.Menu))do
   if gui(node)and not under(node,self.Layer)and not(self.Quick and self.Quick:Owns(node))then
    local name=fold(node.Name);local label=(node:IsA('TextButton')or node:IsA('TextLabel'))and fold(node.Text or'')or''
    local atTop=node.AbsolutePosition.Y<top.Y+plan.Body.Y*(self.MenuScale or 1)and node.AbsolutePosition.X>top.X+width*.7
@@ -657,16 +714,27 @@ function Shop:Find()
   if not gui(menu)or not contents then if self.Menu then self:Detach()end;self.Status:SetText('Ожидание игрового меню.');return end
   if self.Menu~=menu or self.Contents~=contents then self:Bind(menu,contents)end
   self.GuiRoot=guiRoot
-  self:Discover();local active
+  if not menu.Visible then
+   if self.Quick then self.Quick:CloseForMenu()end
+   self.Active=false
+   if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
+   if self.Layer then self.Layer.Visible=false end
+   self.Status:SetText('Открой игровое меню.');return
+  end
+  if self.StructureDirty or #self.Pages==0 then self:Discover();self.StructureDirty=false end
+  local active
   if self.Quick and self.Quick.Open and menu.Visible then active=self.Quick.Record end
   if not active then for _,record in ipairs(self.Pages)do if live(record.Node)and visible(record.Node,self.Menu)then active=record;break end end end
-  if active~=self.Current then
-   self:Restore();self:ResetArtwork();self.Current=active;self.Dirty=true
+  if active and active~=self.Current then
+   self:Restore('shared');self:ResetArtwork();self.Current=active;self.Dirty=true
   end
   if not active then
    if self.Quick then self.Quick:CloseForMenu()end
    self.Active=false;if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
-   if self.Layer then self.Layer.Visible=false end;self:Restore();self.Status:SetText('Открой игровое меню.');return
+   if self.Layer then self.Layer.Visible=false end
+   -- A closed game menu is not a style-disable request. Keep the native
+   -- page cache and restore its original properties only on detach/unload.
+   self.Status:SetText('Открой игровое меню.');return
   end
   self.Active=true
   self.MenuScale=1
@@ -679,7 +747,7 @@ function Shop:Find()
   if active.Node.Name:lower()=='settings'and not active.ContentBounds then
    local lo=Vector2.new(math.huge,math.huge);local hi=Vector2.new(-math.huge,-math.huge)
    local origin=active.Node.AbsolutePosition;local scale=rootScale(active.Node,guiRoot)
-   for _,node in ipairs(descendants(active.Node))do
+   for _,node in ipairs(self:Descendants(active.Node))do
     local candidate=button(node)or node:IsA('TextBox')
     if node:IsA('UIGradient')and gui(node.Parent)then node=node.Parent;candidate=true end
     if candidate and visible(node,active.Node)and not nativeHeading(node)then
@@ -694,7 +762,7 @@ function Shop:Find()
   local plan=Layout.Build(viewport.X,viewport.Y)
   if not self.Dirty and self.Plan and self.Plan.Width==plan.Width and self.Plan.Height==plan.Height and self.LastMenuScale==rootScale(menu,guiRoot)then
    self.MenuScale=self.LastMenuScale
-   self:Footer(active);self:Draw();return
+   self:Footer(active);self:Draw();self:StartIcons();return
   end
   self.Plan=plan
   for _,scale in ipairs(children(menu))do if scale:IsA('UIScale')then self:Write(scale,'Scale',1,'shared',true)end end
@@ -716,7 +784,7 @@ function Shop:Detach()
  for _,c in ipairs(self.Bound)do c:Disconnect()end;self.Bound={}
  for _,map in pairs(self.Watches)do for _,c in pairs(map)do c:Disconnect()end end;self.Watches={}
  self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self:DestroyArtwork(self.Layer);self.Layer=nil end
- self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
+ self.DescCache=nil;self.CellStyles=nil;self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
 end
 function Shop:SetEnabled(value)
  if self.Closed then return end;self.Enabled=value==true

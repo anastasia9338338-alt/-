@@ -101,7 +101,7 @@ end
 do
     local f=fixture();f:Spawn();f.Ack=true;check(f.Items:Attach(f.Target,.3),'Fixture did not attach')
     f.Owner=false;f.Weld.Part1=nil;local calls=#f.Calls
-    f:Step(.3);check(#f.Jobs==1 and #f.Calls==calls,'Marker-only owner wrote attachment or duplicated ownership workers')
+    f:Step(.3);check(#f.Jobs==1 and #f.Calls>calls and f.Items:IsAttached(),'Delayed physics ownership blocked a genuine server attachment');calls=#f.Calls
     local old=f.Character;f.Character=newNode('Model','NewMe');f.Character.Parent=f.World
     f.CheckValid=function(valid)check(not valid(),'Ownership worker survived respawn')end
     f.Jobs[1]();f:Step(.1)
@@ -112,8 +112,8 @@ end
 -- Physical ownership with a stale server marker still needs acquisition.
 do
     local f=fixture();f:Spawn();f.Marker=false;f.Ack=true
-    check(not f.Items:Attach(f.Target,.1),'Physical owner bypassed native PartOwner authorization')
-    check(#f.Calls==0 and #f.Jobs==1,'Stale marker sent attachment or skipped bounded reacquisition')
+    check(f.Items:Attach(f.Target,.1),'A genuine server weld was rejected while the marker was delayed')
+    check(#f.Calls>0 and #f.Jobs==1 and not f.Items:_Owned(f.Part),'Transport was incorrectly gated on local ownership, or reported ownership without evidence')
     f.CheckValid=function(valid)check(valid(),'Current marker-repair ownership worker was canceled');f.Marker=true end
     f.Jobs[1]();f:Step(.2)
     check(f.Items:IsAttached()and #f.Calls>0,'Marker reacquisition failed to restore genuine attachment')
@@ -185,4 +185,16 @@ for _,mode in ipairs({'death','disable','unload'})do
     check(not f.Items.ActiveModel and not f.Reserved[f.Model]and f.Destroyed[f.Model]==1,mode..' leaked defense')
     check(#f.Calls==count,mode..' worker sent a stale attachment')
 end
-print('PASS: '..checks..' anti-kick real attachment, repair bounds, exact identity, ownership and lifecycle assertions (mocked)')
+-- A delayed ownership worker must not Unstick an attachment that the server
+-- has already acknowledged while executor metadata is still stale.
+do
+ local f=fixture();f:Spawn();f.Owner=false;f.Marker=false;f.Ack=false
+ f.Items:Attach(f.Target,.1);check(#f.Jobs==1,'Missing queued ownership retry fixture')
+ local own=f.Items.Context.Own;local requests=0
+ f.Items.Context.Own=function(...)requests+=1;return own(...)end
+ f.Weld.Part0=f.Part;f.Weld.Part1=f.Target
+ f.Jobs[1]();f:Step(1)
+ check(requests==0 and #f.Jobs==1 and f.Items:IsAttached(),'Ownership health check detached or regrabbed a genuine current attachment')
+ f.Items:Dispose()
+end
+print('PASS: '..checks..' anti-kick server-authorized attachment, delayed metadata, repair bounds and lifecycle assertions (mocked)')

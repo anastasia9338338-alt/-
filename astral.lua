@@ -1,4 +1,4 @@
--- Astral v4.91 | Restore original Unstick behavior.
+-- Astral v4.92 | Source kick modes, defense repairs and shop optimization.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -259,13 +259,17 @@ function Cadence:SetSpeed(value)
  if type(value)~='number'or value~=value then return end
  self.Speed=math.clamp(value,1,60)
 end
+function Cadence:SetDelay(value)
+ if type(value)~='number'or value~=value or math.abs(value)==math.huge then return false end
+ self.DelayMS=math.clamp(value,0,1000);return true
+end
 function Cadence:Half(valid,maintain)
  local start=self.Context.Clock()
  repeat
   if not valid()then return false end
   if maintain then maintain()end
   self.Context.Signal:Wait()
- until self.Context.Clock()-start>=.5/self.Speed-1e-7
+ until self.Context.Clock()-start>=(self.DelayMS and self.DelayMS/2000 or .5/self.Speed)-1e-7
  return valid()
 end
 return Cadence
@@ -451,6 +455,33 @@ function Remover:Remove(model,target,actor,actorRoot,current,interval)
  local removed=not attached(rigid,actor)and not attached(rigid,target)
  self:Cancel(job)
  return removed
+end
+-- Reuse the same acknowledged protocol for all holdable-removal callers.
+-- The old BreakHoldable helper destroyed DropItemRemoteFunction locally,
+-- making every later retry fail even though the server still had the item.
+function Remover:Detach(model,valid)
+ local ctx=self.Context
+ if self.Closed or not model or not model.Parent or(valid and not valid())then return false end
+ local hold=model:FindFirstChild('HoldPart');local rigid=hold and hold:FindFirstChild('RigidConstraint')
+ if not rigid then return false end
+ if not rigid.Attachment1 then return true end
+ local target=rigid.Attachment1.Parent
+ while target and not target:IsA('Model')do target=target.Parent end
+ local actor,root,hum=ctx.LocalCharacter()
+ if not target or not actor or not root or not hum or hum.Health<=0 then return false end
+ local function current()
+  local c,r,h=ctx.LocalCharacter()
+  return not self.Closed and model.Parent~=nil and target.Parent~=nil and c==actor and r==root and h==hum
+   and root.Parent~=nil and hum.Health>0 and(not valid or valid())
+ end
+ if not current()then return false end
+ local ping=ctx.PingSeconds and ctx.PingSeconds()or .1
+ local ok,result=pcall(self.Remove,self,model,target,actor,root,current,finite(ping)and math.clamp(ping,.08,.3)or .1)
+ if not ok then
+  self.LastError=tostring(result)
+  local job=self.Items[model];if job then self:Cancel(job)end
+ end
+ return ok and result==true
 end
 function Remover:Apply(player,valid)
  local ctx=self.Context
@@ -19701,7 +19732,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.91 | FTAP")
+                                warn("Astral v4.92 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -21611,6 +21642,16 @@ do
 						tbl11.SetNetworkOwner:FireServer(arg, cframe)
 					end
 
+                    tbl12.RequestNativeOwnership=function(part)
+                        local _,actor,hum=tbl12.Char()
+                        if flag11 or not actor or not hum or hum.Health<=0 or not part or not part.Parent or not part:IsA("BasePart")then return false end
+                        local frame=part.CFrame
+                        local values={frame:GetComponents()}
+                        if (part.Position-actor.Position).Magnitude>33 or part.Position.Magnitude>1e7 then return false end
+                        for _,value in ipairs(values)do if type(value)~="number"or value~=value or math.abs(value)==math.huge then return false end end
+                        tbl11.SetNetworkOwner:FireServer(part,frame);return true
+                    end
+
 					tbl12.SNO = function(arg, arg2, arg3, requirePhysics)
 						local v24, v25, v26 = tbl12.Char()
 						local head = v24 and v24:FindFirstChild("Head")
@@ -23027,6 +23068,7 @@ end
                     return not root.Anchored and root.ReceiveAge==0
                 end
                 tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,Pulsed=true,
+                    NativeTouch=typeof(firetouchinterest)=="function" and firetouchinterest or nil,
                     Held=function(character)
                         local player=Players:GetPlayerFromCharacter(character)
                         local loop=tbl12.KickLoop
@@ -23156,7 +23198,8 @@ end
 					end
 				end
 
-				tbl12.BreakLimb = function(arg, arg2)
+				tbl12.BreakLimb = function(arg, arg2, valid)
+                    if valid and not valid()then return false end
 					local flag12 = arg == localPlayer
 					if flag12 and tbl8.GucciAntiGrab then
 						return fn18("Can't break limbs while in Gucci!")
@@ -23171,7 +23214,7 @@ end
 
 					for _, child in ipairs(children) do
 						if child:IsA("BasePart") then
-							if child.Name:find("Arm") and (arg2 == "Arms" or arg2 == "All") or child.Name:find("Leg") and (arg2 == "Legs" or arg2 == "All") then
+							if child.Name:find("Arm") and (arg2 == "Arms" or arg2 == "All") or (child.Name:find("Leg")or child.Name:find("Foot"))and (arg2 == "Legs" or arg2 == "All") then
 								flag13 = true
 								break
 							end
@@ -23188,6 +23231,7 @@ end
 
 						while true do
 							task.wait()
+                            if valid and not valid()then return false end
 							if not (ragdolled.Value or tick() - now3 > 0.5) then
 								continue
 							end
@@ -23197,7 +23241,8 @@ end
 						return
 					end
 
-					if not ragdolled.Value then
+					if valid and not valid()then return false end
+                    if not ragdolled.Value then
 						return
 					end
 					local cFrame2 = v25.CFrame
@@ -23206,13 +23251,14 @@ end
 						if child:IsA("BasePart") then
 							if child.Name:find("Arm") and (arg2 == "Arms" or arg2 == "All") then
 								tbl12.Teleport(child, CFrame.new(0, -100000, 0))
-							elseif child.Name:find("Leg") and (arg2 == "Legs" or arg2 == "All") then
+							elseif (child.Name:find("Leg")or child.Name:find("Foot"))and (arg2 == "Legs" or arg2 == "All") then
 								tbl12.Teleport(child, CFrame.new(0, -100000, 0))
 							end
 						end
 					end
 
 					task.wait(0.15)
+                    if valid and not valid()then return false end
 					if not v25.Parent then
 						return
 					end
@@ -23220,6 +23266,7 @@ end
 					if flag12 then
 						tbl12.Grab(v25)
 						task.wait()
+                        if valid and not valid()then return false end
 
 						for _, v27 in children, nil, nil do
 							if v27.Parent then
@@ -23402,7 +23449,7 @@ end
 				do
 
                     tbl12.AntiGrabWalk=requireModule("AntiGrabWalk").Install({RunService=RunService,Clock=os.clock,Spawn=task.spawn,
-                        Enabled=function()return not flag11 and not tbl8.GucciAntiGrab and tbl8.AntiGrab end,
+                        Enabled=function()return not flag11 and not tbl7.States.DefenseLegRemoval and not tbl8.GucciAntiGrab and tbl8.AntiGrab end,
                         Held=function()return isHeld.Value==true end,
                         LocalName=localPlayer.Name,
                         GrabOwner=function(character)
@@ -27569,77 +27616,11 @@ end
 						return v22, v23
 					end
 
-					tbl12.BreakHoldable = function(arg, arg2, arg3, valid)
-						local function allowed()return not valid or valid()end
-                        if not allowed()then return false end
-                        local v22, v23, v24 = tbl12.Char()
-						local leftGripAttachment = v22 and v22:FindFirstChild("Left Arm") and v22["Left Arm"]:FindFirstChild("LeftGripAttachment")
-						local holdPart = arg and arg:FindFirstChild("HoldPart")
-						local holdItemRemoteFunction = holdPart and holdPart:WaitForChild("HoldItemRemoteFunction", 0.45)
-						local dropItemRemoteFunction = holdItemRemoteFunction and holdPart:WaitForChild("DropItemRemoteFunction", 0.45)
-						local rigidConstraint = dropItemRemoteFunction and holdPart:WaitForChild("RigidConstraint", 0.45)
-						if not allowed()or not (v22 and v24 and leftGripAttachment and holdItemRemoteFunction and dropItemRemoteFunction and rigidConstraint) then
-							return false
-						end
+					tbl12.BreakHoldable = function(model,timeout,force,valid)
+                        if flag11 or(valid and not valid())or not tbl12.FoodRemover then return false end
+                        return tbl12.FoodRemover:Detach(model,valid)
+                    end
 
-						if arg3 then
-							rigidConstraint.Enabled = false
-						end
-
-						local now3 = tick()
-
-						while true do
-							if not allowed()then return false end
-                            local flag12 = v22.Parent and arg.Parent and leftGripAttachment.Parent and rigidConstraint.Parent and rigidConstraint.Attachment1 ~= leftGripAttachment
-
-							if flag12 then
-								flag12 = tick() - now3 < (arg2 or 0.6)
-							end
-
-							if flag12 then
-								task.spawn(function()
-									if allowed()then pcall(holdItemRemoteFunction.InvokeServer, holdItemRemoteFunction, arg, v22)end
-								end)
-
-								task.wait()
-								continue
-							end
-
-							break
-						end
-
-						if not allowed()or rigidConstraint.Attachment1 ~= leftGripAttachment then
-							return false
-						end
-
-						task.spawn(function()
-							if allowed()then pcall(dropItemRemoteFunction.InvokeServer, dropItemRemoteFunction, arg)end
-						end)
-
-						dropItemRemoteFunction:Destroy()
-						local now4 = tick()
-
-						while true do
-							RunService.Heartbeat:Wait()
-                            if not allowed()then return false end
-							if not (not rigidConstraint.Parent or rigidConstraint.Attachment1 ~= leftGripAttachment or tick() - now4 > 0.45) then
-								continue
-							end
-							break
-						end
-
-						for _, v25 in v24:GetPlayingAnimationTracks() do
-							local match = v25.Animation and v25.Animation.AnimationId:match("%d+")
-
-							if not (match and tbl7.AnimationWhitelist[match]) then
-								v25:Stop()
-							end
-						end
-
-						return rigidConstraint.Parent and rigidConstraint.Attachment1 ~= leftGripAttachment
-					end
-
-					CoconutPoses.Extend(tbl7.CoconutForms)
 					tbl12.SpawnCoconutForms = function()
 						local coconutForms = tbl7.CoconutForms
 						if coconutForms.Spawning or not tbl8.CoconutForms or #coconutForms.Models >= #coconutForms.Offsets then
@@ -31898,6 +31879,7 @@ end
         end
         tbl14.Sit=function()return tbl12.BlobmanRide:SitOnce()end
         tbl12.BlobmanCadence=requireModule("BlobmanCadence").new({Clock=os.clock,Signal=RunService.Heartbeat})
+        tbl12.BlobmanCadence:SetDelay(50)
 
 		tbl14.Grab = function(arg, arg2)
 			if not parent then
@@ -33616,7 +33598,7 @@ end
 								task.wait(1)
 							else
 
-								if flag12 and not arg5 and arg4 and tbl7.TargetMethods.Kick and tbl9.KickServerMethod == "Circle + Lag" then
+								if flag12 and not arg5 and arg4 and tbl7.TargetMethods.Kick and tbl9.KickServerMethod == "Circle + Lag" and not(tbl12.KickLoop and tbl12.KickLoop.Context.SourceMode)then
 									tbl12.KickServer(true)
 								end
 
@@ -33629,7 +33611,7 @@ end
 								end
 							end
 
-							if flag12 and not arg5 and arg4 and tbl7.TargetMethods.Kick and tbl9.KickServerMethod == "Circle + Lag" then
+							if flag12 and not arg5 and arg4 and tbl7.TargetMethods.Kick and tbl9.KickServerMethod == "Circle + Lag" and not(tbl12.KickLoop and tbl12.KickLoop.Context.SourceMode)then
 								task.wait(10)
 							else
 								task.wait()
@@ -33661,7 +33643,7 @@ end
 							return
 						end
 
-						if flag12 and not arg3 and arg2 and tbl7.TargetMethods.Kick and tbl9.KickServerMethod == "Circle + Lag" then
+						if flag12 and not arg3 and arg2 and tbl7.TargetMethods.Kick and tbl9.KickServerMethod == "Circle + Lag" and not(tbl12.KickLoop and tbl12.KickLoop.Context.SourceMode)then
 							tbl12.KickServer(false)
 						end
 
@@ -34515,7 +34497,7 @@ Escape Timer: %*]]
 		lib:GiveSignal(isHeld:GetPropertyChangedSignal("Value"):Connect(tbl12.AntiGrab))
 
         tbl12.BlobmanAura=requireModule("BlobmanAura").Install({RunService=RunService,Clock=os.clock,LocalPlayer=localPlayer,
-            Enabled=function()return not flag11 and(tbl8.AntiBlobman or tbl8.AntiBlobmanAura)end,Character=tbl12.Char,
+            Enabled=function()return not flag11 and tbl8.AntiBlobman end,Character=tbl12.Char,
             Models=function()
                 local models={}
                 for _,folder in ipairs(workspace:GetChildren())do
@@ -34530,6 +34512,10 @@ Escape Timer: %*]]
         })
         lib:OnUnload(function()tbl12.BlobmanAura:Dispose()end)
 
+        tbl12.BlobmanRiderGrab=requireModule("BlobmanRiderGrab").Install({RunService=RunService,Clock=os.clock,
+            Player=localPlayer,Workspace=workspace,Players=function()return Players:GetPlayers()end,Character=tbl12.Char,
+            Protected=function(player)return tbl12.IsProtectedPlayer(player,true)end,Grab=tbl12.RequestNativeOwnership})
+        lib:OnUnload(function()tbl12.BlobmanRiderGrab:Dispose()end)
         tbl12.BlobmanDefense=requireModule("BlobmanDefense").Install({RunService=RunService,Clock=os.clock,
             Character=tbl12.Char,Player=localPlayer,Models=tbl12.BlobmanAura.Context.Models,
             PlayerForCharacter=function(character)return Players:GetPlayerFromCharacter(character)end,
@@ -34551,7 +34537,7 @@ Escape Timer: %*]]
         })
         tbl12.AntiExplore=requireModule("AntiExplore").Install({RunService=RunService,Workspace=workspace,Clock=os.clock,
             Character=tbl12.Char,
-            Blocked=function()return flag11 or tbl8.GucciAntiGrab or tbl8.Flight or tbl8.ControllingSomeone
+            Blocked=function()return tbl7.States.DefenseLegRemoval==true or flag11 or tbl8.GucciAntiGrab or tbl8.Flight or tbl8.ControllingSomeone
                 or tbl12.SlideTeleport and tbl12.SlideTeleport:IsMoving()
                 or tbl12.PalletMagnet and tbl12.PalletMagnet.Enabled
                 or tbl12.CharacterTools and tbl12.CharacterTools.Locked end,
@@ -34739,498 +34725,72 @@ Escape Timer: %*]]
 			end
 		end)
 
-		do
-			local function fn21()
-				local n36 = os.clock() + 0.35
-
-				repeat
-					local v22 = tbl12.DetectPCLD(localPlayer)
-					if v22 and v22.Parent and not tbl12.IsWaitingPCLD(v22) then
-						return v22
-					end
-					task.wait(0.05)
-				until flag11 or not tbl8.AntiKick or os.clock() >= n36
-			end
-
-            tbl12.AntiKickItems = requireModule("AntiKickItems").Install({
-                Spawn = function(id, frame) return tbl12.SpawnToy(id, frame, 3, true) end,
-                Destroy = function(model) return tbl12.DestroyToy(model) end,
-                Own = function(part,valid) return tbl12.SNO(part,.3,valid,true) end,
-                Reserve = function(model,value) tbl7.ToyAuraReserved[model]=value and true or nil end,
-                IsInventoryModel = function(model)
-                    local mine,plot=tbl12.GetInventory(localPlayer)
-                    return model and (model.Parent==mine or model.Parent==plot)
+        do
+            tbl12.AntiKickItems=requireModule("AntiKickItems").Install({
+                Spawn=function(id,frame)return tbl12.SpawnToy(id,frame,3,true)end,
+                Destroy=tbl12.DestroyToy,
+                Own=function(part,valid)
+                    local _,root,hum=tbl12.Char()
+                    if not flag11 and(not valid or valid())and root and hum and hum.Health>0 and part.Parent
+                        and(part.Position-root.Position).Magnitude<=31 then tbl12.RequestNativeOwnership(part)end
+                    return tbl12.IsPartOwner(part)
                 end,
-                SpawnThread = task.spawn,
-                IsOwner = function(part) return tbl12.IsPartOwner(part) end,
-                IsPhysicsOwner = function(part) return tbl12.IsNetworkOwner(part) end,
-                Clock = os.clock,
-                ApplyOffset = function(part,target,offset) tbl11.StickyPartEvent:FireServer(part,target,offset) end,
-                Enabled = function() return tbl8.AntiKick and not flag11 end,
-                Character = function() return localPlayer.Character end,
-                Notify = function(message) fn18(message) end,
-                Changed = function() if v18 then tbl12.DestroyToy(v18);v18 = nil end end,
-                SetSelection = function(value) task.defer(function()
-                    if options.AKItemDropdown then options.AKItemDropdown:SetValue(value) end
-                end) end,
+                Reserve=function(model,value)tbl7.ToyAuraReserved[model]=value and true or nil end,
+                IsInventoryModel=function(model)
+                    local mine,plot=tbl12.GetInventory(localPlayer)
+                    return model and(model.Parent==mine or model.Parent==plot)
+                end,
+                SpawnThread=task.spawn,Wait=task.wait,Clock=os.clock,
+                IsOwner=tbl12.IsPartOwner,IsPhysicsOwner=tbl12.IsNetworkOwner,
+                ApplyOffset=function(part,target,offset)tbl11.StickyPartEvent:FireServer(part,target,offset)end,
+                Enabled=function()return tbl8.AntiKick and not flag11 end,
+                Character=function()return localPlayer.Character end,Notify=fn18,
+                Changed=function()if v18 then tbl12.DestroyToy(v18);v18=nil end end,
+                SetSelection=function(value)task.defer(function()
+                    if not flag11 and options.AKItemDropdown then options.AKItemDropdown:SetValue(value)end
+                end)end,
             })
-            lib:OnUnload(function() tbl12.AntiKickItems:Dispose();v18=nil end)
-            local function fn22(arg) return tbl12.AntiKickItems:Spawn(arg) end
-
-			task.spawn(function()
-				while task.wait(0.03) do
-					if flag11 then
-						return
-					end
-
-					if not tbl8.AntiKick then
-						if v18 then
-							tbl12.DestroyToy(v18)
-							v18 = nil
-						end
-
-						if not tbl12.WaitForRuntimeToggle("AntiKick") then
-							return
-						end
-					end
-
-                    if v18~=tbl12.AntiKickItems.ActiveModel then v18=tbl12.AntiKickItems.ActiveModel end
-					local antiKickSettings = tbl7.AntiKickSettings
-					local v22, v23, v24 = tbl12.Char()
-					local ragdollTouchedHitbox = v23 and v23:FindFirstChild("RagdollTouchedHitbox")
-
-					if v23 and v24 and ragdollTouchedHitbox and v24.Health > 0 then
-						if localPlayer.InPlot.Value then
-							while true do
-								task.wait()
-                                if flag11 then return end
-                                if not tbl8.AntiKick then break end
-								if not (not localPlayer.InPlot.Value or localPlayer.InOwnedPlot.Value) then
-									continue
-								end
-								break
-							end
-						end
-
-                        if not tbl8.AntiKick or localPlayer.Character~=v22 or not v24.Parent or v24.Health<=0
-                            or not ragdollTouchedHitbox:IsDescendantOf(v22) then continue end
-						if tbl9.AKType == "Shuriken" then
-							local parent2, shurHighlight, highlight2, antiKick, forcefieldChar, transparency, isMeshPart
-
-							if not tbl12.AntiKickItems:IsAttached(ragdollTouchedHitbox) then
-								local stickyPart = nil
-								local stickyWeld, now3, flag12, flag13
-
-								if not v18 or not v18.Parent then
-									tbl12.DestroyToy(v18)
-									v18 = nil
-									local v25 = fn21()
-                                    if flag11 then return end
-                                    if not tbl8.AntiKick or localPlayer.Character~=v22 or not v24.Parent or v24.Health<=0
-                                        or not ragdollTouchedHitbox:IsDescendantOf(v22) then continue end
-									stickyWeld = nil
-
-									if v25 then
-										local v26
-										v26, stickyPart, stickyWeld = fn22(v25)
-										v18 = v26
-									end
-
-									if not v18 then
-										local v26
-										v26, stickyPart, stickyWeld = fn22(v23)
-										v18 = v26
-
-										if v18 then
-											v18.Name = "ShurikenRSC"
-
-											task.spawn(function()
-												local touchInterest = stickyPart:WaitForChild("TouchInterest", 2.5)
-
-												if touchInterest then
-													touchInterest:Destroy()
-												end
-											end)
-
-											tbl12.AntiKickItems:Attach(ragdollTouchedHitbox,.5)
-											now3 = tick()
-
-											while true do
-												fn20()
-												flag12 = tbl12.AntiKickItems:IsAttached(ragdollTouchedHitbox) or not stickyWeld.Parent or not ragdollTouchedHitbox.Parent or not v24.Parent
-												flag13 = flag12 or v24.Health == 0 or tick() - now3 > 0.5
-												if not flag13 then
-													continue
-												end
-												break
-											end
-
-											parent2 = v18 and v18==tbl12.AntiKickItems.ActiveModel and v18.Parent
-
-											if parent2 then
-												if not tbl8.AntiKick then
-													tbl12.DestroyToy(v18)
-													v18 = nil
-												else
-													shurHighlight = v18:FindFirstChild("ShurHighlight")
-
-													if not shurHighlight then
-														shurHighlight = Instance.new("Highlight")
-														shurHighlight.Name = "ShurHighlight"
-														shurHighlight.Adornee = v18
-														shurHighlight.Parent = v18
-													end
-
-													if shurHighlight.Enabled ~= antiKickSettings.Highlight then
-														shurHighlight.Enabled = antiKickSettings.Highlight
-													end
-
-													if shurHighlight.FillColor ~= antiKickSettings.HighlightFill then
-														shurHighlight.FillColor = antiKickSettings.HighlightFill
-													end
-
-													if shurHighlight.OutlineColor ~= antiKickSettings.HighlightOutl then
-														shurHighlight.OutlineColor = antiKickSettings.HighlightOutl
-													end
-
-													if shurHighlight.FillTransparency ~= antiKickSettings.HighlightFT then
-														shurHighlight.FillTransparency = antiKickSettings.HighlightFT
-													end
-
-													if shurHighlight.OutlineTransparency ~= antiKickSettings.HighlightOT then
-														shurHighlight.OutlineTransparency = antiKickSettings.HighlightOT
-													end
-
-													highlight2 = antiKickSettings.Highlight
-
-													if highlight2 then
-														antiKick = highlight2
-													else
-														forcefieldChar = tbl8.ForcefieldChar
-														antiKick = forcefieldChar and tbl7.CharacterHighlightAffects["Anti Kick"]
-													end
-
-													if antiKick then
-														transparency = 0
-													else
-														transparency = antiKickSettings.Transparency
-													end
-
-													for _, child in ipairs(v18:GetChildren()) do
-														if child:IsA("BasePart") then
-															if tbl12.ApplyCharacterHighlightPart then
-																tbl12.ApplyCharacterHighlightPart(child, "Anti Kick")
-															end
-
-															isMeshPart = child.Transparency ~= transparency and (child:IsA("MeshPart") or child.Name == "Part")
-
-															if isMeshPart then
-																child.Transparency = transparency
-															end
-
-															if child.CanCollide then
-																child.CanCollide = false
-															end
-
-															if child.CanQuery then
-																child.CanQuery = false
-															end
-														end
-													end
-												end
-											end
-										end
-									elseif v18 then
-										v18.Name = "ShurikenRSC"
-
-										task.spawn(function()
-											local touchInterest = stickyPart:WaitForChild("TouchInterest", 2.5)
-
-											if touchInterest then
-												touchInterest:Destroy()
-											end
-										end)
-
-										tbl12.AntiKickItems:Attach(ragdollTouchedHitbox,.5)
-										now3 = tick()
-
-										while true do
-											fn20()
-											flag12 = tbl12.AntiKickItems:IsAttached(ragdollTouchedHitbox) or not stickyWeld.Parent or not ragdollTouchedHitbox.Parent or not v24.Parent
-											flag13 = flag12 or v24.Health == 0 or tick() - now3 > 0.5
-											if not flag13 then
-												continue
-											end
-											break
-										end
-
-										parent2 = v18 and v18==tbl12.AntiKickItems.ActiveModel and v18.Parent
-
-										if parent2 then
-											if not tbl8.AntiKick then
-												tbl12.DestroyToy(v18)
-												v18 = nil
-											else
-												shurHighlight = v18:FindFirstChild("ShurHighlight")
-
-												if not shurHighlight then
-													shurHighlight = Instance.new("Highlight")
-													shurHighlight.Name = "ShurHighlight"
-													shurHighlight.Adornee = v18
-													shurHighlight.Parent = v18
-												end
-
-												if shurHighlight.Enabled ~= antiKickSettings.Highlight then
-													shurHighlight.Enabled = antiKickSettings.Highlight
-												end
-
-												if shurHighlight.FillColor ~= antiKickSettings.HighlightFill then
-													shurHighlight.FillColor = antiKickSettings.HighlightFill
-												end
-
-												if shurHighlight.OutlineColor ~= antiKickSettings.HighlightOutl then
-													shurHighlight.OutlineColor = antiKickSettings.HighlightOutl
-												end
-
-												if shurHighlight.FillTransparency ~= antiKickSettings.HighlightFT then
-													shurHighlight.FillTransparency = antiKickSettings.HighlightFT
-												end
-
-												if shurHighlight.OutlineTransparency ~= antiKickSettings.HighlightOT then
-													shurHighlight.OutlineTransparency = antiKickSettings.HighlightOT
-												end
-
-												highlight2 = antiKickSettings.Highlight
-
-												if highlight2 then
-													antiKick = highlight2
-												else
-													forcefieldChar = tbl8.ForcefieldChar
-													antiKick = forcefieldChar and tbl7.CharacterHighlightAffects["Anti Kick"]
-												end
-
-												if antiKick then
-													transparency = 0
-												else
-													transparency = antiKickSettings.Transparency
-												end
-
-												for _, child in ipairs(v18:GetChildren()) do
-													if child:IsA("BasePart") then
-														if tbl12.ApplyCharacterHighlightPart then
-															tbl12.ApplyCharacterHighlightPart(child, "Anti Kick")
-														end
-
-														isMeshPart = child.Transparency ~= transparency and (child:IsA("MeshPart") or child.Name == "Part")
-
-														if isMeshPart then
-															child.Transparency = transparency
-														end
-
-														if child.CanCollide then
-															child.CanCollide = false
-														end
-
-														if child.CanQuery then
-															child.CanQuery = false
-														end
-													end
-												end
-											end
-										end
-									end
-								else
-									stickyPart = v18:WaitForChild("StickyPart", 1.5)
-									stickyWeld = stickyPart and stickyPart:WaitForChild("StickyWeld", 1.5)
-
-									if not stickyPart then
-                                        tbl12.AntiKickItems:Reset(true);v18=nil
-                                    elseif not stickyWeld or not tbl12.IsNetworkOwner(stickyPart) then
-                                        -- A competing grab is temporary: retain this valid toy.
-                                        -- The shared guard owns the bounded retry and real attachment.
-                                        tbl12.AntiKickItems:Offset(ragdollTouchedHitbox)
-                                        tbl12.AntiKickItems:Update(os.clock())
-									elseif v18 and tbl12.AntiKickItems.GuardEnabled then
-										v18.Name = "ShurikenRSC"
-
-										task.spawn(function()
-											local touchInterest = stickyPart:WaitForChild("TouchInterest", 2.5)
-
-											if touchInterest then
-												touchInterest:Destroy()
-											end
-										end)
-
-										tbl12.AntiKickItems:Attach(ragdollTouchedHitbox,.5)
-										now3 = tick()
-
-										while true do
-											fn20()
-											flag12 = tbl12.AntiKickItems:IsAttached(ragdollTouchedHitbox) or not stickyWeld.Parent or not ragdollTouchedHitbox.Parent or not v24.Parent
-											flag13 = flag12 or v24.Health == 0 or tick() - now3 > 0.5
-											if not flag13 then
-												continue
-											end
-											break
-										end
-
-										parent2 = v18 and v18==tbl12.AntiKickItems.ActiveModel and v18.Parent
-
-										if parent2 then
-											if not tbl8.AntiKick then
-												tbl12.DestroyToy(v18)
-												v18 = nil
-											else
-												shurHighlight = v18:FindFirstChild("ShurHighlight")
-
-												if not shurHighlight then
-													shurHighlight = Instance.new("Highlight")
-													shurHighlight.Name = "ShurHighlight"
-													shurHighlight.Adornee = v18
-													shurHighlight.Parent = v18
-												end
-
-												if shurHighlight.Enabled ~= antiKickSettings.Highlight then
-													shurHighlight.Enabled = antiKickSettings.Highlight
-												end
-
-												if shurHighlight.FillColor ~= antiKickSettings.HighlightFill then
-													shurHighlight.FillColor = antiKickSettings.HighlightFill
-												end
-
-												if shurHighlight.OutlineColor ~= antiKickSettings.HighlightOutl then
-													shurHighlight.OutlineColor = antiKickSettings.HighlightOutl
-												end
-
-												if shurHighlight.FillTransparency ~= antiKickSettings.HighlightFT then
-													shurHighlight.FillTransparency = antiKickSettings.HighlightFT
-												end
-
-												if shurHighlight.OutlineTransparency ~= antiKickSettings.HighlightOT then
-													shurHighlight.OutlineTransparency = antiKickSettings.HighlightOT
-												end
-
-												highlight2 = antiKickSettings.Highlight
-
-												if highlight2 then
-													antiKick = highlight2
-												else
-													forcefieldChar = tbl8.ForcefieldChar
-													antiKick = forcefieldChar and tbl7.CharacterHighlightAffects["Anti Kick"]
-												end
-
-												if antiKick then
-													transparency = 0
-												else
-													transparency = antiKickSettings.Transparency
-												end
-
-												for _, child in ipairs(v18:GetChildren()) do
-													if child:IsA("BasePart") then
-														if tbl12.ApplyCharacterHighlightPart then
-															tbl12.ApplyCharacterHighlightPart(child, "Anti Kick")
-														end
-
-														isMeshPart = child.Transparency ~= transparency and (child:IsA("MeshPart") or child.Name == "Part")
-
-														if isMeshPart then
-															child.Transparency = transparency
-														end
-
-														if child.CanCollide then
-															child.CanCollide = false
-														end
-
-														if child.CanQuery then
-															child.CanQuery = false
-														end
-													end
-												end
-											end
-										end
-									end
-								end
-							else
-								parent2 = v18 and v18==tbl12.AntiKickItems.ActiveModel and v18.Parent
-
-								if parent2 then
-									if not tbl8.AntiKick then
-										tbl12.DestroyToy(v18)
-										v18 = nil
-									else
-										shurHighlight = v18:FindFirstChild("ShurHighlight")
-
-										if not shurHighlight then
-											shurHighlight = Instance.new("Highlight")
-											shurHighlight.Name = "ShurHighlight"
-											shurHighlight.Adornee = v18
-											shurHighlight.Parent = v18
-										end
-
-										if shurHighlight.Enabled ~= antiKickSettings.Highlight then
-											shurHighlight.Enabled = antiKickSettings.Highlight
-										end
-
-										if shurHighlight.FillColor ~= antiKickSettings.HighlightFill then
-											shurHighlight.FillColor = antiKickSettings.HighlightFill
-										end
-
-										if shurHighlight.OutlineColor ~= antiKickSettings.HighlightOutl then
-											shurHighlight.OutlineColor = antiKickSettings.HighlightOutl
-										end
-
-										if shurHighlight.FillTransparency ~= antiKickSettings.HighlightFT then
-											shurHighlight.FillTransparency = antiKickSettings.HighlightFT
-										end
-
-										if shurHighlight.OutlineTransparency ~= antiKickSettings.HighlightOT then
-											shurHighlight.OutlineTransparency = antiKickSettings.HighlightOT
-										end
-
-										highlight2 = antiKickSettings.Highlight
-
-										if highlight2 then
-											antiKick = highlight2
-										else
-											forcefieldChar = tbl8.ForcefieldChar
-											antiKick = forcefieldChar and tbl7.CharacterHighlightAffects["Anti Kick"]
-										end
-
-										if antiKick then
-											transparency = 0
-										else
-											transparency = antiKickSettings.Transparency
-										end
-
-										for _, child in ipairs(v18:GetChildren()) do
-											if child:IsA("BasePart") then
-												if tbl12.ApplyCharacterHighlightPart then
-													tbl12.ApplyCharacterHighlightPart(child, "Anti Kick")
-												end
-
-												isMeshPart = child.Transparency ~= transparency and (child:IsA("MeshPart") or child.Name == "Part")
-
-												if isMeshPart then
-													child.Transparency = transparency
-												end
-
-												if child.CanCollide then
-													child.CanCollide = false
-												end
-
-												if child.CanQuery then
-													child.CanQuery = false
-												end
-											end
-										end
-									end
-								end
-							end
-						end
-					end
-				end
-			end)
-		end
+            lib:OnUnload(function()tbl12.AntiKickItems:Dispose();v18=nil end)
+            local function visuals(model)
+                local settings=tbl7.AntiKickSettings
+                model.Name="ShurikenRSC";model:SetAttribute("IsAntiKickItem",true)
+                local highlight=model:FindFirstChild("ShurHighlight")
+                if not highlight then highlight=Instance.new("Highlight");highlight.Name="ShurHighlight";highlight.Adornee=model;highlight.Parent=model end
+                highlight.Enabled=settings.Highlight;highlight.FillColor=settings.HighlightFill;highlight.OutlineColor=settings.HighlightOutl
+                highlight.FillTransparency=settings.HighlightFT;highlight.OutlineTransparency=settings.HighlightOT
+                for _,part in ipairs(model:GetDescendants())do
+                    if part:IsA("BasePart")then
+                        if tbl12.ApplyCharacterHighlightPart then tbl12.ApplyCharacterHighlightPart(part,"Anti Kick")end
+                        if part:IsA("MeshPart")or part.Name=="Part"then
+                            part.Transparency=(settings.Highlight or tbl8.ForcefieldChar and tbl7.CharacterHighlightAffects["Anti Kick"])and 0 or settings.Transparency
+                        end
+                        part.CanCollide=false;part.CanQuery=false
+                    elseif part:IsA("TouchInterest")and part.Parent and part.Parent.Name=="StickyPart"then part:Destroy()end
+                end
+            end
+            task.spawn(function()
+                while not flag11 do
+                    if not tbl8.AntiKick and not tbl12.WaitForRuntimeToggle("AntiKick")then return end
+                    if flag11 then return end
+                    local character,root,hum=tbl12.Char()
+                    local target=root and(root:FindFirstChild("RagdollTouchedHitbox")or root:FindFirstChild("FirePlayerPart"))
+                    if target and target:IsA("BasePart")and hum and hum.Health>0 and(not localPlayer.InPlot.Value or localPlayer.InOwnedPlot.Value)then
+                        local items=tbl12.AntiKickItems
+                        if not items.ActiveModel or not items.ActiveModel.Parent then items:Spawn(root)end
+                        if not flag11 and tbl8.AntiKick and localPlayer.Character==character and hum.Parent and hum.Health>0 and target.Parent then
+                            v18=items.ActiveModel
+                            if v18 and v18.Parent then
+                                visuals(v18)
+                                if items.Target~=target then items:Attach(target,.25)else items:Update(os.clock())end
+                            end
+                        end
+                    elseif tbl12.AntiKickItems.ActiveModel and(not hum or hum.Health<=0 or tbl12.AntiKickItems.Character~=character)then
+                        tbl12.AntiKickItems:Reset(true);v18=nil
+                    end
+                    task.wait(.1)
+                end
+            end)
+        end
 
 		task.spawn(function()
 			while task.wait(0.2) do
@@ -35921,7 +35481,7 @@ Escape Timer: %*]]
 				end
 
 				for k in selectedPlayersAC, nil, nil do
-                    if tbl8.LoopApplyMethodT and tbl7.TargetMethods.Kick and tbl7.SelectedPlayers[k] or tbl7.KickServerState and tbl7.KickServerState.Running then fn22(k);tbl16[k]=nil;continue end
+                    if tbl12.KickLoop and tbl12.KickLoop.Sessions[k]or tbl8.LoopApplyMethodT and tbl7.TargetMethods.Kick and tbl7.SelectedPlayers[k] or tbl7.KickServerState and tbl7.KickServerState.Running then fn22(k);tbl16[k]=nil;continue end
 					if v23 and v24 and v24.Health > 0 and torso then
 						if v25 and v26 and v26.Health > 0 and torso2 then
 							if k == selectedACPoseCenter then
@@ -36387,19 +35947,31 @@ Escape Timer: %*]]
                 return false
             end
             tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,NativePhases=true,
-                Enabled=function()return not flag11 and tbl8.LoopApplyMethodT and tbl7.TargetMethods.Kick and not localPlayer.InPlot.Value end,
-                Selected=function(player)return player and player.Parent and tbl7.SelectedPlayers[player]==true and not tbl12.IsProtectedPlayer(player)end,
-                Targets=function()return tbl12.GetTargets(false,tbl7.SelectedPlayers)end,
+                SourceMode=function()return tbl9.NKSourceMode or "Faster"end,
+                Enabled=function()return not flag11 and (tbl8.LoopApplyMethodT or tbl8.LoopApplyMethodTServer)and tbl7.TargetMethods.Kick and not localPlayer.InPlot.Value end,
+                Selected=function(player)return player and player.Parent and (tbl8.LoopApplyMethodTServer or tbl7.SelectedPlayers[player]==true)and not tbl12.IsProtectedPlayer(player)end,
+                Targets=function()return tbl12.GetTargets(tbl8.LoopApplyMethodTServer==true,tbl7.SelectedPlayers)end,
                 LocalCharacter=function()return tbl12.Char()end,Character=tbl12.Char,
-                Owned=function(root)return tbl12.KickNetworkOwned(root)and tbl12.IsPartOwner(root)end,
+                Owned=function(root)return tbl12.IsNetworkOwner(root)and tbl12.IsPartOwner(root)end,
                 NetworkOwned=tbl12.IsNetworkOwner,MarkerOwned=tbl12.IsPartOwner,
                 OwnershipBusy=function()return tbl7.States.Owning==true or tbl12.PalletRagdoll.Preparing or tbl12.PalletRagdoll.Ownership.InFlight end,
-                Grab=tbl12.Grab,Release=tbl12.RNO,
+                Grab=tbl12.RequestNativeOwnership,Release=tbl12.RNO,
                 Acquire=function(root,valid)return tbl12.SNO(root,.65,valid,true)end,
                 Teleport=function(root,position)tbl12.Teleport(root,position)end,
                 Collisions=tbl12.ToggleCollisions,Limbs=tbl12.RepositionLimbs,
                 RestoreMotors=function(character)tbl12.ToggleMotor6D(character,true,true)end,
-                RequestRagdoll=function(character,valid)return tbl12.PalletRagdoll:Maintain(character,valid)end,
+                RequestRagdoll=function(character,valid)
+                    local player=Players:GetPlayerFromCharacter(character)
+                    local loop=tbl12.KickLoop;local session=player and loop.Sessions[player]
+                    local _,root=tbl12.Char(player)
+                    if not session or not session.SourceReady or not root or not tbl12.IsNetworkOwner(root)then return end
+                    local used=tbl12.PalletRagdoll:SourceContact(character,valid)
+                    if used==nil then
+                        if loop:IsPhysicallyHolding(player)then return tbl12.PalletRagdoll:Maintain(character,valid)end
+                        return tbl12.PalletRagdoll:Request(character,valid)
+                    end
+                    return used
+                end,
                 WarmRagdoll=function()tbl12.PalletRagdoll:Warm()end,
                 PausePallet=function(token,value)tbl12.PalletRagdoll:Pause(token,value)end,
                 CancelRagdoll=function(character)tbl12.PalletRagdoll:Cancel(character)end,
@@ -36641,7 +36213,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.91",true)
+            box:AddLabel("Astral v4.92",true)
         end
 
         do
@@ -37491,10 +37063,10 @@ Escape Timer: %*]]
         BlobDefense:AddToggle("AntiBlobman",{Text="Anti Blobman",Default=false,
             Tooltip="Releases Blobman grabs of your character.",
             Callback=function(value)tbl12.SetRuntimeToggle("AntiBlobman",value)end})
-        BlobDefense:AddToggle("AntiBlobmanAura",{Text="Anti Blobman Aura",Default=false,
-            Tooltip="Uses a banana peel to trip nearby Blobman riders.",
+        BlobDefense:AddToggle("AntiBlobmanAura",{Text="Anti Blobman Aura Grab",Default=false,
+            Tooltip="TheWorst method: request ownership of a Blobman rider within 19 studs.",
             Callback=function(value)
-                tbl12.SetRuntimeToggle("AntiBlobmanAura",value);tbl12.BlobmanDefense:SetMode("Aura",value)
+                tbl12.SetRuntimeToggle("AntiBlobmanAura",value);tbl12.BlobmanRiderGrab:SetEnabled(value)
             end})
         BlobDefense:AddToggle("BananaAuraBlobman",{Text="Banana Aura Blobman",Default=false,
             Tooltip="Eats a real banana, then spins its owned peel inside a nearby ridden Blobman. Fling strength depends on game physics.",
@@ -37510,7 +37082,7 @@ Escape Timer: %*]]
             Callback=function(value)tbl12.BlobmanDefense.Cooldown=value end})
         local defenseStatus=BlobDefense:AddLabel("Disabled",true);local defenseElapsed=0
         lib:GiveSignal(RunService.Heartbeat:Connect(function(dt)
-            defenseElapsed+=dt;if defenseElapsed>=.3 then defenseElapsed=0;defenseStatus:SetText(tbl12.BlobmanDefense.Status)end
+            defenseElapsed+=dt;if defenseElapsed>=.3 then defenseElapsed=0;defenseStatus:SetText(tbl8.AntiBlobmanAura and tbl12.BlobmanRiderGrab.Status or tbl12.BlobmanDefense.Status)end
         end))
 
 		Antis:AddToggle("AntiInputLag", {
@@ -37528,6 +37100,23 @@ Escape Timer: %*]]
 			SyncToggleState = true,
 		})
 
+        tbl12.ExplosionLegs=requireModule("ExplosionLegs").Install({RunService=RunService,Clock=os.clock,Spawn=task.spawn,Character=tbl12.Char,
+            Blocked=function()return flag11 or tbl8.GucciAntiGrab or tbl8.Flight or tbl7.States.Owning or tbl8.Desync end,
+            RemoveLegs=function(valid)return tbl12.BreakLimb(localPlayer,"Legs",valid)end,
+            Recover=function(root)tbl11.RagdollRemote:FireServer(root,0)end,
+            Suspend=function()
+                tbl7.States.DefenseLegRemoval=true
+                if tbl12.AntiGrabWalk then pcall(tbl12.AntiGrabWalk.Refresh,tbl12.AntiGrabWalk)end
+                if tbl12.AntiExplore then pcall(tbl12.AntiExplore.Step,tbl12.AntiExplore)end
+                return function()
+                    tbl7.States.DefenseLegRemoval=false
+                    if not flag11 and tbl12.AntiGrabWalk then tbl12.AntiGrabWalk:Refresh()end
+                end
+            end})
+        lib:OnUnload(function()tbl12.ExplosionLegs:Dispose()end)
+        Antis:AddToggle("AstralAntiExplosionLegs",{Text="Anti Explosion — Legs",Default=false,
+            Tooltip="Removes only your legs through the native ragdoll method. Legs return on respawn. Head, arms and torso stay.",
+            Callback=function(value)tbl12.ExplosionLegs:SetEnabled(value)end})
         Antis:AddToggle("AntiExplore",{Text="Anti Explore",Default=false,
             Tooltip="Banana, snowball, rocket and dark matter protection. Keeps your legs intact and yields during grabs or vehicle movement.",
             Callback=function(value)tbl8.AntiExplore=value;tbl12.AntiExplore:SetEnabled(value)end})
@@ -38369,6 +37958,9 @@ Escape Timer: %*]]
 
 
         local v21=v20
+        v21:AddDropdown("AstralOwnershipMode",{Text="Kick Mode",Values={"Faster","Normal"},Default="Faster",AllowNull=false,
+            Tooltip="TheWorst Faster / Stronger (Normal), with corrected capture and touch handling.",
+            Callback=function(value)tbl9.NKSourceMode=value end})
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
             Tooltip="Experimental local retry limit. Each attempt still waits for physics and physical exit; server hit and kick timing are not measured by this setting. Use 10 for the previous polling interval.",
@@ -38553,8 +38145,9 @@ Escape Timer: %*]]
 			end,
 		})
 
-        v21:AddSlider("AstralBlobmanArmSpeed",{Text="Hand Speed",Default=30,Min=1,Max=60,Rounding=0,Compact=true,Suffix=" cycles/s",
-            Callback=function(value)tbl12.BlobmanCadence:SetSpeed(value)end})
+        v21:AddSlider("AstralBlobmanArmSpeed",{Text="Blobman Kick Delay",Default=50,Min=0,Max=1000,Rounding=0,Compact=true,Suffix=" ms",
+            Tooltip="0: fastest with no added delay. 1000: one second per complete Grab/Drop cycle.",
+            Callback=function(value)tbl12.BlobmanCadence:SetDelay(value)end})
         v21:AddToggle("BlobRemoveInputFood",{Text="Remove Anti Input Lag [Food]",Default=true,Callback=function(value)tbl8.BlobRemoveInputFood=value end})
 
 		local v22 = v21:AddDependencyBox()
@@ -43333,7 +42926,20 @@ end
 local function gui(v)return v and v:IsA('GuiObject')end
 local function under(v,parent)return v==parent or v and v:IsDescendantOf(parent)end
 local function children(v)return v and v:GetChildren()or{}end
-local function descendants(v)return v and v:GetDescendants()or{}end
+local function descendants(v)
+ if not v then return {}end
+ local result,stack={},{}
+ local first=v:GetChildren();for i=#first,1,-1 do stack[#stack+1]=first[i]end
+ while #stack>0 do
+  local node=table.remove(stack);result[#result+1]=node
+  -- Toy preview meshes are rendered by Roblox. Skinning their GUI never
+  -- needs to walk thousands of parts/attachments inside each WorldModel.
+  if not node:IsA('WorldModel')and not node:IsA('Model')and not node:IsA('BasePart')and not node:IsA('Camera')then
+   local nested=node:GetChildren();for i=#nested,1,-1 do stack[#stack+1]=nested[i]end
+  end
+ end
+ return result
+end
 local function find(v,names)
  for _,name in ipairs(names)do local x=v:FindFirstChild(name);if x then return x end end
  return nil
@@ -43365,6 +42971,32 @@ local function visible(v,stop)
  end
  return false
 end
+-- Cache native tree snapshots until an external structural mutation. One menu
+-- event previously scanned every page several times and restyled all cells.
+function Shop:Descendants(node)
+ if not node then return {}end
+ self.DescCache=self.DescCache or setmetatable({},{__mode='k'})
+ local cache=self.DescCache[node];local version=self.TreeVersion or 0
+ if cache and cache.Version==version then return cache.Nodes end
+ local nodes=descendants(node);self.TreeScans=(self.TreeScans or 0)+1
+ self.DescCache[node]={Version=version,Nodes=nodes};return nodes
+end
+function Shop:Invalidate(node)
+ if self.Applying or(self.Quick and self.Quick:Owns(node))then return end
+ if node:IsA('WorldModel')or node:IsA('Model')or node:IsA('BasePart')or node:IsA('Camera')or node:IsA('Attachment')or node:IsA('JointInstance')then return end
+ self.TreeVersion=(self.TreeVersion or 0)+1;self.StructureDirty=true
+ local owner
+ for _,record in ipairs(self.Pages)do if under(node,record.Node)then owner=record;break end end
+ if owner then
+  owner.Styled=nil;owner.Controls=nil
+  local holder=owner.Grid and owner.Grid.Parent
+  local cell=node
+  while cell and cell.Parent~=holder and cell~=owner.Node do cell=cell.Parent end
+  if cell and self.CellStyles then self.CellStyles[cell]=nil end
+ end
+ if not owner or owner==self.Current then self.Dirty=true end
+ self:Queue()
+end
 function Shop.Install(ctx)
  local self=setmetatable({Context=ctx,Records={},Connections={},Bound={},Watches={},Pages={},Created={},Enabled=false},Shop)
  local box=ctx.Tab:AddRightGroupbox('Игровой магазин','shopping-bag')
@@ -43372,7 +43004,7 @@ function Shop.Install(ctx)
  self.Status=box:AddLabel('Открой Your Toys в игровом меню.',true)
  if ctx.Input and ctx.SpawnQuick then self.Quick=Quick.Install(self,ctx)end
  self.Connections[#self.Connections+1]=ctx.PlayerGui.DescendantAdded:Connect(function(v)
-  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu'or v.Name=='TabContents'or self.Menu and under(v,self.Menu))then self:Queue()end
+  if self.Enabled and(v.Name=='MenuGui'or v.Name=='Menu'or v.Name=='TabContents')then self:Queue()end
  end)
  if ctx.Library.ScreenGui then self.Connections[#self.Connections+1]=ctx.Library.ScreenGui:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()self:Queue()end)end
  return self
@@ -43386,7 +43018,13 @@ function Shop:Watch(node,property)
  if map[property]then return end
  map[property]=node:GetPropertyChangedSignal(property):Connect(function()
   if self.Closed or self.Applying or not self.Enabled then return end
-  if self.FooterNodes and self.FooterNodes[node]then self.FooterDirty=true else self.Dirty=true end;self:Queue()
+  if self.FooterNodes and self.FooterNodes[node]then self.FooterDirty=true else
+   self.Dirty=true
+   for _,record in ipairs(self.Pages)do if under(node,record.Node)and property~='Visible'then record.Styled=nil end end
+   if property=='Visible'then
+    for _,record in ipairs(self.Pages)do if node~=record.Node and under(node,record.Node)then record.Styled=nil end end
+   end
+  end;self:Queue()
  end)
 end
 function Shop:Write(node,key,value,scope,maintain)
@@ -43454,7 +43092,7 @@ end
 function Shop:DestroyArtwork(node)
  if not node then return end
  if self.Context.Library.RemoveFromRegistry then
-  for _,child in ipairs(descendants(node))do self.Context.Library:RemoveFromRegistry(child)end
+  for _,child in ipairs(self:Descendants(node))do self.Context.Library:RemoveFromRegistry(child)end
   self.Context.Library:RemoveFromRegistry(node)
  end
  node:Destroy()
@@ -43499,9 +43137,9 @@ function Shop:Draw()
  end
 end
 function Shop:Bind(menu,contents)
- self:Detach();self.Menu=menu;self.Contents=contents
- self.Bound[#self.Bound+1]=menu.DescendantAdded:Connect(function(v)if not(self.Quick and self.Quick:Owns(v))then self.Dirty=true;self:Queue()end end)
- self.Bound[#self.Bound+1]=menu.DescendantRemoving:Connect(function(v)if not self.Applying and not(self.Quick and self.Quick:Owns(v))then self.Dirty=true;self:Queue()end end)
+ self:Detach();self.Menu=menu;self.Contents=contents;self.StructureDirty=true;self.TreeVersion=(self.TreeVersion or 0)+1
+ self.Bound[#self.Bound+1]=menu.DescendantAdded:Connect(function(v)self:Invalidate(v)end)
+ self.Bound[#self.Bound+1]=menu.DescendantRemoving:Connect(function(v)self:Invalidate(v)end)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('Visible'):Connect(function()self:Queue()end)
  self.Bound[#self.Bound+1]=menu:GetPropertyChangedSignal('AbsolutePosition'):Connect(function()if self.Active and self.Plan and live(self.Layer)then self:Draw()end end)
  self.Bound[#self.Bound+1]=menu.Destroying:Connect(function()
@@ -43519,7 +43157,7 @@ local function rootScale(node,stop)
 end
 function Shop:CollectionGrid(root)
  local best,score=nil,-1
- for _,node in ipairs(descendants(root))do if node:IsA('UIGridLayout')then
+ for _,node in ipairs(self:Descendants(root))do if node:IsA('UIGridLayout')then
   local count,known,interactive=0,0,0
   for _,child in ipairs(children(node.Parent))do if gui(child)then
    count+=1
@@ -43533,6 +43171,7 @@ function Shop:CollectionGrid(root)
  return best
 end
 function Shop:Discover()
+ self.DiscoveryPasses=(self.DiscoveryPasses or 0)+1
  local seen={};for _,r in ipairs(self.Pages)do seen[r.Node]=true end
  for _,page in ipairs(children(self.Contents))do
   local name=fold(page.Name)
@@ -43598,9 +43237,10 @@ function Shop:ResetArtwork()
  self.IconCopies={};self.IconMeta={};self.TextCopies={};self.CardCopies={}
 end
 function Shop:Controls(record)
+ if record.Controls and record.ControlsVersion==(self.TreeVersion or 0)then return record.Controls end
  local title,categories,favorite,limit,sidebar
  local buttons={}
- for _,node in ipairs(descendants(self.Menu))do
+ for _,node in ipairs(self:Descendants(self.Menu))do
   if gui(node)and not(record.Grid and under(node,record.Items))then
    local inPage=under(node,record.Node)
    local shared=not under(node,self.Contents)
@@ -43614,27 +43254,27 @@ function Shop:Controls(record)
     if(node:IsA('Frame')or node:IsA('ScrollingFrame')or node:IsA('Folder'))and(name:find('categor',1,true)or name=='filters')then categories=categories or node end
     if node:IsA('ImageButton')or node:IsA('TextButton')then
      if favoriteName(node)then favorite=favorite or node else
-      for _,child in ipairs(descendants(node))do if favoriteName(child)then favorite=favorite or node;break end end
+      for _,child in ipairs(self:Descendants(node))do if favoriteName(child)then favorite=favorite or node;break end end
      end
     end
    end
   end
  end
  -- Locate category buttons from a named group, or from the horizontal strip.
- if categories then for _,v in ipairs(descendants(categories))do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end end
+ if categories then for _,v in ipairs(self:Descendants(categories))do if v:IsA('ImageButton')or v:IsA('TextButton')then buttons[#buttons+1]=v end end end
  if #buttons==0 then
   local groups={}
-  for _,v in ipairs(descendants(record.Node))do if not under(v,record.Items)and(v:IsA('ImageButton')or v:IsA('TextButton'))and v~=favorite then
+  for _,v in ipairs(self:Descendants(record.Node))do if not under(v,record.Items)and(v:IsA('ImageButton')or v:IsA('TextButton'))and v~=favorite then
    local p=v.Parent;groups[p]=groups[p]or{};groups[p][#groups[p]+1]=v
   end end
   for p,group in pairs(groups)do if #group>=4 and #group<=12 then categories=p;buttons=group;break end end
  end
  -- Sidebar may be a Folder, a Frame, or a set of direct native buttons.
  local nav=find(self.Menu,{'Tabs','TabButtons','Navigation','Sidebar'})
- if nav then for _,v in ipairs(descendants(nav))do if v:IsA('ImageButton')or v:IsA('TextButton')then sidebar=sidebar or{};sidebar[#sidebar+1]=v end end end
+ if nav then for _,v in ipairs(self:Descendants(nav))do if v:IsA('ImageButton')or v:IsA('TextButton')then sidebar=sidebar or{};sidebar[#sidebar+1]=v end end end
  if not sidebar then
   local groups={}
-  for _,v in ipairs(descendants(self.Menu))do if not under(v,self.Contents)and(v:IsA('ImageButton')or v:IsA('TextButton'))then
+  for _,v in ipairs(self:Descendants(self.Menu))do if not under(v,self.Contents)and(v:IsA('ImageButton')or v:IsA('TextButton'))then
    local p=v.Parent;groups[p]=groups[p]or{};groups[p][#groups[p]+1]=v
   end end
   for _,group in pairs(groups)do if #group>=4 and #group<=8 then sidebar=group;break end end
@@ -43643,11 +43283,12 @@ function Shop:Controls(record)
  -- Some native versions keep Chat/Settings beside Tabs rather than inside it.
  -- Keep those real controls in the strip instead of inventing substitute tabs.
  local included={};for _,v in ipairs(sidebar or{})do included[v]=true end
- for _,v in ipairs(descendants(self.Menu))do if button(v)and not under(v,self.Contents)and not included[v]then
+ for _,v in ipairs(self:Descendants(self.Menu))do if button(v)and not under(v,self.Contents)and not included[v]then
   local name=v.Name:lower()
   if name=='chat'or name=='chatbutton'or name=='settingsbutton'then sidebar=sidebar or{};sidebar[#sidebar+1]=v;included[v]=true end
  end end
- return{Title=title,Categories=categories,CategoryButtons=buttons,Favorite=favorite,Limit=limit,Sidebar=sidebar or{},Nav=nav}
+ record.Controls={Title=title,Categories=categories,CategoryButtons=buttons,Favorite=favorite,Limit=limit,Sidebar=sidebar or{},Nav=nav}
+ record.ControlsVersion=self.TreeVersion or 0;return record.Controls
 end
 function Shop:Icon(node,r,scope)
  local visual=node
@@ -43728,6 +43369,8 @@ function Shop:Group(nodes,container,rect,direction,scope,page)
  end
 end
 function Shop:Grid(record)
+ self.GridPasses=(self.GridPasses or 0)+1
+ self.CellStyles=self.CellStyles or setmetatable({},{__mode="k"})
  local plan=self.Plan;local list=record.List
  -- Contents is not necessarily the actual collection: the native inventory
  -- also places its grid under a ScrollingFrame and an inner canvas Frame.
@@ -43775,10 +43418,14 @@ function Shop:Grid(record)
  end
  self.ItemStyling=true
  for _,cell in ipairs(cells)do
+  local saved=self.CellStyles[cell]
+  if saved and saved.Width==plan.Cell and saved.Height==rowHeight then continue end
+  self.CellStyles[cell]={Width=plan.Cell,Height=rowHeight}
+  self.CellPasses=(self.CellPasses or 0)+1
   self:Rect(cell,{X=0,Y=0,W=plan.Cell,H=rowHeight})
   self:Write(cell,'ClipsDescendants',true,nil,true);self:Watch(cell,'Visible')
   local texts={}
-  for _,v in ipairs(descendants(cell))do if(v:IsA('TextLabel')or v:IsA('TextButton'))and not favoriteName(v)and v.Text~=''then texts[#texts+1]=v end end
+  for _,v in ipairs(self:Descendants(cell))do if(v:IsA('TextLabel')or v:IsA('TextButton'))and not favoriteName(v)and v.Text~=''then texts[#texts+1]=v end end
   if cell:IsA('TextButton')and cell.Text~=''then self:Text(cell,7*plan.Scale);self:Write(cell,'TextYAlignment',Enum.TextYAlignment.Bottom,nil,true)end
   for i,v in ipairs(texts)do
    self:Text(v,math.max(7,7*plan.Scale));self:Write(v,'ClipsDescendants',true,nil,true)
@@ -43788,7 +43435,7 @@ function Shop:Grid(record)
   end
   -- A fixed-size image/ViewportFrame inside a correctly sized grid cell still
   -- renders the old 100-pixel toy. Fit the visual subtree, not just CellSize.
-  for _,v in ipairs(descendants(cell))do
+  for _,v in ipairs(self:Descendants(cell))do
    if v:IsA('UIScale')then self:Write(v,'Scale',1,nil,true)
    elseif gui(v)then
     if favorite(v)and(button(v)or v:IsA('ImageLabel')or v:IsA('TextLabel'))then
@@ -43819,7 +43466,7 @@ function Shop:PanelContent(record)
  local scale=page:FindFirstChildOfClass('UIScale')
  if not scale then scale=Instance.new('UIScale');scale.Name='AstralPanelScale';scale.Parent=page;self.Created[scale]='page' end
  self:Write(scale,'Scale',fit,'page',true)
- for _,v in ipairs(descendants(page))do
+ for _,v in ipairs(self:Descendants(page))do
   if gui(v)then
    if v:IsA('Frame')or v:IsA('ScrollingFrame')then self:Write(v,'BackgroundTransparency',1,'page',true)
    elseif v:IsA('TextBox')or button(v)then
@@ -43835,7 +43482,7 @@ function Shop:PanelContent(record)
 end
 function Shop:Footer(record)
  local count='';local root=self.GuiRoot or self.Menu.Parent
- local nodes=descendants(root);local groups={}
+ local nodes=self:Descendants(root);local groups={}
  local function nativeText(v)
   return not under(v,self.Layer)and not(self.Quick and self.Quick:Owns(v))and(v:IsA('TextLabel')or v:IsA('TextButton'))
  end
@@ -43859,7 +43506,7 @@ function Shop:Footer(record)
    self.FooterNodes=self.FooterNodes or{};self.FooterNodes[v]=true
    if fraction then count=v.Text end
    self:HideText(v,'shared');self:Watch(v,'Text');self:Watch(v,'AutoLocalize');self:Watch(v,'ContentText')
-   if footerRoot then for _,piece in ipairs(descendants(footerRoot))do
+   if footerRoot then for _,piece in ipairs(self:Descendants(footerRoot))do
     if piece:IsA('UIStroke')then self:Write(piece,'Transparency',1,'shared',true)end
     if gui(piece)then self:Write(piece,'BackgroundTransparency',1,'shared',true);if piece:IsA('ImageLabel')then self:Write(piece,'ImageTransparency',1,'shared',true)end end
    end end
@@ -43879,7 +43526,7 @@ end
 function Shop:Page(record)
  self.LayoutPasses=(self.LayoutPasses or 0)+1
  local plan=self.Plan;local list=record.List;self:Surface()
- for _,v in ipairs(descendants(self.Menu))do if gui(v)and not under(v,self.Contents)then
+ for _,v in ipairs(self:Descendants(self.Menu))do if gui(v)and not under(v,self.Contents)then
   self:Write(v,'BackgroundTransparency',1,'shared',true);self:Write(v,'BorderSizePixel',0,'shared')
   if v:IsA('ImageLabel')then
    local p=v.Parent;local glyph=false;while p and p~=self.Menu do if button(p)then glyph=true;break end;p=p.Parent end
@@ -43888,13 +43535,14 @@ function Shop:Page(record)
  end end
  for _,image in pairs(self.IconCopies)do image.Visible=false end
  for _,label in pairs(self.TextCopies)do label.Visible=false end
- if record.Grid then
+ local styled=record.Styled and record.Styled.Width==plan.Width and record.Styled.Height==plan.Height
+ if record.Grid and not styled then
  self:Normalize(list,'page');self:Rect(list,plan.Body)
  self:Write(list,'BackgroundTransparency',1,nil,true);self:Write(list,'BorderSizePixel',0);self:Write(list,'ClipsDescendants',true)
  if list:IsA('ScrollingFrame')then self:Write(list,'ScrollBarThickness',0);self:Write(list,'ScrollingDirection',Enum.ScrollingDirection.Y);self:Write(list,'AutomaticCanvasSize',Enum.AutomaticSize.Y)end
  -- Remove native panel fills throughout this page. Their old sibling header
  -- and footer backgrounds otherwise cover the smaller rounded skin.
- for _,v in ipairs(descendants(self.Menu))do if gui(v)and(under(v,record.Node)or not under(v,self.Contents))then
+ for _,v in ipairs(self:Descendants(self.Menu))do if gui(v)and(under(v,record.Node)or not under(v,self.Contents))then
   local scope=under(v,record.Node)and'page'or'shared'
   self:Write(v,'BackgroundTransparency',1,scope,true);self:Write(v,'BorderSizePixel',0,scope)
   local stroke=v:FindFirstChildOfClass('UIStroke');if stroke then self:Write(stroke,'Transparency',1,scope,true)end
@@ -43911,11 +43559,13 @@ function Shop:Page(record)
   end
  end end
  self:Grid(record)
- elseif not record.Quick then self:PanelContent(record)end
- local controls=self:Controls(record)
+ elseif not record.Grid and not record.Quick and not styled then self:PanelContent(record)end
+ record.Styled={Width=plan.Width,Height=plan.Height}
+ local discoveredControls=self:Controls(record)
+ local controls=table.clone(discoveredControls)
  -- Hide every original page title, including localized shadow copies.
  local nativeRoot=self.GuiRoot or self.Menu
- for _,node in ipairs(descendants(nativeRoot))do
+ for _,node in ipairs(self:Descendants(nativeRoot))do
   if(node:IsA('TextLabel')or node:IsA('TextButton'))and not under(node,self.Layer)and not(self.Quick and self.Quick:Owns(node))then
    local name=fold(node.Name)
    local scoped=under(node,record.Node)or not under(node,self.Contents)
@@ -43954,7 +43604,7 @@ function Shop:Page(record)
  self:Footer(record)
 
  local top=self.Menu.AbsolutePosition;local width=self.Menu.AbsoluteSize.X
- for _,node in ipairs(descendants(self.GuiRoot or self.Menu))do
+ for _,node in ipairs(self:Descendants(self.GuiRoot or self.Menu))do
   if gui(node)and not under(node,self.Layer)and not(self.Quick and self.Quick:Owns(node))then
    local name=fold(node.Name);local label=(node:IsA('TextButton')or node:IsA('TextLabel'))and fold(node.Text or'')or''
    local atTop=node.AbsolutePosition.Y<top.Y+plan.Body.Y*(self.MenuScale or 1)and node.AbsolutePosition.X>top.X+width*.7
@@ -43974,16 +43624,27 @@ function Shop:Find()
   if not gui(menu)or not contents then if self.Menu then self:Detach()end;self.Status:SetText('Ожидание игрового меню.');return end
   if self.Menu~=menu or self.Contents~=contents then self:Bind(menu,contents)end
   self.GuiRoot=guiRoot
-  self:Discover();local active
+  if not menu.Visible then
+   if self.Quick then self.Quick:CloseForMenu()end
+   self.Active=false
+   if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
+   if self.Layer then self.Layer.Visible=false end
+   self.Status:SetText('Открой игровое меню.');return
+  end
+  if self.StructureDirty or #self.Pages==0 then self:Discover();self.StructureDirty=false end
+  local active
   if self.Quick and self.Quick.Open and menu.Visible then active=self.Quick.Record end
   if not active then for _,record in ipairs(self.Pages)do if live(record.Node)and visible(record.Node,self.Menu)then active=record;break end end end
-  if active~=self.Current then
-   self:Restore();self:ResetArtwork();self.Current=active;self.Dirty=true
+  if active and active~=self.Current then
+   self:Restore('shared');self:ResetArtwork();self.Current=active;self.Dirty=true
   end
   if not active then
    if self.Quick then self.Quick:CloseForMenu()end
    self.Active=false;if self.IconConnection then self.IconConnection:Disconnect();self.IconConnection=nil end
-   if self.Layer then self.Layer.Visible=false end;self:Restore();self.Status:SetText('Открой игровое меню.');return
+   if self.Layer then self.Layer.Visible=false end
+   -- A closed game menu is not a style-disable request. Keep the native
+   -- page cache and restore its original properties only on detach/unload.
+   self.Status:SetText('Открой игровое меню.');return
   end
   self.Active=true
   self.MenuScale=1
@@ -43996,7 +43657,7 @@ function Shop:Find()
   if active.Node.Name:lower()=='settings'and not active.ContentBounds then
    local lo=Vector2.new(math.huge,math.huge);local hi=Vector2.new(-math.huge,-math.huge)
    local origin=active.Node.AbsolutePosition;local scale=rootScale(active.Node,guiRoot)
-   for _,node in ipairs(descendants(active.Node))do
+   for _,node in ipairs(self:Descendants(active.Node))do
     local candidate=button(node)or node:IsA('TextBox')
     if node:IsA('UIGradient')and gui(node.Parent)then node=node.Parent;candidate=true end
     if candidate and visible(node,active.Node)and not nativeHeading(node)then
@@ -44011,7 +43672,7 @@ function Shop:Find()
   local plan=Layout.Build(viewport.X,viewport.Y)
   if not self.Dirty and self.Plan and self.Plan.Width==plan.Width and self.Plan.Height==plan.Height and self.LastMenuScale==rootScale(menu,guiRoot)then
    self.MenuScale=self.LastMenuScale
-   self:Footer(active);self:Draw();return
+   self:Footer(active);self:Draw();self:StartIcons();return
   end
   self.Plan=plan
   for _,scale in ipairs(children(menu))do if scale:IsA('UIScale')then self:Write(scale,'Scale',1,'shared',true)end end
@@ -44033,7 +43694,7 @@ function Shop:Detach()
  for _,c in ipairs(self.Bound)do c:Disconnect()end;self.Bound={}
  for _,map in pairs(self.Watches)do for _,c in pairs(map)do c:Disconnect()end end;self.Watches={}
  self:Restore();for v in pairs(self.Created)do if v.Parent then v:Destroy()end end;self.Created={};if self.Layer then self:DestroyArtwork(self.Layer);self.Layer=nil end
- self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
+ self.DescCache=nil;self.CellStyles=nil;self.Pages={};self.Current=nil;self.GuiRoot=nil;self.Menu=nil;self.Contents=nil;self.Active=false;self.Applying=applying
 end
 function Shop:SetEnabled(value)
  if self.Closed then return end;self.Enabled=value==true
@@ -46299,6 +45960,111 @@ end
 return Quick
 
 ]========]
+sources.BlobmanRiderGrab = [========[
+-- TheWorst Anti blobman Aura Grab: request ownership of a nearby rider's root.
+-- It does not move our avatar, detectors, or PCLD, and does not use a banana.
+local Guard={};Guard.__index=Guard
+local function alive(v)return v and v.Parent end
+function Guard.Install(ctx)
+ local self=setmetatable({Context=ctx,Enabled=false,Radius=19,Next=setmetatable({},{__mode='k'}),Status='Disabled'},Guard)
+ self.Connection=ctx.RunService.Heartbeat:Connect(function()
+  if self.Closed or not self.Enabled then return end
+  local ok,why=pcall(self.Step,self)
+  if not ok then self.LastError=tostring(why);self.Status='Blobman rider: '..self.LastError end
+ end)
+ return self
+end
+function Guard:SetEnabled(value)
+ self.Enabled=value==true and not self.Closed;self.NextScan=0
+ if not self.Enabled then table.clear(self.Next);self.Status='Disabled'end
+end
+function Guard:Step()
+ local ctx=self.Context;local now=ctx.Clock()
+ if self.Closed or not self.Enabled or now<(self.NextScan or 0)then return end
+ self.NextScan=now+.05
+ local actor,root,hum=ctx.Character()
+ if not alive(root)or not hum or hum.Health<=0 then self.Status='Waiting for your character';return end
+ local riders=0
+ for _,player in ipairs(ctx.Players())do
+  if player==ctx.Player or ctx.Protected(player)then continue end
+  local c,r,h=ctx.Character(player);local seat=h and h.SeatPart
+  local model=seat and seat.Parent
+  while model and model~=ctx.Workspace and model.Name~='CreatureBlobman'do model=model.Parent end
+  if alive(r)and h and h.Health>0 and model and model.Name=='CreatureBlobman'
+   and(r.Position-root.Position).Magnitude<=self.Radius then
+   riders+=1
+   if now>=(self.Next[player]or 0)then
+    self.Next[player]=now+.15
+    local ac,ar,ah=ctx.Character();local cc,rr,hh=ctx.Character(player)
+    if ac==actor and ar==root and ah==hum and cc==c and rr==r and hh==h and h.SeatPart==seat
+     and self.Enabled and not self.Closed then ctx.Grab(r);self.Requests=(self.Requests or 0)+1 end
+   end
+  end
+ end
+ self.Status=riders>0 and('Nearby Blobman riders: '..riders)or'Waiting for a rider within 19 studs'
+end
+function Guard:Dispose()
+ if self.Closed then return end
+ self:SetEnabled(false);self.Closed=true;self.Connection:Disconnect()
+end
+return Guard
+
+]========]
+sources.ExplosionLegs = [========[
+-- Native leg removal only. Torso, head and arms are never passed to removal.
+local Guard={};Guard.__index=Guard
+local legs={'Left Leg','Right Leg','LeftUpperLeg','LeftLowerLeg','LeftFoot','RightUpperLeg','RightLowerLeg','RightFoot'}
+function Guard.Install(ctx)
+ local self=setmetatable({Context=ctx,Enabled=false,Generation=0,Status='Disabled'},Guard)
+ self.Connection=ctx.RunService.Heartbeat:Connect(function()
+  if self.Enabled and not self.Closed then local ok,why=pcall(self.Step,self);if not ok then self.LastError=tostring(why);self.Status=self.LastError end end
+ end)
+ return self
+end
+function Guard:SetEnabled(value)
+ self.Generation+=1;self.Enabled=value==true and not self.Closed;self.NextAt=0
+ if self.Enabled then self.Character=nil end
+ if not self.Enabled then self.Status='Disabled'end
+end
+function Guard:Step()
+ local ctx=self.Context;local c,r,h=ctx.Character()
+ if not self.Enabled or self.Closed or self.Job or ctx.Clock()<(self.NextAt or 0)then return end
+ self.NextAt=ctx.Clock()+.2
+ if not c or not r or not r.Parent or r.Anchored or not h or h.Health<=0 or h.SeatPart or h.Sit or(ctx.Blocked and ctx.Blocked())then
+  self.Status='Waiting for your character';return
+ end
+ if self.Character~=c then self.Character=c;self.Attempts=0 end
+ local present=false
+ for _,name in ipairs(legs)do local p=c:FindFirstChild(name);if p and p:IsA('BasePart')then present=true;break end end
+ if not present then self.Status='Legs removed; head, arms and torso preserved';return end
+ if self.Attempts>=3 then self.Status='Leg removal not acknowledged; toggle to retry';return end
+ self.Attempts+=1
+ local token=self.Generation;local job={};self.Job=job
+ local function valid()
+  local cc,rr,hh=ctx.Character()
+  return self.Enabled and not self.Closed and self.Generation==token and cc==c and rr==r and hh==h and h.Health>0 and r.Parent~=nil
+ end
+ ctx.Spawn(function()
+  local resume
+  local ok,why=pcall(function()
+   if not valid()then return end
+   resume=ctx.Suspend()
+   if valid()then job.Started=true;ctx.RemoveLegs(valid)end
+  end)
+  -- Clear only our captured character's native ragdoll before resuming guards.
+  if job.Started and r.Parent and h.Parent==c and h.Health>0 then pcall(ctx.Recover,r)end
+  if resume then pcall(resume)end
+  if self.Job==job then self.Job=nil;self.NextAt=ctx.Clock()+1 end
+  if not ok then self.LastError=tostring(why);self.Status='Leg removal: '..self.LastError end
+ end)
+end
+function Guard:Dispose()
+ if self.Closed then return end
+ self:SetEnabled(false);self.Closed=true;self.Connection:Disconnect()
+end
+return Guard
+
+]========]
 sources.Bootstrap = [========[
 local sources = ...
 local env = getgenv and getgenv() or _G
@@ -46328,9 +46094,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.91: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.92: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.91 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.92 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -46782,6 +46548,7 @@ function Items:_Acquire(now,part,target)
     local version,model=self.Generation,self.ActiveModel
     local function valid()
         return self.Generation==version and self.ActiveModel==model and self.GuardEnabled and self:_Valid(target)
+            and not self:IsAttached(target)
     end
     (self.Context.SpawnThread or task.spawn)(function()
         if valid() then pcall(self.Context.Own,part,valid) end
@@ -46803,11 +46570,14 @@ function Items:_Repair(now,target)
         return false
     end
     local part=self.StickyPart
-    if not self:_Owned(part) then self:_Acquire(now,part,target);return false end
+    -- StickyPartEvent is server-authorized. Sending this request does not
+    -- require a local physics write. A delayed/absent executor ownership result
+    -- must not prevent the server from creating the genuine attachment.
+    if not self:_Owned(part) then self:_Acquire(now,part,target) end
     if now>=state.Next then
         state.Attempts+=1
         state.Next=now+(state.Attempts%4==0 and .65 or .15)
-        pcall(self.Context.ApplyOffset,part,target,CFrame.new(0,-.3,0)*CFrame.Angles(math.pi/2,0,0))
+        pcall(self.Context.ApplyOffset,part,target,self:Offset(target))
     end
     return false
 end
@@ -46851,10 +46621,9 @@ function Items:Update(now)
         return
     end
     self.Repair=nil;self.LastReason=nil
-    if not self:_Owned(part) then
-        if self.GuardEnabled then self:_Acquire(now,part,target) end
-        return
-    end
+    -- A genuine, enabled weld already acknowledges the server attachment.
+    -- Re-grabbing it solely because executor ownership metadata is delayed
+    -- can detach our own toy (Grab is also the native Unstick operation).
     local def=self.Definitions[self.Selected]
     local hand=self.Placement=="Hand" or self.Placement=="Auto" and def and def.Place=="Hand"
     if not self.PoseDirty and not self.RemoteDirty and not hand then return end
@@ -94076,6 +93845,7 @@ function Pallet:ShowPallet()
     end
 end
 function Pallet:ForgetModel()
+    for character,contact in pairs(self.SourcePending or{})do self:EndSourceContact(character,contact)end
     self.LastSweep=nil
     for p,value in pairs(self.Visuals or{})do if p.Parent and p.LocalTransparencyModifier==.45 then p.LocalTransparencyModifier=value end end
     self.Visuals=nil
@@ -94123,7 +93893,44 @@ function Pallet:Maintain(character,valid)
     end
     return entry
 end
+function Pallet:SourceContact(character,valid)
+    if not self.Context.NativeTouch then return nil end
+    if self.Closed or next(self.Pauses)or(valid and not valid())then return false end
+    local root=character and(character:FindFirstChild('HumanoidRootPart')or character:FindFirstChild('saviHRP')or character:FindFirstChild('realHrp'))
+    if not alive(root)or not state(character)then return false end
+    if self.Active then return false end -- another real pallet operation owns it
+    if not alive(self.Sound)or not self.Context.Owned(self.Sound)then
+        local now=self.Context.Clock()
+        if now>=(self.SourceWarmAt or 0)then self.SourceWarmAt=now+.5;self:Warm()end
+        return false
+    end
+    self.SourceTimes=self.SourceTimes or setmetatable({},{__mode='k'})
+    self.SourcePending=self.SourcePending or {}
+    local now=self.Context.Clock()
+    if self.SourcePending[character]or now<(self.SourceTimes[character]or 0)then return false end
+    self.SourceTimes[character]=now+self.IntervalSeconds
+    local sound=self.Sound;sound.CanTouch=true
+    -- Keep the receiver touchable: the supplied Solo loop disables CanTouch
+    -- immediately before its own touch call, preventing the requested hit.
+    local ok,why=pcall(self.Context.NativeTouch,sound,root,0)
+    if not ok then self.LastError=tostring(why);return false end
+    self.SourceBegins=(self.SourceBegins or 0)+1
+    local contact={Sound=sound,Root=root};self.SourcePending[character]=contact
+    self.Context.SpawnThread(function()
+        self.FrameSignal:Wait()
+        -- Ending an already issued contact is cleanup, including cancellation.
+        self:EndSourceContact(character,contact)
+    end)
+    return true
+end
+function Pallet:EndSourceContact(character,contact)
+    if not contact or contact.Ended then return end
+    contact.Ended=true
+    if alive(contact.Sound)and alive(contact.Root)then pcall(self.Context.NativeTouch,contact.Sound,contact.Root,1)end
+    if self.SourcePending and self.SourcePending[character]==contact then self.SourcePending[character]=nil end
+end
 function Pallet:Cancel(character)
+    if self.SourcePending then self:EndSourceContact(character,self.SourcePending[character])end
     local entry=self.Entries[character]
     if entry then
         entry.Done=true;entry.Success=false
@@ -94300,7 +94107,7 @@ sources.KickLoop = [========[
 local requireModule=...
 local Handoff=requireModule("KickHandoff")
 -- Existing hold movers run before physics. Target ownership requests use
--- distinct bounded acquisition/release phases; pallet strikes are independent.
+-- bounded source sequences after confirmed capture; pallet strikes are independent.
 local Loop={};Loop.__index=Loop
 local function finite(n)return type(n)=="number"and n==n and math.abs(n)<math.huge end
 function Loop.Install(context)
@@ -94310,7 +94117,8 @@ function Loop.Install(context)
     self.Connection=signal:Connect(function(dt)
         self:FlushCleanup()
         -- Request phases advance on their own clock. A release and its next
-        -- Grab occupy different ticks, independently of rendering FPS.
+        -- Grab occupy different ticks in the legacy path. Source modes own their
+        -- ordered refresh batches after the initial capture acknowledgement.
         local now=context.Clock()
         local nextAt=self.NextNativeAt or now
         self.NativeTick=now+1e-7>=nextAt
@@ -94567,7 +94375,9 @@ function Loop:Update(session,position,now,ping)
     local queued=session.Releases and #session.Releases>0
     local repeatReady=not queued and Handoff.CanGrab(session,self.Frame,now,(ctx.MarkerOwned or ctx.Owned)(root))
     if repeatReady and not ctx.IntervalSeconds and ctx.IntervalReady then repeatReady=ctx.IntervalReady(session.Player,session.Character)end
-    if repeatReady then
+    if ctx.SourceMode then
+        self:SourceCycle(session,now,period,networkOwned)
+    elseif repeatReady then
         session.Requested=true;ctx.Grab(root);self.Calls+=1
         session.IntervalSeconds=period
         Handoff.Grabbed(session,self.Frame,now,ping,ctx.NativePhases==true and'Native'or ctx.LowLatency==true,period)
@@ -94623,6 +94433,52 @@ function Loop:Update(session,position,now,ping)
     elseif session.EKI then self:RestoreEKI(session)end
     session.OwnedAt=ctx.Owned(root)and(session.OwnedAt or now)or nil
 end
+-- Port of TheWorst Solo Faster / Solo Stronger. Keep the source's distinct
+-- sequences, but never mistake another player's marker for initial capture
+-- or release the first acquisition in the same transport tick.
+local sourceSteps={Faster={{'G','R'}},Normal={{'G'},{'G','R','G'},{'G','G'},{'G','R'}}}
+function Loop:SourceCycle(session,now,period,networkOwned)
+    local ctx=self.Context;local root=session.Root
+    if not self:Valid(session)then return end
+    local mode=ctx.SourceMode()=='Normal'and'Normal'or'Faster'
+    if session.SourceMode~=mode then
+        if session.SourceMode and session.Requested and not self:Release(session)then return end
+        session.SourceMode=mode;session.SourcePhase=1;session.SourceNextAt=nil
+        session.SourceReady=nil;session.SourceDeadline=nil
+    end
+    if not networkOwned then
+        if session.SourceReady then session.SourceNextAt=nil;session.SourceDeadline=nil end
+        session.SourceReady=nil;session.SourcePhase=1
+    end
+    if ctx.Owned(root)then
+        if not session.SourceReady then session.SourceNextAt=nil;session.SourceDeadline=nil end
+        session.SourceReady=true
+    end
+    if not session.SourceReady then
+        if session.SourceDeadline and now>=session.SourceDeadline then
+            if not self:Release(session)then return end
+            session.SourceDeadline=nil;session.SourceNextAt=now+.1;return
+        end
+        if now>=(session.SourceNextAt or 0)then
+            if ctx.Grab(root)~=false then session.Requested=true;self.Calls+=1 end
+            session.SourceNextAt=now+.1;session.SourceDeadline=session.SourceDeadline or now+.65
+        end
+        return
+    end
+    if session.SourcePeriod and not period then session.SourceNextAt=nil end
+    if now<(session.SourceNextAt or 0)then return end
+    local steps=sourceSteps[mode];local phase=session.SourcePhase or 1
+    if phase==1 then session.SourcePeriod=period end
+    for _,operation in ipairs(steps[phase])do
+        if not self:Valid(session)then return end
+        if operation=='G'then
+            if ctx.Grab(root)==false then session.SourceNextAt=now+.1;return end
+            session.Requested=true;self.Calls+=1
+        elseif not self:Release(session)then return end
+    end
+    session.SourcePhase=phase%#steps+1
+    session.SourceNextAt=now+(session.SourcePeriod or 0)/#steps
+end
 function Loop:Step(dt)
     local ctx=self.Context
     if not ctx.Enabled()then
@@ -94642,6 +94498,9 @@ function Loop:Step(dt)
     ping=finite(ping)and math.clamp(ping,0,.5)or .1
     local held,waiting=0,0
     for index,player in ipairs(targets)do
+        -- A target snapshot can outlive a selection/protection change while
+        -- another acquisition yields. Do not recreate the removed session.
+        if not ctx.Selected(player)then continue end
         local character,targetRoot,targetHum=ctx.Character(player)
         local torso=character and(character:FindFirstChild("Torso")or character:FindFirstChild("UpperTorso"))
         if targetRoot and torso and targetHum and targetHum.Health>0 then
@@ -94649,6 +94508,13 @@ function Loop:Step(dt)
             if self.Excursion and not self.Sessions[player]then continue end
             local session=self.Sessions[player]or self:Create(player,character,targetRoot,targetHum)
             local destination=(self.CaptureAnchor or root.Position)+Vector3.new(0,ctx.Height()+session.StackIndex*6,0)
+            if ctx.SourceMode then
+                local origin=self.CaptureAnchor or root.Position
+                if #targets>1 then
+                    local angle=(index-1)*math.pi*2/#targets
+                    destination=origin+Vector3.new(math.cos(angle)*7,ctx.Height(),math.sin(angle)*7)
+                else destination=origin+Vector3.new(0,ctx.Height(),5)end
+            end
             if self.Excursion then destination=self.Excursion.Goals[session]or session.Position.Position end
             self:Update(session,destination,now,ping)
             if session.OwnedAt then held+=1 else waiting+=1 end
@@ -94656,7 +94522,7 @@ function Loop:Step(dt)
     end
     if next(self.Cleanup)then self.Status="Kick cleanup retry: "..(self.CleanupError or "waiting")
     elseif #targets==0 then self.Status="Select a target"
-    else self.Status=string.format("Kick %s | held: %d | awaiting: %d\nNative Grab calls: %d | RNO calls: %d",self.MaximumSpeed and "2x"or "source timing",held,waiting,self.Calls,self.Released)end
+    else self.Status=string.format("Kick %s | held: %d | awaiting: %d\nNative Grab calls: %d | RNO calls: %d",ctx.SourceMode and ctx.SourceMode()or(self.MaximumSpeed and "2x"or "source timing"),held,waiting,self.Calls,self.Released)end
 end
 function Loop:Evidence()
  local result={FullCycleTiming=self.Context.IntervalSeconds~=nil,NativeFrames=self.Context.NativePhases==true,LowLatency=self.Context.LowLatency==true,GrabRequests=self.Calls,ReleaseRequests=self.Released,Targets={}}

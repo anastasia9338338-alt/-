@@ -48,6 +48,18 @@ def run_feature_checks(modules,runner,folder):
             ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
+    if {'BlobmanRiderGrab','ExplosionLegs'}<=modules.keys():
+        program=read('model_mock.luau')+'\nlocal Rider=(function()\n'+modules['BlobmanRiderGrab']+'\nend)()\n'
+        program+='local Legs=(function()\n'+modules['ExplosionLegs']+'\nend)()\nlocal Cadence=(function()\n'+modules['BlobmanCadence']+'\nend)()\n'
+        run('source_defense492',program+read('source_defense492_body.luau'))
+        main=modules['Main'];a=main.index('tbl12.BreakLimb = function(');b=main.index('tbl12.UpdateWalkSpeed =',a)
+        run('leg_native492',read('model_mock.luau')+'\n'+read('leg_native492_body.luau').replace('__ACTUAL_BREAK_LIMB__',main[a:b]))
+        a=main.index('tbl12.RequestNativeOwnership=function');b=main.index('tbl12.SNO = function',a)
+        run('native_owner492',read('model_mock.luau')+'\n'+read('native_owner492_body.luau').replace('__ACTUAL_REQUEST__',main[a:b]))
+        assert 'RemoveLegs=function(valid)return tbl12.BreakLimb(localPlayer,"Legs",valid)end'in main
+        assert 'tbl12.BlobmanRiderGrab:SetEnabled(value)'in main
+        assert 'Min=0,Max=1000'in main and 'BlobmanCadence:SetDelay(value)'in main
+        assert 'return tbl12.FoodRemover:Detach(model,valid)'in main
     if 'AntiKickItems'in modules:
         main=modules['Main'];a=main.index('tbl12.RemoveSticky = function(arg, arg2)');b=main.index('tbl12.BreakLimb =',a)
         body=read('unstick_defense_body.luau').replace('__ACTUAL_UNSTICK__',main[a:b])
@@ -86,7 +98,7 @@ def run_feature_checks(modules,runner,folder):
         assert 'BlobmanRemoveArms'not in main and 'Remove Blobman Arms'not in main
         assert 'tbl12.PCLDAvatars:Has(arg)'in main and main.count('tbl12.PCLDAvatars:Render()')>=2
         assert 'tbl15.Player:AddLeftGroupbox("Camera", "camera")'in main
-        assert 'Enabled=function()return not flag11 and not tbl8.GucciAntiGrab and tbl8.AntiGrab end'in main
+        assert 'Enabled=function()return not flag11 and not tbl7.States.DefenseLegRemoval and not tbl8.GucciAntiGrab and tbl8.AntiGrab end'in main
         for token in ('JumpRequest=UserInputService.JumpRequest','tbl12.BlobmanRide:Dismount()','tbl12.PCLDAvatars:SetMode(value)','CatalogRoots=function()','Vector3.new(0,-20,0)'):
             assert token in main,('missing native integration',token)
     if 'PCLDAvatarESP'in modules:
@@ -135,6 +147,7 @@ def run_feature_checks(modules,runner,folder):
         receiver_query=modules['Main'][query_start+len('ReceiverOverlaps='):query_end].strip().rstrip(',')
         sweep_prefix=program[:program.index(read('kick_body.luau'if 'PalletStroke'in modules else 'native_pallet_body.luau'))]
         run('pallet_sweep',sweep_prefix+read('pallet_receiver_query_prefix.luau')+'\nlocal ActualReceiverOverlaps='+receiver_query+'\n'+read('pallet_sweep_body.luau'))
+        run('source_pallet492',sweep_prefix+read('source_pallet492_body.luau'))
         run('pallet_reaction',read('model_mock.luau')+'\nlocal Reaction=(function()\n'+modules['PalletReaction']+'\nend)()\n'+read('pallet_reaction_body.luau'))
         if 'PalletCadence'in modules:
             run('pallet_cadence','local Cadence=(function()\n'+modules['PalletCadence']+'\nend)()\n'+read('pallet_cadence_body.luau'))
@@ -147,6 +160,8 @@ def run_feature_checks(modules,runner,folder):
         assert modules['Main'].count('tbl12.KickInterval:BuildUI(')==1,'Loop MS settings are missing or duplicated'
         assert 'tbl12.KickInterval:BuildUI(v21)'in modules['Main'] and 'AddRightGroupbox("Loop MS"'not in modules['Main'],'Loop MS moved outside Kick Settings'
         assert 'Pulsed=true'in modules['Main'] and ':IsPhysicallyHolding(player)'in modules['Main'],'Pulse profile lacks physical airborne hold integration'
+        assert 'SourceMode=function()return tbl9.NKSourceMode'in native_context and 'SourceContact(character,valid)'in native_context
+        run('source_kick492',read('kick_mock.luau')+loop_source+read('source_kick492_body.luau'))
         run('kick_channel',read('kick_mock.luau')+loop_source+read('kick_channel_body.luau'))
         run('kick_handoff',read('kick_mock.luau')+loop_source+read('kick_handoff_body.luau'))
         run('kick_eki',read('kick_mock.luau')+loop_source+read('kick_eki_body.luau'))

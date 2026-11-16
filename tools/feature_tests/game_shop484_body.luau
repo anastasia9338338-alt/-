@@ -114,7 +114,7 @@ check(chat.Visible and chat.Position.Y.Offset>nav.Position.Y.Offset,'Detached na
 local corner=nav:FindFirstChild('AstralShopCorner');check(corner~=nil,'Sidebar not rounded')
 toy.Activated:Fire();local inventoryWidth=grid.CellSize.X.Offset
 switch(shop)
-check(title.TextTransparency==0 and not corner.Parent,'Leaving inventory retains old source properties/corners')
+check(not toys.Visible and nav:FindFirstChild('AstralShopCorner')~=nil,'Hidden inventory or shared sidebar rounding broke on page switch')
 check(price.TextScaled==false and price.TextSize<25 and price.Size.Y.Offset<25,'Paid card giant TextScaled price overlaps entire grid')
 check(name.TextScaled==false and name.Position.Y.Offset>price.Position.Y.Offset,'Paid card name/price rows overlap')
 check(shopTitle.TextTransparency==1 and shopTitle.TextStrokeTransparency==1,'Native Russian Shop heading leaks')
@@ -128,14 +128,14 @@ check(not controller.Panels.Limit.Node.Visible,'Inventory-only footer is rendere
 card.Activated:Fire()
 local huePosition,hueSize=hue.Position,hue.Size
 switch(settings)
-check(price.TextScaled==true and price.TextSize==90,'Previous paid card modifications leaked across page transition')
+check(not shop.Visible and price.TextScaled==false and price.TextSize<25,'Paid card cache was lost or remained visible on another page')
 check(controller.TextCopies.YourToysTitle.Text=='Settings'and settingsTitle.TextTransparency==1,'Settings retains old giant title/theme')
 check(settingsFraction.TextTransparency==0,'Settings fraction was mistaken for an inventory count')
 check(hue.Text=='160'and hue.Position==huePosition and hue.Size==hueSize and gradient.Color==originalGradient and swatch.BackgroundColor3==originalSwatch and presetGrid.CellSize==presetCellSize,'HSV geometry/values/gradient were flattened')
 check(settings:FindFirstChild('AstralPanelScale')~=nil and controller.Current.ContentBounds and settings.AstralPanelScale.Scale>math.min(controller.Plan.Body.W/controller.Current.NativeSize.X,controller.Plan.Body.H/controller.Current.NativeSize.Y),'Settings useful content remains tiny inside an almost empty native page')
 local settingsScale=settings:FindFirstChild('AstralPanelScale')
 switch(destroy)
-check(not settingsScale.Parent and hue.Position==huePosition and hue.Text=='160','Settings content/scale leaks into cleanup page')
+check(not settings.Visible and settingsScale.Parent==settings and hue.Position==huePosition and hue.Text=='160','Hidden Settings cache damaged controls or remained visible')
 check(controller.TextCopies.YourToysTitle.Text=='Toy Cleanup','ToyDestroy remains unstyled')
 check(cleanupCaption.TextTransparency==1 and cleanupCaption.TextStrokeTransparency==1,'Put Toys Away native caption remains visible')
 destroyButton.Activated:Fire()
@@ -143,11 +143,12 @@ switch(currency);check(footerAction.TextTransparency==0,'Arbitrary native Footer
 check(clicks==1111 and card.Parent==shopList and hue.Parent==picker,'Original game handlers/paths lost')
 switch(toys);check(grid.CellSize.X.Offset==inventoryWidth,'Inventory changes size after full page round trip')
 count.Text='6/100';controller:Find();check(controller.TextCopies.ToyLimitCount.Text=='6/100','Footer count stale')
+local cachedSize=menu.Size;local cachedCells=controller.CellPasses
 for _,p in ipairs(all)do p.Visible=false end;controller:Find()
-check(not controller.Layer.Visible and caption.TextTransparency==0 and caption.TextStrokeTransparency==0,'Closing native menu does not restore sibling localized footer')
-check(close.Visible and englishTitle.TextTransparency==0 and cleanupCaption.TextTransparency==0 and priceIcon.Size==originalPriceIconSize,'Disable/close does not restore native heading/cross/price artwork')
-check(menu.Size==originalMenuSize and nativeScale.Scale==1 and title.TextTransparency==0,'Closing changes ordinary menu geometry')
-local before=hue.Position;controller:SetEnabled(false);check(not controller.Layer and hue.Position==before,'Disable leaves theme/native content changes')
+check(not controller.Layer.Visible and caption.TextTransparency==1 and caption.TextStrokeTransparency==1,'Closing native menu exposes a sibling localized footer')
+check(not close.Visible and controller.CellPasses==cachedCells and priceIcon.Size~=originalPriceIconSize,'Closing the menu discards its cached styling')
+check(menu.Size==cachedSize and nativeScale.Scale==1,'Closing changes the cached menu geometry')
+local before=hue.Position;controller:SetEnabled(false);check(not controller.Layer and hue.Position==before and menu.Size==originalMenuSize and priceIcon.Size==originalPriceIconSize and close.Visible,'Disable failed to restore original native properties')
 controller:SetEnabled(true);switch(toys)
 nativeScale.Scale=1.5;controller:Find()
 check(nativeScale.Scale==1 and controller.MenuScale==1 and controller.LayerScale.Scale==1,'Existing fixed shop scale is not retained')
@@ -168,6 +169,21 @@ check(controller.TextCopies.ToyLimitCount.Parent==controller.Panels.Limit.Node a
 check(controller.TextCopies.ToyLimitLabel.TextTransparency==0,'Style hides its own footer during a repeated update')
 library.Scheme.FontColor=Color3.fromRGB(210,170,130);library.Scheme.GlassTransparency=.61;library.Scheme.BodyTopColor=Color3.fromRGB(31,32,33);library:UpdateColorsUsingRegistry()
 check(controller.Panels.Body.Node.BackgroundTransparency==.61 and controller.TextCopies.ToyLimitCount.TextColor3==library.Scheme.FontColor and controller.Panels.Body.Node.AstralShopGradient.Color.Keypoints[1].Value==library.Scheme.BodyTopColor,'Shop does not follow live Astral theme changes')
+local beforeScans,beforeCells,beforeDiscovery=controller.TreeScans,controller.CellPasses,controller.DiscoveryPasses
+for i=1,50 do count.Text=tostring(i)..'/100';controller:Find()end
+check(controller.TreeScans==beforeScans and controller.CellPasses==beforeCells and controller.DiscoveryPasses==beforeDiscovery,
+ 'Counter updates rescan or restyle the toy collection')
+switch(shop);switch(toys);local warmCells=controller.CellPasses
+for i=1,5 do switch(shop);switch(toys)end
+check(controller.CellPasses==warmCells,'Warm page switches restyle every toy again')
+local warmGrids=controller.GridPasses;local warmTree=controller.TreeScans
+menu.Visible=false;controller:Find();menu.Visible=true;controller:Find()
+check(controller.GridPasses==warmGrids and controller.TreeScans==warmTree,'Closing/reopening rebuilds the unchanged collection')
+local preview=add(toy,'ViewportFrame','ModelPreview');controller:Find()
+local model=add(preview,'WorldModel','NativeToy');local treeVersion=controller.TreeVersion;local gridPasses=controller.GridPasses
+for i=1,100 do local mesh=add(model,'Part','PreviewMesh'..i);add(mesh,'Attachment','Link')end
+controller:Find()
+check(controller.TreeVersion==treeVersion and controller.GridPasses==gridPasses,'3D preview parts trigger full GUI layout invalidation')
 quick.Clock.Activated:Fire();check(quick.Open and controller.Current.Quick and quick.Host.Visible,'Clock tab did not open')
 local addButton=quick.Host:FindFirstChild('AddItem');addButton.Activated:Fire()
 check(quick.Host.QuickItems.Chair.Item.Image=='rbxassetid://chair'and quick.Host.QuickItems.Chair.Item.ImageRectOffset==Vector2.zero,'Quick picker copied the favorite bitmap/atlas instead of item art')
