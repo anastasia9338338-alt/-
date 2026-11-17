@@ -9,7 +9,9 @@ for _,stop in ipairs({"disable","unselect","unload"})do
         Library={OnUnload=function(_,fn)cleanups[#cleanups+1]=fn end},Notify=function(message)error(message)end})
     panel:SetLoop("Ragdoll",true);f.Sim:Run(.2,60)
     local entry=f.Pallet.Entries[f.Target.Character]
-    check(entry and entry.Manual and f.Pallet:Profile(entry)==8,"Standalone Ragdoll inherited a faster kick profile instead of the donor trajectory")
+    check(entry and entry.Manual and f.Pallet:Profile(entry)==1,"Loop Ragdoll did not inherit Super Fast's accelerated physical trajectory")
+    local stages,step,clock=f.Pallet:Profile(entry)
+    check(stages==1 and step==0 and math.abs(clock-.02)<1e-9,"Loop Ragdoll did not follow the requested 50/s complete-pass cadence")
     if stop=="disable"then panel:SetLoop("Ragdoll",false)
     elseif stop=="unselect"then data.SelectedPlayers[player]=nil
     else panel:Dispose()end
@@ -30,4 +32,4 @@ do
     check(requested==0,"Standalone Ragdoll stole a pallet already controlled by the kick")
     panel:Dispose();f.Pallet:Dispose()
 end
-print('PASS: '..checks..' standalone source Ragdoll routing, original trajectory, selection, cancellation and shared-kick checks (mocked)')
+print('PASS: '..checks..' accelerated Loop Ragdoll routing, selection, cancellation and shared-kick checks (mocked)')

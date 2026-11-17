@@ -25,7 +25,7 @@ local function referenceFixture(mode)
     main.Transparency=.2;sound.Transparency=.3;main.CanQuery=true;sound.CanQuery=true
     local data={Valid=true,Owned=true,Marker=true,Mode=mode or"Faster",Spawned=0,Destroyed=0,Grabs=0,Refresh=0}
     local ctx={RunService=sim.RunService,Clock=function()return sim.Now end,Wait=function()return sim:Wait()end,
-        SpawnThread=function(fn)sim:Spawn(fn)end,ContactRate=30,
+        SpawnThread=function(fn)sim:Spawn(fn)end,ContactRate=50,
         KickMode=function()return data.Mode end,
         Find=function()return model.Parent and model end,CanSpawn=function()return true end,
         Spawn=function(valid)data.Spawned+=1;return valid()and model or nil end,

@@ -1,4 +1,4 @@
-# Astral v5.02 reference GUI
+# Astral v5.03 reference GUI
 
 The user-provided `message.txt` uses Obsidian. The standalone bundle now uses its compatible upstream renderers, with the reference window options and Astral's tab names and functionality. Source revision and constraints are recorded in `../transfers/README.md`.
 

@@ -1,4 +1,4 @@
--- Astral v5.02 | Shared wallpaper gallery, transport RTT and physical contact cadence.
+-- Astral v5.03 | 50/s Super Fast and matched continuous ragdoll cadence.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.BackgroundAssets = [========[
@@ -19977,7 +19977,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v5.02 | FTAP")
+                                warn("Astral v5.03 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23335,7 +23335,7 @@ end
                     Destroy=function(model)tbl12.DestroyToy(model)end,
                 })
                 tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({
-                    RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,ContactRate=30,
+                    RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,ContactRate=50,
                     KickMode=function()return tbl9.NKSourceMode or "Faster"end,
                     Find=function()return tbl12.PalletSupply:Find()end,
                     CanSpawn=function()return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
@@ -36434,7 +36434,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v5.02",true)
+            box:AddLabel("Astral v5.03",true)
         end
 
         do
@@ -38191,8 +38191,8 @@ Escape Timer: %*]]
             Tooltip="Behind: approach behind the target. Below: approach from underneath. Applies to initial capture and recovery.",
             Callback=function(value)tbl9.NKApproach=value;if tbl12.KickCapture.Busy then tbl12.KickCapture:Cancel()end end})
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
-        v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
-            Tooltip="Super Fast complete-pass limit, 5–30 per second; contact and exit always use separate physics frames. Normal also uses this value for source stage timing. Faster preserves the previous Super Fast 0.06 s profile.",
+        v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=50,Min=5,Max=50,Rounding=0,Suffix="/s",
+            Tooltip="Super Fast and continuous Loop Ragdoll: up to 50 complete passes/s, using separate contact/exit physics frames. Reaching 50 requires at least 100 simulation updates/s. Normal stage timing and the previous Faster profile remain available.",
             Callback=function(value)tbl12.PalletRagdoll:SetContactRate(value)end})
 
 		v21:AddToggle("RagdollNK", {
@@ -41801,6 +41801,7 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 
 			local tbl16 = {
 				Presentation = "BetterOrion",
+                PalletCadenceVersion = UIStyle.PalletCadenceVersion,
 				Position = mainFrame and fn21(mainFrame.Position),
 				ScreenPosition = mainFrame and fn23(mainFrame),
 				Size = mainFrame and fn21(mainFrame.Size),
@@ -41898,9 +41899,13 @@ Rejoined: %rejoinedPlayer%, %listCount%]],
 			local ok, result = pcall(HttpService.JSONDecode, HttpService, arg2)
 			local v20, v21 = loadJSON(arg, arg2)
 
-			if v20 and ok and typeof(result) == "table" and typeof(result.AstralUI) == "table" then
-				task.defer(fn27, result.AstralUI)
-			end
+            if v20 and ok and typeof(result)=="table"then
+                local metadata=typeof(result.AstralUI)=="table"and result.AstralUI or{}
+                UIStyle.MigratePalletCadence(lib,metadata.PalletCadenceVersion)
+                local rate=options.AstralPalletContactRate
+                if rate then tbl12.PalletRagdoll:SetContactRate(rate.Value)end
+                if typeof(result.AstralUI)=="table"then task.defer(fn27,result.AstralUI)end
+            end
 
 			return v20, v21
 		end
@@ -46637,9 +46642,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v5.02: unload the running Astral in Settings before executing this update")
+    warn("Astral v5.03: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v5.02 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v5.03 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -46737,6 +46742,8 @@ message.txt (Shadow Core GUI / Ragdoll / Remove Anti Kick). Server hit and kick
 timing have not been verified by local CLI or mocked behavior checks.
 
 Astral v5.02: shared GUI wallpaper surfaces; bundled winter background gallery with the two supplied photographs; isolated Roblox transport latency; previous Super Fast moved to Faster, and Super Fast uses separate contact/exit physics frames. No server kick duration is asserted. Source image URLs and SHA-256 are listed in ui/background-sources.json.
+
+Astral v5.03: Super Fast and continuous Loop Ragdoll request up to 50 complete pallet passes per second. Contact and exit remain separated by positive simulation steps. Normal/Faster and single-use Ragdoll retain their trajectories; old default 30/s settings migrate once to 50/s. Local placements do not confirm server hits, ragdoll frequency or kick duration.
 ]========]
 sources.AimSupport = [========[
 local Aim = {}
@@ -46803,6 +46810,7 @@ return Aim
 ]========]
 sources.UIStyle = [========[
 local Style = {}
+Style.PalletCadenceVersion = 503
 Style.Name = "astral"
 Style.BrandIcon = "sparkle"
 Style.YieldURL = "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"
@@ -46823,7 +46831,7 @@ function Style.Theme()
         GlassTransparency=0,RowTransparency=0,HeaderTransparency=0,FontFace="Code",BackgroundImage=""}
 end
 function Style.Window()
-    return {Title="astral",Subtitle="FTAP | v5.02",Footer="astral | v5.02",Icon=Style.BrandIcon,
+    return {Title="astral",Subtitle="FTAP | v5.03",Footer="astral | v5.03",Icon=Style.BrandIcon,
         NotifySide="Right",BackgroundImage=108109283852139,ShowCustomCursor=true,
         SidebarCompacted=true,CornerRadius=100,Size=UDim2.fromOffset(650,500),
         ToggleKeybind=Enum.KeyCode.RightShift,Center=true,AutoShow=true,
@@ -46842,6 +46850,12 @@ function Style.MigrateLayoutDefaults(library,presentation)
     for id,pair in pairs(defaults)do local option=library.Options[id]
         if option and option.Value==pair[1]then option:SetValue(pair[2])end
     end
+end
+function Style.MigratePalletCadence(library,version)
+    if (tonumber(version)or 0)>=Style.PalletCadenceVersion then return false end
+    local option=library.Options.AstralPalletContactRate
+    if option and option.Value==30 then option:SetValue(50);return true end
+    return false
 end
 function Style.ApplyStartupTheme(manager,library)
     local choice=library.Options.ThemeManager_ThemeList
@@ -93984,7 +93998,7 @@ local function isolated(sound,model)
 end
 function Pallet.Install(context)
     local self=setmetatable({Context=context,Entries={},Queue={},Pauses={},PhysicsFrame=0,Passes=0,StrikeAttempts=0,
-        Confirmed=0,MaximumSpeed=true,IntervalSeconds=1/30,ContactRate=30,Status="Ragdoll idle",PartState={},Generation=0},Pallet)
+        Confirmed=0,MaximumSpeed=true,IntervalSeconds=1/50,ContactRate=50,Status="Ragdoll idle",PartState={},Generation=0},Pallet)
     self.FrameSignal=context.RunService.PreSimulation or context.RunService.Heartbeat
     self.PhysicsSignal=context.RunService.PostSimulation or context.RunService.Heartbeat
     self.Ownership=Ownership.new({Clock=context.Clock,Signal=self.FrameSignal,
@@ -93996,8 +94010,11 @@ function Pallet.Install(context)
         local ok,why=pcall(self.Step,self)
         if not ok then self.LastError=tostring(why);self.Status="Ragdoll error: "..self.LastError;self:Clear()end
     end)
-    self.PhysicsConnection=self.PhysicsSignal:Connect(function()self.PhysicsFrame+=1 end)
-    self:SetContactRate(context.ContactRate or 30)
+    self.PhysicsConnection=self.PhysicsSignal:Connect(function(dt)
+        -- A rendered frame with zero simulation time is not another contact.
+        if type(dt)=="number"and dt==dt and dt>0 and dt<math.huge then self.PhysicsFrame+=1 end
+    end)
+    self:SetContactRate(context.ContactRate or 50)
     return self
 end
 function Pallet:Valid(entry)
@@ -94103,10 +94120,13 @@ function Pallet:Apply(character,valid)
     return entry.Success==true
 end
 function Pallet:Profile(entry)
-    if entry.Manual or not entry.Continuous then return 8,1/60,0 end -- source task.wait() descent
     local mode=self.Context.KickMode and self.Context.KickMode()or "Faster"
+    -- Kick and continuous Loop Ragdoll share the selected Super Fast cadence.
+    -- A single-use ragdoll still completes the donor trajectory and observes
+    -- the game's Ragdolled state; extra requests never create another worker.
+    if mode=="Super Fast"and entry.Continuous then return 1,0,self.IntervalSeconds end
+    if entry.Manual or not entry.Continuous then return 8,1/60,0 end
     if mode=="Normal"then return 8,math.max(1/60,self.IntervalSeconds*.5),0 end
-    if mode=="Super Fast"then return 1,0,self.IntervalSeconds end -- one contact frame, one exit frame; bounded at 30 passes/s
     return 2,0,.06 -- the v5.01 Super Fast profile is now Faster
 end
 function Pallet:Place(entry,point,velocity)
@@ -94115,6 +94135,7 @@ function Pallet:Place(entry,point,velocity)
     local offset=assembly==self.Sound and CFrame.new()or self.Sound.CFrame:ToObjectSpace(assembly.CFrame)
     assembly.CFrame=CFrame.new(point)*offset
     assembly.AssemblyLinearVelocity=velocity;assembly.AssemblyAngularVelocity=Vector3.zero
+    self.LastPlacementFrame=self.PhysicsFrame
     return true
 end
 function Pallet:Step()
@@ -94128,7 +94149,9 @@ function Pallet:Step()
         for _=1,count do
             local entry=table.remove(self.Queue,1)
             if self:Valid(entry)then
-                if now+1e-7>=entry.NextAt then self.Active=entry;break else self.Queue[#self.Queue+1]=entry end
+                local segments=self:Profile(entry)
+                local due=segments==1 and math.max(entry.NextAt,self.NextFastPassAt or 0)or entry.NextAt
+                if now+1e-7>=due then self.Active=entry;break else self.Queue[#self.Queue+1]=entry end
             end
         end
     end
@@ -94145,7 +94168,7 @@ function Pallet:Step()
     end
     -- No new entry or return can be overwritten before a solver step. This
     -- also prevents two callbacks on one Heartbeat fallback from making hits.
-    if entry.LastFrame==self.PhysicsFrame then return end
+    if entry.LastFrame==self.PhysicsFrame or self.LastPlacementFrame==self.PhysicsFrame then return end
     local segments,step,period=self:Profile(entry)
     if step>0 and now+1e-7<(entry.StepAt or 0)then return end
     entry.StepAt=now+step;entry.LastFrame=self.PhysicsFrame
@@ -94164,6 +94187,11 @@ function Pallet:Step()
     if not self:Place(entry,point,Vector3.new(0,entry.Stage>=segments and -10 or -9997,0))then return end
     self.StrikeAttempts+=1
     if entry.Stage>=segments then
+        if segments==1 then
+            local expected=self.NextFastPassAt or now
+            self.LastFastPassTime=now
+            self.NextFastPassAt=now-expected>=period and now+period or expected+period
+        end
         self.Passes+=1;entry.Passes=(entry.Passes or 0)+1;entry.Phase="return"
         self.Status="Reference pallet impact placement; awaiting physics"
     end
@@ -94192,16 +94220,24 @@ function Pallet:IsContactActive()return self.Active~=nil end
 function Pallet:IsSuperMode()return self.Context.KickMode and self.Context.KickMode()=="Super Fast"end
 function Pallet:SetKickMode()
     self:Park();self.Active=nil;table.clear(self.Queue)
+    self.NextFastPassAt=nil;self.LastFastPassTime=nil
     for _,entry in pairs(self.Entries)do entry.Stage=0;entry.Phase="down";entry.NextAt=0;entry.CycleAnchor=nil;entry.LastFrame=self.PhysicsFrame;entry.ExitFrame=self.PhysicsFrame;self.Queue[#self.Queue+1]=entry end
 end
 function Pallet:SetContactRate(value)
-    if type(value)~="number"or value~=value or value==math.huge then return end
-    self.ContactRate=math.clamp(value,5,30);self.IntervalSeconds=1/self.ContactRate
+    if type(value)~="number"or value~=value or math.abs(value)==math.huge then return end
+    self.ContactRate=math.clamp(value,5,50);self.IntervalSeconds=1/self.ContactRate
+    self.NextFastPassAt=self.LastFastPassTime and self.LastFastPassTime+self.IntervalSeconds or nil
+    if self:IsSuperMode()then
+        for _,entry in pairs(self.Entries)do
+            if entry.Continuous then entry.NextAt=self.NextFastPassAt or 0;entry.CycleAnchor=nil end
+        end
+    end
 end
 function Pallet:Evidence()
     local targets={};for _,entry in pairs(self.Entries)do targets[#targets+1]={Name=entry.Character.Name,Stage=entry.Stage,Phase=entry.Phase,Passes=entry.Passes or 0,Continuous=entry.Continuous}end
     return {Mechanism="ReferenceTrajectory",PlacementAttempts=self.StrikeAttempts,CompletedPasses=self.Passes,ConfirmedRagdollStates=self.Confirmed,
-        FastPassPeriod=.06,SuperFastPassPeriod=self.IntervalSeconds,SuperFastMinimumPhysicsFrames=2,PhysicalFrames=self.PhysicsFrame,Targets=targets,LastError=self.LastError}
+        FastPassPeriod=.06,SuperFastPassPeriod=self.IntervalSeconds,RequestedSuperFastPassRate=self.ContactRate,
+        SuperFastMinimumPhysicsFrames=2,ContinuousRagdollFollowsSuperFast=true,PhysicalFrames=self.PhysicsFrame,Targets=targets,LastError=self.LastError}
 end
 function Pallet:Summary()return string.format("%s | source passes: %d | placements: %d",self.Status,self.Passes,self.StrikeAttempts)end
 function Pallet:Dispose()

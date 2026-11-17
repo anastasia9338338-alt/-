@@ -1,4 +1,5 @@
 local Style = {}
+Style.PalletCadenceVersion = 503
 Style.Name = "astral"
 Style.BrandIcon = "sparkle"
 Style.YieldURL = "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"
@@ -19,7 +20,7 @@ function Style.Theme()
         GlassTransparency=0,RowTransparency=0,HeaderTransparency=0,FontFace="Code",BackgroundImage=""}
 end
 function Style.Window()
-    return {Title="astral",Subtitle="FTAP | v5.02",Footer="astral | v5.02",Icon=Style.BrandIcon,
+    return {Title="astral",Subtitle="FTAP | v5.03",Footer="astral | v5.03",Icon=Style.BrandIcon,
         NotifySide="Right",BackgroundImage=108109283852139,ShowCustomCursor=true,
         SidebarCompacted=true,CornerRadius=100,Size=UDim2.fromOffset(650,500),
         ToggleKeybind=Enum.KeyCode.RightShift,Center=true,AutoShow=true,
@@ -38,6 +39,12 @@ function Style.MigrateLayoutDefaults(library,presentation)
     for id,pair in pairs(defaults)do local option=library.Options[id]
         if option and option.Value==pair[1]then option:SetValue(pair[2])end
     end
+end
+function Style.MigratePalletCadence(library,version)
+    if (tonumber(version)or 0)>=Style.PalletCadenceVersion then return false end
+    local option=library.Options.AstralPalletContactRate
+    if option and option.Value==30 then option:SetValue(50);return true end
+    return false
 end
 function Style.ApplyStartupTheme(manager,library)
     local choice=library.Options.ThemeManager_ThemeList
