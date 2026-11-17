@@ -1,4 +1,4 @@
--- Astral v4.95 | BetterOrion layout and accelerated source kick cadence.
+-- Astral v4.96 | Paired Super Fast contacts and continuous body phase.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -19757,7 +19757,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.95 | FTAP")
+                                warn("Astral v4.96 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -36227,7 +36227,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.95",true)
+            box:AddLabel("Astral v4.96",true)
         end
 
         do
@@ -37973,7 +37973,7 @@ Escape Timer: %*]]
 
         local v21=v20
         v21:AddDropdown("AstralOwnershipMode",{Text="Kick Mode",Values={"Faster","Normal","Super Fast"},Default="Faster",AllowNull=false,
-            Tooltip="Normal: v4.94 Faster. Faster: twice the same refresh cadence. Super Fast: brief pallet contact followed by upward flight, as in the reference video. Loop MS still controls full ownership cycles.",
+            Tooltip="Normal: v4.94 Faster. Faster: twice the same refresh cadence. Super Fast: two contacts, upward flight, two more contacts, upward flight, then body contacts. Loop MS still controls full ownership cycles.",
             Callback=function(value)tbl9.NKSourceMode=value;tbl12.PalletRagdoll:SetKickMode(value)end})
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
@@ -46306,9 +46306,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.95: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.96: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.95 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.96 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -46494,7 +46494,7 @@ end
 function Style.Window()
     -- BetterOrion is the main library used by the supplied TheWorst source.
     -- Keep Astral's identity, control IDs and menu key on that presentation.
-    return {Title="astral",Subtitle="FTAP | v4.95",Footer="",Icon=Style.BrandIcon,
+    return {Title="astral",Subtitle="FTAP | v4.96",Footer="",Icon=Style.BrandIcon,
         ToggleKeybind=Enum.KeyCode.RightShift,Center=true,AutoShow=true,
         Font=Enum.Font.Gotham,Size=UDim2.fromOffset(600,400),MinContainerWidth=320,
         ShowMobileButtons=false,IconSize=UDim2.fromOffset(22,22),CornerRadius=10,BackgroundImage="",
@@ -93748,7 +93748,13 @@ function Pallet.Install(context)
             end
         end,
     })
-    self.Connection=self.FrameSignal:Connect(function()self:Step();self:Watchdog()end)
+    self.Connection=self.FrameSignal:Connect(function()
+        if self.SuperFlight or self.SuperQueue then
+            local ok,why=pcall(self.AdvanceSuperBeforePhysics,self)
+            if not ok then self.LastError=tostring(why);self:StopSuperFlight(true)end
+        end
+        self:Step();self:Watchdog()
+    end)
     return self
 end
 function Pallet:EntryValid(entry)
@@ -93969,7 +93975,8 @@ local function verticalHalf(part)
  return (math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z)*.5
 end
 function Pallet:IsContactActive()
- if self.SuperFlight then return true end
+ -- Super Fast uses the native touch API, not the shared Grab channel. Keeping
+ -- that channel locked while a board is held/flying would stall the kick.
  local entry=self.Active
  return entry~=nil and entry.ContactInFlight==true and self:EntryValid(entry)
   and alive(self.Sound)and self.Context.Owned(self.Sound)==true or false
@@ -94134,7 +94141,7 @@ function Pallet:Park()
     local mover=main and main:FindFirstChild("RagdollBP")
     if mover then mover.MaxForce=Vector3.zero end
     if self.Context.SourceKick then
-        if self.KickProfile and self.KickProfile.Model==self.Model then return end
+        if self.NativeKickReady and self.KickProfile and self.KickProfile.Model==self.Model then return end
         self:ConfigureKickPallet()
         return
     end
@@ -94175,6 +94182,7 @@ function Pallet:ConfigureKickPallet()
     local angular=Instance.new('AngularVelocity');angular.Name='KickPalletRotation'
     angular.MaxTorque=math.huge;angular.AngularVelocity=Vector3.new(5000,0,5000)
     angular.RelativeTo=Enum.ActuatorRelativeTo.World;angular.Attachment0=attachment;angular.Parent=sound
+    profile.Angular=angular
     profile.Created[#profile.Created+1]=angular
     local lift=Instance.new('BodyPosition');lift.Name='KickPalletPosition';lift.D=100
     lift.Position=Vector3.new(0,10000,0);lift.MaxForce=Vector3.new(math.huge,math.huge,math.huge);lift.Parent=main
@@ -94295,7 +94303,7 @@ function Pallet:BeginRootContact(character,valid,prepare)
     self.SourceReactions=self.SourceReactions or {}
     if not self.SourceReactions[character]then self.SourceReactions[character]=Reaction.new(character,self.Context.Clock)end
     local ok,why=pcall(self.Context.NativeTouch,sound,root,0)
-    if not ok then if root.Parent and root.CanTouch==true then root.CanTouch=originalTouch end;self.LastError=tostring(why);return false end
+    if not ok then if root.Parent and root.CanTouch==true then root.CanTouch=originalTouch end;self.LastError=tostring(why);return false,'native-touch-error'end
     self.SourceBegins=(self.SourceBegins or 0)+1
     local contact={Sound=sound,Root=root,OriginalTouch=originalTouch};self.SourcePending[character]=contact
     self.Context.SpawnThread(function()
@@ -94305,84 +94313,217 @@ function Pallet:BeginRootContact(character,valid,prepare)
     end)
     return true
 end
+-- One real pallet is shared fairly between target sequences. The local phase
+-- counts schedule attempts; they are not server hit or kick acknowledgements.
 function Pallet:SetKickMode(value)
-    if value~='Super Fast'then self:StopSuperFlight(true);self.SuperStates=nil end
+    if value~='Super Fast'then self:StopSuperFlight(true)end
+end
+function Pallet:SuperEntryValid(entry)
+    if self.Closed or next(self.Pauses)or not entry or entry.Cancelled
+        or self.Context.KickMode and self.Context.KickMode()~='Super Fast'then return false end
+    local character,root=entry.Character,entry.Root
+    if not character or not character.Parent or not alive(root)or root.Anchored or root.Parent~=character
+        or state(character)~=entry.Value then return false end
+    local currentRoot=character:FindFirstChild('HumanoidRootPart')or character:FindFirstChild('saviHRP')or character:FindFirstChild('realHrp')
+    if currentRoot~=root then return false end
+    if entry.Valid then
+        local ok,allowed=pcall(entry.Valid)
+        if not ok then self.LastError=tostring(allowed);return false end
+        if allowed~=true then return false end
+    end
+    return true
+end
+function Pallet:QueueSuperEntry(entry)
+    if entry.Queued or entry.Cancelled then return end
+    self.SuperQueue=self.SuperQueue or{}
+    entry.Queued=true;self.SuperQueue[#self.SuperQueue+1]=entry
+end
+function Pallet:RestoreSuperBoard(park)
+    self.SuperBoardOwner=nil
+    local sound=self.Sound;local profile=self.KickProfile
+    if not profile or not alive(sound)or not profile.Lift or not profile.Lift.Parent then return end
+    local assembly=isolatedAssembly(sound,self.Model)
+    if not assembly then
+        -- Never pull/spin an externally attached character via this toy.
+        profile.Lift.MaxForce=Vector3.zero
+        if profile.Angular and profile.Angular.Parent then profile.Angular.MaxTorque=0 end
+        self.NativeKickReady=false
+        return
+    end
+    local owned=(self.Context.PhysicsOwned or self.Context.Owned)(sound)==true
+    if not owned then return end
+    profile.Lift.Position=Vector3.new(0,10000,0)
+    if park then
+        assembly.CFrame=assembly.CFrame+(Vector3.new(0,1000,0)-sound.Position)
+        assembly.AssemblyLinearVelocity=Vector3.zero
+    end
+end
+function Pallet:DropSuperEntry(entry,park)
+    if not entry then return end
+    entry.Cancelled=true;entry.Queued=nil
+    if self.SuperFlight and self.SuperFlight.Entry==entry then self.SuperFlight=nil end
+    if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
+    if self.SuperBoardOwner==entry then self:RestoreSuperBoard(park)end
+    if self.SuperStates and self.SuperStates[entry.Character]==entry then self.SuperStates[entry.Character]=nil end
 end
 function Pallet:StopSuperFlight(park)
-    local flight=self.SuperFlight
+    local hadSuper=self.SuperFlight or self.SuperBoardOwner or next(self.SuperStates or{})
+    if self.SuperFlight then
+        local entry=self.SuperFlight.Entry
+        self.SuperFlight=nil
+        if entry and self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
+    end
+    for _,entry in pairs(self.SuperStates or{})do
+        entry.Cancelled=true
+        if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
+    end
+    self.SuperQueue=nil;self.SuperStates=nil
+    if hadSuper then self:RestoreSuperBoard(park)end
+end
+function Pallet:SuperJobValid(job)
+    if not self:SuperEntryValid(job.Entry)or self.Active or self.Preparing then return false end
+    if job.Sound~=self.Sound or job.Model~=self.Model or job.Profile~=self.KickProfile
+        or not alive(job.Sound)or not alive(job.Main)or not job.Profile.Lift.Parent then return false end
+    local owned=self.Context.PhysicsOwned or self.Context.Owned
+    return owned(job.Sound)==true and owned(job.Entry.Root)==true
+        and isolatedAssembly(job.Sound,job.Model)~=nil
+end
+function Pallet:HoldSuperBoard(job,place)
+    local root,sound,main=job.Entry.Root,job.Sound,job.Main
+    local assembly=isolatedAssembly(sound,job.Model)
+    if not assembly then return false end
+    if place then assembly.CFrame=assembly.CFrame+(root.Position-sound.Position)end
+    -- Keep the same source mover/rotation. While the pair/body phase runs,
+    -- follow the real root instead of allowing the sky goal to win each hit.
+    job.Profile.Lift.Position=root.Position+(main.Position-sound.Position)
+    assembly.AssemblyLinearVelocity=root.AssemblyLinearVelocity
+    self.SuperBoardOwner=job.Entry
+    return true
+end
+function Pallet:ReleaseSuperJob(job)
+    if self.SuperFlight~=job then return end
     self.SuperFlight=nil
-    if not flight then return end
-    if self.SourcePending then self:EndSourceContact(flight.Character,self.SourcePending[flight.Character])end
-    if alive(flight.Sound)and flight.Sound.CanQuery==true then flight.Sound.CanQuery=flight.Query end
-    local profile=self.KickProfile
-    local lift=profile and profile.Lift
-    if lift and lift.Parent then lift.Position=Vector3.new(0,10000,0)end
-    if park and alive(flight.Sound)and(self.Context.PhysicsOwned or self.Context.Owned)(flight.Sound)then
-        local assembly=isolatedAssembly(flight.Sound,self.Model)
-        if assembly then
-            assembly.CFrame=assembly.CFrame+(Vector3.new(0,1000,0)-flight.Sound.Position)
-            assembly.AssemblyLinearVelocity=Vector3.zero
+    self:QueueSuperEntry(job.Entry)
+end
+function Pallet:ClaimSuperJob()
+    if self.SuperFlight or self.Active or self.Preparing or #self.Queue>0 then return end
+    local queue=self.SuperQueue or{}
+    for _=1,#queue do
+        local entry=table.remove(queue,1);entry.Queued=nil
+        if not self:SuperEntryValid(entry)then self:DropSuperEntry(entry,true);continue end
+        if self.Context.Clock()<(entry.RetryAt or 0)then self:QueueSuperEntry(entry);continue end
+        local sound=self.Sound;local profile=self.KickProfile
+        local main=self.Model and self.Model:FindFirstChild('Main')
+        local owned=self.Context.PhysicsOwned or self.Context.Owned
+        if alive(sound)and not isolatedAssembly(sound,self.Model)then
+            self.Status='Super Fast: waiting for separate pallet assembly'
+            self:RestoreSuperBoard(true);self:QueueSuperEntry(entry);continue
         end
+        if not self.NativeKickReady or not alive(sound)or not alive(main)or not profile or not profile.Lift or not profile.Lift.Parent then
+            self:QueueSuperEntry(entry)
+            if self.Context.Clock()>=(self.SourceWarmAt or 0)then self.SourceWarmAt=self.Context.Clock()+.5;self:Warm()end
+            return
+        end
+        if not owned(sound)or not owned(entry.Root)then
+            self.Status='Super Fast: waiting for isolated owned pallet and target'
+            if self.SuperBoardOwner==entry then self:RestoreSuperBoard(true)end
+            self:QueueSuperEntry(entry);continue
+        end
+        if entry.Sound and entry.Sound~=sound then entry.Phase='pair1';entry.PairHits=0;entry.Departures=0 end
+        entry.Sound=sound
+        local job={Entry=entry,Character=entry.Character,Root=entry.Root,Sound=sound,Main=main,Model=self.Model,Profile=profile}
+        self.SuperFlight=job
+        local clear=(entry.Root.Size.Magnitude+sound.Size.Magnitude)*.5
+        local place=self.SuperBoardOwner~=entry or entry.Phase~='press'or entry.Profile~=profile
+            or(sound.Position-entry.Root.Position).Magnitude>clear
+        entry.Profile=profile
+        if not self:HoldSuperBoard(job,place)then self:DropSuperEntry(entry,true);return end
+        return job
+    end
+    if #queue==0 then self.SuperQueue=nil end
+end
+function Pallet:AdvanceSuperBeforePhysics()
+    local job=self.SuperFlight or self:ClaimSuperJob()
+    if not job then return end
+    local entry=job.Entry
+    if not self:SuperJobValid(job)then self:DropSuperEntry(entry,true);return end
+    if entry.Phase=='fly1'or entry.Phase=='fly2'then return end
+    self:HoldSuperBoard(job,false)
+    if job.ContactFrame or self.Context.Clock()+1e-7<(entry.NextAt or 0)then return end
+    local started,reason=self:BeginRootContact(entry.Character,function()return self:SuperJobValid(job)end,function()
+        -- The two short contacts each place the real transmitter at the body.
+        -- The final phase leaves it there and uses balanced native contacts.
+        return self:HoldSuperBoard(job,entry.Phase~='press')
+    end)
+    if started then
+        job.ContactFrame=self.PhysicsFrame;job.ContactAt=self.Context.Clock()
+        entry.Attempts=(entry.Attempts or 0)+1
+        self.SuperStrikes=(self.SuperStrikes or 0)+1
+        if entry.Phase=='press'then self.SuperBodyContacts=(self.SuperBodyContacts or 0)+1 end
+        self.Status=entry.Phase=='press'and'Super Fast: body contacts'or'Super Fast: paired contacts'
+        return entry
+    elseif reason=='native-touch-error'then
+        -- The primitive may fail after issuing begin. Attempt its end and
+        -- return the owned board rather than retaining a half-started stage.
+        pcall(self.Context.NativeTouch,job.Sound,entry.Root,1)
+        self:DropSuperEntry(entry,true)
     end
 end
 function Pallet:AdvanceSuperFlight()
-    local flight=self.SuperFlight;if not flight then return end
-    local root,sound=flight.Root,flight.Sound
-    local current=not self.Closed and not next(self.Pauses)and flight.Character.Parent
-        and alive(root)and root.Parent==flight.Character and alive(sound)and sound==self.Sound
-        and(not self.Context.KickMode or self.Context.KickMode()=='Super Fast')
-    if current and flight.Valid then local ok,value=pcall(flight.Valid);current=ok and value==true end
-    if not current or not(self.Context.PhysicsOwned or self.Context.Owned)(sound)then self:StopSuperFlight(true);return end
-    -- Bounding spheres include rotation of the rapidly spinning transmitter.
-    -- Completion requires an observed solver frame and real upward clearance.
-    local clear=(root.Size.Magnitude+sound.Size.Magnitude)*.5+1
-    if self.PhysicsFrame>flight.Frame and sound.Position.Y-root.Position.Y>clear then
+    local job=self.SuperFlight;if not job then return end
+    local entry=job.Entry
+    if not self:SuperJobValid(job)then self:DropSuperEntry(entry,true);return end
+    if job.ContactFrame and self.PhysicsFrame>job.ContactFrame then
+        if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
+        job.ContactFrame=nil
+        if entry.Phase=='press'then self:ReleaseSuperJob(job);return end
+        entry.PairHits=(entry.PairHits or 0)+1
+        if entry.PairHits<2 then
+            -- The two flashes in the 30fps reference are about three frames
+            -- apart. Keep that short gap independent of the client's FPS.
+            entry.NextAt=job.ContactAt+.1
+            return
+        end
+        entry.Phase=entry.Phase=='pair1'and'fly1'or'fly2'
+        job.FlightFrame=self.PhysicsFrame;job.Started=self.Context.Clock()
+        job.Profile.Lift.Position=Vector3.new(entry.Root.Position.X,10000,entry.Root.Position.Z)
+        self.SuperLaunches=(self.SuperLaunches or 0)+1
+        self.Status='Super Fast: pair completed; lifting away'
+        return
+    end
+    if entry.Phase~='fly1'and entry.Phase~='fly2'then return end
+    local clear=(entry.Root.Size.Magnitude+job.Sound.Size.Magnitude)*.5+1
+    if self.PhysicsFrame>job.FlightFrame and job.Sound.Position.Y-entry.Root.Position.Y>clear then
         self.SuperDepartures=(self.SuperDepartures or 0)+1
+        entry.Departures=(entry.Departures or 0)+1
+        entry.Phase=entry.Phase=='fly1'and'pair2'or'press'
+        entry.PairHits=0;entry.NextAt=nil
         self.Status='Super Fast: upward departure observed'
-        self:StopSuperFlight(false)
-    elseif self.Context.Clock()-flight.Started>.35 then
-        self.Status='Super Fast: pallet did not clear; contact cancelled'
-        self:StopSuperFlight(true)
-        local entry=self.SuperStates and self.SuperStates[flight.Character]
-        if entry then entry.RetryAt=self.Context.Clock()+.15 end
+        self:ReleaseSuperJob(job)
+    elseif self.Context.Clock()-job.Started>.35 then
+        -- A blocked flight does not unlock the final stage or fabricate exit.
+        entry.Phase=entry.Phase=='fly1'and'pair1'or'pair2'
+        entry.PairHits=0;entry.RetryAt=self.Context.Clock()+.15
+        self:RestoreSuperBoard(true);self:ReleaseSuperJob(job)
+        self.Status='Super Fast: blocked flight; retrying pair'
     end
 end
 function Pallet:SuperContact(character,valid)
     if not self.Context.NativeTouch then return nil end
-    if self.Closed or next(self.Pauses)or self.Active or self.SuperFlight or(valid and not valid())then return false end
-    local value=state(character);if not value then return false end
+    if self.Closed or next(self.Pauses)or self.Active or(valid and not valid())then return false end
+    local value=state(character)
+    local root=character and(character:FindFirstChild('HumanoidRootPart')or character:FindFirstChild('saviHRP')or character:FindFirstChild('realHrp'))
+    if not value or not alive(root)then return false end
     self.SuperStates=self.SuperStates or setmetatable({},{__mode='k'})
     local entry=self.SuperStates[character]
-    if not entry or entry.Value~=value then entry={Value=value};self.SuperStates[character]=entry end
-    -- Refresh an expired game ragdoll, with one initial strike also allowed
-    -- when switching modes during an already-ragdolled hold. No local setter
-    -- or invented "imminent kick" counter substitutes for the game state.
-    if entry.Struck and value.Value or self.Context.Clock()<(entry.RetryAt or 0)then return false end
-    local flight
-    local started=self:BeginRootContact(character,valid,function(sound,root)
-        if not(self.Context.PhysicsOwned or self.Context.Owned)(sound)or root.Anchored
-            or not(self.Context.PhysicsOwned or self.Context.Owned)(root)then
-            self.Status='Super Fast: waiting for pallet simulation ownership';return false
-        end
-        local assembly=isolatedAssembly(sound,self.Model)
-        local profile=self.KickProfile
-        local lift=profile and profile.Lift
-        if not assembly or not lift or not lift.Parent then return false end
-        flight={Character=character,Root=root,Sound=sound,Valid=valid,Frame=self.PhysicsFrame,Started=self.Context.Clock(),Query=sound.CanQuery}
-        self.SuperFlight=flight;sound.CanQuery=true
-        -- Reuse the one real pallet, its source rotation and its source lift.
-        -- Place at the body once, then leave its upward motion to the solver.
-        lift.Position=Vector3.new(root.Position.X,10000,root.Position.Z)
-        assembly.CFrame=assembly.CFrame+(root.Position-sound.Position)
-        assembly.AssemblyLinearVelocity=Vector3.zero
-        return true
-    end)
-    if started then
-        entry.Struck=true;self.SuperStrikes=(self.SuperStrikes or 0)+1
-        self.Status='Super Fast: contact; lifting away'
-    elseif flight then self:StopSuperFlight(true)end
-    return started
+    if entry and(entry.Value~=value or entry.Root~=root)then self:DropSuperEntry(entry,true);entry=nil end
+    if not entry then
+        entry={Character=character,Root=root,Value=value,Valid=valid,Phase='pair1',PairHits=0,Departures=0}
+        self.SuperStates[character]=entry;self:QueueSuperEntry(entry)
+    else entry.Valid=valid end
+    return self:AdvanceSuperBeforePhysics()==entry
 end
+
 function Pallet:EndSourceContact(character,contact)
     if not contact or contact.Ended then return end
     contact.Ended=true
@@ -94392,8 +94533,7 @@ function Pallet:EndSourceContact(character,contact)
     if self.SourcePending and self.SourcePending[character]==contact then self.SourcePending[character]=nil end
 end
 function Pallet:Cancel(character)
-    if self.SuperFlight and self.SuperFlight.Character==character then self:StopSuperFlight(true)end
-    if self.SuperStates then self.SuperStates[character]=nil end
+    if self.SuperStates and self.SuperStates[character]then self:DropSuperEntry(self.SuperStates[character],true)end
     if self.SourcePending then self:EndSourceContact(character,self.SourcePending[character])end
     if self.SourceReactions and self.SourceReactions[character]then self.SourceReactions[character]:Dispose();self.SourceReactions[character]=nil end
     local entry=self.Entries[character]
@@ -94418,7 +94558,7 @@ function Pallet:Apply(character,valid)
     return entry.Success==true
 end
 function Pallet:Step()
-    if self.Closed or self.Active or self.Preparing or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
+    if self.Closed or self.Active or self.SuperFlight or self.Preparing or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
     local entry
     -- A one-shot effect can finish on Ragdolled=true. A continuous kick must
     -- still dispatch the native operation for a target held in that state.
@@ -94471,6 +94611,7 @@ end
 function Pallet:Pause(token,value)
     self.Pauses[token]=value and true or nil
     if value then
+        self:StopSuperFlight(true)
         local characters={}
         for character in pairs(self.Entries)do characters[#characters+1]=character end
         for _,character in ipairs(characters)do self:Cancel(character)end
@@ -94532,9 +94673,10 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=9,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
+    local info={Version=10,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
         NativeContactBegins=self.SourceBegins or 0,NativeContactEnds=self.SourceEnds or 0,NativePalletReady=self.NativeKickReady==true,NativeTargets={},
         SuperFastPlacements=self.SuperStrikes or 0,SuperFastObservedDepartures=self.SuperDepartures or 0,SuperFastFlightActive=self.SuperFlight~=nil,
+        SuperFastBodyContacts=self.SuperBodyContacts or 0,SuperFastLaunches=self.SuperLaunches or 0,SuperFastTargets={},
         LocalRetryRateLimit=self.ContactRate,LocalRetryInterval=self.IntervalSeconds,Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
@@ -94547,6 +94689,10 @@ function Pallet:Evidence()
             StateAlreadyRagdolled=value and value.Value==true or false,ContinuousStrikes=entry.Continuous==true,Reaction=reaction}
     end end
     for character,reaction in pairs(self.SourceReactions or{})do info.NativeTargets[#info.NativeTargets+1]={Character=character.Name,Reaction=reaction:Describe()}end
+    for character,entry in pairs(self.SuperStates or{})do
+        info.SuperFastTargets[#info.SuperFastTargets+1]={Character=character.Name,Phase=entry.Phase,PairContacts=entry.PairHits,
+            Attempts=entry.Attempts or 0,ObservedDepartures=entry.Departures or 0}
+    end
     return info
 end
 function Pallet:GetContactTime(character)local e=self.Entries[character];return e and e.ContactAt end
