@@ -1,4 +1,4 @@
--- Astral v4.97 | Super Fast recovery phases and budgeted avatar PCLD rendering.
+-- Astral v4.98 | Super Fast inbound pallet strokes and staged bursts.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -2191,7 +2191,7 @@ function Capture:Acquire(target,valid)
         local timeout=math.clamp(.6+2*ping,1,5)
         local cadence=math.clamp(.25*ping,1/20,.2)
         local deadline,nextRequest=ctx.Clock()+timeout,0
-        if(target.Position-root.Position).Magnitude<=28 then
+        if not ctx.AlwaysApproach and(target.Position-root.Position).Magnitude<=28 then
             self.Status="Capture: claiming nearby target"
             local nearUntil=math.min(deadline,ctx.Clock()+math.clamp(.2+1.5*ping,.3,1.5))
             repeat
@@ -2206,8 +2206,9 @@ function Capture:Acquire(target,valid)
         if not current()then return end
         returnFrame=root.CFrame
         if ctx.Anchor then ctx.Anchor(returnFrame.Position)end
-        -- Stay physically below the target for a rendered/physics step first.
-        self.Status="Capture: moving below target"
+        -- The caller selects the real approach pose. Keep the default caller's
+        -- nearby shortcut, but Kick may require its chosen side even nearby.
+        self.Status="Capture: moving to selected approach"
         if ctx.Teleport(root,ctx.Approach(target))==false then return end
         ctx.WaitFrame()
         while current()and ctx.Clock()<=deadline do
@@ -2250,7 +2251,8 @@ function Capture:Acquire(target,valid)
                 or "Capture: no game acknowledgement; retry delayed"))
     return owned and ok and not self.Closed,self.LastOutcome
 end
-function Capture:Dispose()self.Closed=true;self.Generation+=1 end
+function Capture:Cancel()self.Generation+=1 end
+function Capture:Dispose()self.Closed=true;self:Cancel()end
 return Capture
 
 ]========]
@@ -19757,7 +19759,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.97 | FTAP")
+                                warn("Astral v4.98 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23118,6 +23120,27 @@ end
                 tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,Pulsed=false,SourceKick=true,
                     ContactMultiplier=function()return tbl9.NKSourceMode=="Normal"and 1 or 2 end,
                     KickMode=function()return tbl9.NKSourceMode or "Faster"end,
+                    SuperHold=function(character)
+                        local loop=tbl12.KickLoop
+                        if not loop then return false end
+                        for player,session in pairs(loop.Sessions)do
+                            if session.Character==character and not session.RecoveringHold and session.Position and session.Position.Parent then
+                                return loop:IsPhysicallyHolding(player),session.Position.Position
+                            end
+                        end
+                        return false
+                    end,
+                    SuperIdlePosition=function(character,sound)
+                        local actor,root=tbl12.Char()
+                        if not root then return nil end
+                        local point=root.Position+root.CFrame.RightVector*7+Vector3.new(0,3,0)
+                        local query=RaycastParams.new();query.FilterType=Enum.RaycastFilterType.Exclude
+                        query.FilterDescendantsInstances={actor,character,sound.Parent}
+                        local ground=workspace:Raycast(point,Vector3.new(0,-128,0),query)
+                        local cf,size=sound.CFrame,sound.Size
+                        local half=(math.abs(cf.RightVector.Y)*size.X+math.abs(cf.UpVector.Y)*size.Y+math.abs(cf.LookVector.Y)*size.Z)*.5
+                        return ground and ground.Position+Vector3.new(0,half+.1,0)or point-Vector3.new(0,3,0)
+                    end,
                     NativeTouch=typeof(firetouchinterest)=="function" and firetouchinterest or nil,
                     Find=function()return tbl12.PalletSupply:Find()end,
                     CanSpawn=function()return requireModule("GameFlags").CanBuild(localPlayer,tbl7.States,tbl7.SpawnQueue)end,
@@ -35946,7 +35969,16 @@ Escape Timer: %*]]
 		end)
 
         do
-            tbl12.VisibleCapture=requireModule("VisibleCapture").Install({Clock=os.clock,
+            tbl12.KickApproachFrame=function(target)
+                local frame=tbl12.PredictCFrame(target)
+                if tbl9.NKApproach=="Below"then return frame-Vector3.new(0,22,0)end
+                local facing=Vector3.new(frame.LookVector.X,0,frame.LookVector.Z)
+                facing=facing.Magnitude>.01 and facing.Unit or Vector3.new(0,0,-1)
+                local position=frame.Position-facing*6+Vector3.new(0,1,0)
+                return CFrame.new(position,frame.Position)
+            end
+            local function captureContext(approach,acknowledged,alwaysApproach)
+                return {Clock=os.clock,
                 Character=function()return tbl12.Char()end,
                 OperationBusy=function()return flag11 or tbl7.States.Owning or tbl7.States.Spawning or localPlayer.InPlot.Value end,
                 SetBusy=function(value)tbl7.States.Owning=value end,
@@ -35954,9 +35986,9 @@ Escape Timer: %*]]
                 WaitFrame=function()RunService.RenderStepped:Wait();return RunService.Heartbeat:Wait()end,
                 PingSeconds=tbl12.KickPingSeconds,Grab=tbl12.Grab,
                 Owned=function(part)return tbl12.IsNetworkOwner(part)and tbl12.IsPartOwner(part)end,
-                Acknowledged=function(part)return tbl12.IsPartOwner(part)==true end,
+                Acknowledged=acknowledged,
                 MovementReady=function()return not tbl7.States["Anti Grab"]and not isHeld.Value end,
-                Approach=function(part)return CFrame.new(part.Position-Vector3.new(0,6,0))end,
+                Approach=approach,AlwaysApproach=alwaysApproach,
                 Teleport=function(root,frame)
                     local _,current,h=tbl12.Char()
                     if current~=root or not h or h.Health<=0 then return false end
@@ -35976,7 +36008,25 @@ Escape Timer: %*]]
                         for i=#paused,1,-1 do local control=paused[i];if not control.Value then pcall(control.SetValue,control,true)end end
                     end,#paused>0
                 end,
-            })
+            }
+            end
+            tbl12.VisibleCapture=requireModule("VisibleCapture").Install(captureContext(function(target)return tbl12.PredictCFrame(target)-Vector3.new(0,22,0)end,tbl12.IsPartOwner,false))
+            tbl12.KickCapture=requireModule("VisibleCapture").Install(captureContext(tbl12.KickApproachFrame,function(part)return tbl12.IsPartOwner(part)and tbl12.IsNetworkOwner(part)end,true))
+            lib:OnUnload(function()tbl12.KickCapture:Dispose()end)
+            tbl12.AcquireKickTarget=function(root,valid)
+                if not valid()or not root or not root.Parent then return false end
+                local player=Players:GetPlayerFromCharacter(root.Parent)
+                local inPlot=player and player:FindFirstChild("InPlot")
+                local barrier
+                if inPlot and inPlot.Value then
+                    barrier=tbl12.BreakPlot(player)
+                    if not barrier then return false end
+                end
+                local ok,owned,reason=pcall(tbl12.KickCapture.Acquire,tbl12.KickCapture,root,valid)
+                if barrier then task.delay(1,tbl12.DestroyToy,barrier)end
+                if not ok then return false,tostring(owned)end
+                return owned,reason
+            end
             lib:OnUnload(function()tbl12.VisibleCapture:Dispose()end)
             tbl12.AcquireVisiblePhysics=function(part,valid)
                 local acknowledged=tbl12.VisibleCapture:Acquire(part,valid)
@@ -35999,7 +36049,8 @@ Escape Timer: %*]]
                 NetworkOwned=tbl12.IsNetworkOwner,MarkerOwned=tbl12.IsPartOwner,
                 OwnershipBusy=function()return tbl7.States.Owning==true or tbl12.PalletRagdoll.Preparing or tbl12.PalletRagdoll.Ownership.InFlight or tbl12.PalletRagdoll:IsContactActive()end,
                 Grab=tbl12.RequestNativeOwnership,Release=tbl12.RNO,
-                Acquire=function(root,valid)return tbl12.SNO(root,.65,valid,true)end,
+                AcquireInitial=true,RecoverLostHold=true,
+                Acquire=function(root,valid)return tbl12.AcquireKickTarget(root,valid)end,
                 Teleport=function(root,position)tbl12.Teleport(root,position)end,
                 Collisions=function(character,enabled)
                     for _,part in ipairs(character:GetDescendants())do if part:IsA("BasePart")then part.CanCollide=enabled end end
@@ -36227,7 +36278,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.97",true)
+            box:AddLabel("Astral v4.98",true)
         end
 
         do
@@ -37973,8 +38024,11 @@ Escape Timer: %*]]
 
         local v21=v20
         v21:AddDropdown("AstralOwnershipMode",{Text="Kick Mode",Values={"Faster","Normal","Super Fast"},Default="Faster",AllowNull=false,
-            Tooltip="Normal: v4.94 Faster. Faster: twice the same refresh cadence. Super Fast: two contacts, upward flight and short off-body gap; repeat the pair, then a bounded final burst. Loop MS still controls full ownership cycles.",
+            Tooltip="Normal: v4.94 Faster. Faster: twice the same refresh cadence. Super Fast: physical strokes from below a held target, in 2-to-4-hit series with shorter pauses. Loop MS still controls full ownership cycles.",
             Callback=function(value)tbl9.NKSourceMode=value;tbl12.PalletRagdoll:SetKickMode(value)end})
+        v21:AddDropdown("AstralKickApproach",{Text="Capture Approach",Values={"Behind","Below"},Default="Behind",AllowNull=false,
+            Tooltip="Behind: approach behind the target. Below: approach from underneath. Applies to initial capture and recovery.",
+            Callback=function(value)tbl9.NKApproach=value;if tbl12.KickCapture.Busy then tbl12.KickCapture:Cancel()end end})
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
             Tooltip="Base ragdoll retry rate for Normal. Faster uses twice this rate, up to one paired contact per physics step.",
@@ -46395,9 +46449,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.97: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.98: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.97 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.98 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -46583,7 +46637,7 @@ end
 function Style.Window()
     -- BetterOrion is the main library used by the supplied TheWorst source.
     -- Keep Astral's identity, control IDs and menu key on that presentation.
-    return {Title="astral",Subtitle="FTAP | v4.97",Footer="",Icon=Style.BrandIcon,
+    return {Title="astral",Subtitle="FTAP | v4.98",Footer="",Icon=Style.BrandIcon,
         ToggleKeybind=Enum.KeyCode.RightShift,Center=true,AutoShow=true,
         Font=Enum.Font.Gotham,Size=UDim2.fromOffset(600,400),MinContainerWidth=320,
         ShowMobileButtons=false,IconSize=UDim2.fromOffset(22,22),CornerRadius=10,BackgroundImage="",
@@ -93725,8 +93779,8 @@ return Builds
 ]========]
 sources.PalletRagdoll = [========[
 -- Shared source pallet operation. One-shot effects wait for ragdoll state;
--- Normal/Faster retain native retries; Super Fast separates contact groups and
--- gives the board real clearances instead of holding it in the target.
+-- Normal/Faster retain native retries; Super Fast launches a real owned board
+-- from below a separately held target and observes the inbound crossing.
 local requireModule=...
 local Source=requireModule("Resonance29Ragdoll")
 local Ownership=requireModule("PalletOwnership")
@@ -94362,11 +94416,12 @@ function Pallet:SourceContact(character,valid)
     if self.Context.KickMode and self.Context.KickMode()=='Super Fast'then return self:SuperContact(character,valid)end
     return self:BeginRootContact(character,valid)
 end
-function Pallet:BeginRootContact(character,valid,prepare)
+function Pallet:BeginRootContact(character,valid,prepare,receiver)
     if not self.Context.NativeTouch then return nil end
     if self.Closed or next(self.Pauses)or(valid and not valid())then return false end
-    local root=character and(character:FindFirstChild('HumanoidRootPart')or character:FindFirstChild('saviHRP')or character:FindFirstChild('realHrp'))
+    local root=receiver or character and(character:FindFirstChild('HumanoidRootPart')or character:FindFirstChild('saviHRP')or character:FindFirstChild('realHrp'))
     if not alive(root)or not state(character)then return false end
+    if receiver and not receiver:IsDescendantOf(character)then return false end
     if self.Active then return false end -- another real pallet operation owns it
     local ready=alive(self.Sound)and(self.Context.SourceKick and self.NativeKickReady or not self.Context.SourceKick and self.Context.Owned(self.Sound))
     if not ready then
@@ -94442,7 +94497,13 @@ function Pallet:RestoreSuperBoard(park)
     end
     local owned=(self.Context.PhysicsOwned or self.Context.Owned)(sound)==true
     if not owned then return end
+    profile.Lift.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
     profile.Lift.Position=Vector3.new(0,10000,0)
+    if profile.Angular and profile.Angular.Parent then
+        profile.Angular.MaxTorque=math.huge
+        assembly.AssemblyAngularVelocity=profile.Angular.AngularVelocity
+    end
+    sound.CanQuery=false;sound.CanTouch=true
     if park then
         assembly.CFrame=assembly.CFrame+(Vector3.new(0,1000,0)-sound.Position)
         assembly.AssemblyLinearVelocity=Vector3.zero
@@ -94475,27 +94536,49 @@ end
 function Pallet:SuperJobValid(job)
     if not self:SuperEntryValid(job.Entry)or self.Active or self.Preparing then return false end
     if job.Sound~=self.Sound or job.Model~=self.Model or job.Profile~=self.KickProfile
-        or not alive(job.Sound)or not alive(job.Main)or not job.Profile.Lift.Parent then return false end
+        or not alive(job.Sound)or not alive(job.Main)or not job.Profile.Lift.Parent
+        or not alive(job.Receiver)or Reaction.Resolve(job.Entry.Character)~=job.Receiver then return false end
     local owned=self.Context.PhysicsOwned or self.Context.Owned
     return owned(job.Sound)==true and owned(job.Entry.Root)==true
         and isolatedAssembly(job.Sound,job.Model)~=nil
 end
-function Pallet:HoldSuperBoard(job,place)
-    local root,sound,main=job.Entry.Root,job.Sound,job.Main
-    local assembly=isolatedAssembly(sound,job.Model)
-    if not assembly then return false end
-    if place then assembly.CFrame=assembly.CFrame+(root.Position-sound.Position)end
-    -- Keep the source mover/rotation during this one physics-step contact.
-    -- The gap and recovery phases remove physical overlap separately.
-    job.Profile.Lift.Position=root.Position+(main.Position-sound.Position)
-    assembly.AssemblyLinearVelocity=root.AssemblyLinearVelocity
-    self.SuperBoardOwner=job.Entry
-    return true
+-- The board never supplies the victim's hold. Main exposes the independent
+-- KickAP/physical-ownership observation; repeated reads in one tick count once.
+function Pallet:SuperHeld(entry)
+    if not self.Context.SuperHold then return true,entry.Root.Position end
+    local ok,held,goal=pcall(self.Context.SuperHold,entry.Character)
+    if not ok then self.LastError=tostring(held);return false end
+    if held~=true or not finiteVector(goal)or(entry.Root.Position-goal).Magnitude>2.5 then return false end
+    return true,goal
+end
+function Pallet:ResetSuperHold(entry)
+    entry.StableFrames=0;entry.StableFrame=nil;entry.BurstIndex=1;entry.BurstHits=0
+    entry.BurstStarted=nil;entry.NextAt=nil;entry.Phase='await-hold'
+end
+function Pallet:IdleSuperBoard(entry)
+    local sound,profile=self.Sound,self.KickProfile
+    if not profile or not alive(sound)or not profile.Lift or not profile.Lift.Parent then return end
+    local main=profile.Lift.Parent;if not alive(main)then return end
+    local assembly=isolatedAssembly(sound,self.Model)
+    if not assembly then self:RestoreSuperBoard(false);return end
+    if not(self.Context.PhysicsOwned or self.Context.Owned)(sound)then return end
+    local position
+    if self.Context.SuperIdlePosition then
+        local ok,value=pcall(self.Context.SuperIdlePosition,entry.Character,sound)
+        if ok and finiteVector(value)then position=value elseif not ok then self.LastError=tostring(value)end
+    end
+    position=position or(entry.Root.Position+Vector3.new(7,-15,0))
+    sound.CanTouch=false;sound.CanQuery=false
+    assembly.CFrame=assembly.CFrame+(position-sound.Position)
+    assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=Vector3.zero
+    if profile.Angular and profile.Angular.Parent then profile.Angular.MaxTorque=0 end
+    profile.Lift.Position=position+(main.Position-sound.Position)
+    profile.Lift.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
+    self.SuperBoardOwner=entry
 end
 function Pallet:ReleaseSuperJob(job)
     if self.SuperFlight~=job then return end
-    self.SuperFlight=nil
-    self:QueueSuperEntry(job.Entry)
+    self.SuperFlight=nil;self:QueueSuperEntry(job.Entry)
 end
 function Pallet:SuperReactionSeen(entry)
     local observer=entry.Observer
@@ -94503,33 +94586,82 @@ function Pallet:SuperReactionSeen(entry)
     if entry.Value.Value==true or observer and entry.Attempt and observer:ObservedSince(entry.Attempt)then entry.SeenReaction=true end
     return entry.SeenReaction==true
 end
-function Pallet:RestSuperEntry(job,nextPhase,retryPhase)
-    local entry=job.Entry
-    self:SuperReactionSeen(entry)
-    entry.Phase=nextPhase=='pair2'and'recover1'or nextPhase=='burst'and'recover2'or'recover3'
-    entry.RecoveryNext=nextPhase;entry.RecoveryRetry=retryPhase
-    entry.WaitStarted=self.Context.Clock();entry.PairHits=0;entry.NextAt=nil
-    entry.WaitFrame=self.PhysicsFrame
-    entry.RestSeconds=nextPhase==retryPhase and .15 or nextPhase=='pair1'and .18 or .1
-    -- A finished touch does not end a physical overlap. Remove the board as
-    -- well, then leave ownership refresh free during the short off-body gap.
-    self:RestoreSuperBoard(true);self:ReleaseSuperJob(job)
+function Pallet:AbortSuperStroke(job,reason)
+    if self.SourcePending then self:EndSourceContact(job.Entry.Character,self.SourcePending[job.Entry.Character])end
+    self:IdleSuperBoard(job.Entry);self:ResetSuperHold(job.Entry)
+    job.Entry.RetryAt=self.Context.Clock()+.15;self.Status=reason
+    self:ReleaseSuperJob(job)
 end
-function Pallet:SuperRestReady(entry)
-    if not entry.RecoveryNext then return true end
-    self:SuperReactionSeen(entry)
-    if self.PhysicsFrame<=(entry.WaitFrame or self.PhysicsFrame)
-        or self.Context.Clock()+1e-7<(entry.WaitStarted or 0)+(entry.RestSeconds or .1)then
-        self.Status='Super Fast: board clear; short recovery gap';return false
+local function dot(a,b)return a.X*b.X+a.Y*b.Y+a.Z*b.Z end
+local function receiverLocal(delta,cf)
+    return Vector3.new(dot(delta,cf.RightVector),dot(delta,cf.UpVector),dot(delta,cf.LookVector))
+end
+-- Query at a sample can miss a fast body crossing. A center path intersecting
+-- the receiver's actual box supplies conservative swept evidence; expanding it
+-- by the whole spinning board would report near misses as hits. No teleport or
+-- timer is an entry. Both endpoints come from consecutive real solver samples.
+local function crossedReceiver(job)
+    local sound,receiver=job.Sound,job.Receiver
+    if sound.Position.Y-job.PreviousSound.Y<=.001 then return false end
+    local cf=receiver.CFrame
+    local a=receiverLocal(job.PreviousSound-job.PreviousReceiver,cf)
+    local b=receiverLocal(sound.Position-receiver.Position,cf)
+    local lo,hi=0,1;local half=receiver.Size*.5
+    for _,axis in ipairs({'X','Y','Z'})do
+        local start,delta,extent=a[axis],b[axis]-a[axis],half[axis]
+        if math.abs(delta)<1e-7 then
+            if math.abs(start)>extent then return false end
+        else
+            local first,last=(-extent-start)/delta,(extent-start)/delta
+            if first>last then first,last=last,first end
+            lo=math.max(lo,first);hi=math.min(hi,last)
+            if lo>hi then return false end
+        end
     end
-    -- Ragdolled is read-only telemetry, not a per-hit acknowledgment or a
-    -- readiness gate: the game can retain true across several valid strokes.
-    -- Entry here already requires an observed exit (or retries the same pair
-    -- after a blocked flight). Never replace that exit with a timer.
-    entry.Phase=entry.RecoveryNext
-    entry.RecoveryNext=nil;entry.RecoveryRetry=nil;entry.Attempt=nil;entry.SeenReaction=nil
-    entry.PairHits=0;entry.NextAt=nil
     return true
+end
+function Pallet:DriveSuperStroke(job)
+    local sound,receiver=job.Sound,job.Receiver
+    local owned=self.Context.PhysicsOwned or self.Context.Owned
+    local assembly=isolatedAssembly(sound,job.Model)
+    if not assembly or not owned(sound)or not owned(job.Entry.Root)then return false end
+    -- Disable the old sky BodyPosition while travelling. Otherwise its force
+    -- fights the incoming stroke. Velocity moves the real assembly; there is
+    -- no CFrame follow, root teleport or forced game-state write here.
+    job.Profile.Lift.MaxForce=Vector3.zero
+    local duration=math.max((receiver.Position.Y-sound.Position.Y)/job.Speed,self.PhysicsDt or 1/60)
+    local correction=receiver.Position-sound.Position
+    local gravity=self.Context.Gravity and self.Context.Gravity()or 196.2
+    if type(gravity)~='number'or gravity~=gravity or math.abs(gravity)==math.huge then gravity=196.2 end
+    local velocity=Vector3.new(math.clamp(correction.X/duration,-80,80),job.Speed+math.clamp(gravity,0,1000)*(self.PhysicsDt or 1/60)*.5,math.clamp(correction.Z/duration,-80,80))
+    assembly.AssemblyLinearVelocity=velocity
+    return true
+end
+function Pallet:LaunchSuperStroke(job)
+    local entry,sound,receiver=job.Entry,job.Sound,job.Receiver
+    local assembly=isolatedAssembly(sound,job.Model)
+    if not assembly then return false end
+    local clearance=(sound.Size.Magnitude+receiver.Size.Magnitude)*.5
+    local distance=math.max(12,clearance*2+2)
+    local start=receiver.Position-Vector3.new(0,distance,0)
+    sound.CanTouch=false;sound.CanQuery=true
+    -- The only launch transform places the board well BELOW the receiver.
+    -- Touch is re-enabled after staging; no begin is sent for this teleport.
+    assembly.CFrame=assembly.CFrame+(start-sound.Position)
+    sound.CanTouch=true
+    if job.Profile.Angular and job.Profile.Angular.Parent then
+        job.Profile.Angular.MaxTorque=math.huge
+        assembly.AssemblyAngularVelocity=job.Profile.Angular.AngularVelocity
+    end
+    job.PreviousSound=sound.Position;job.PreviousReceiver=receiver.Position
+    job.Started=self.Context.Clock();job.StartFrame=self.PhysicsFrame
+    job.Speed=math.clamp(distance/.09,100,240)
+    entry.Attempts=(entry.Attempts or 0)+1;entry.Phase=job.Capture and'capture-inbound'or'inbound'
+    if not job.Capture and not entry.BurstStarted then entry.BurstStarted=job.Started end
+    if entry.Observer then entry.Attempt=entry.Observer:StartAttempt()end
+    self.SuperBoardOwner=entry;self.SuperLaunches=(self.SuperLaunches or 0)+1
+    self.Status=job.Capture and'Super Fast: initial capture stroke from below'or'Super Fast: incoming stroke from below'
+    return self:DriveSuperStroke(job)
 end
 function Pallet:ClaimSuperJob()
     if self.SuperFlight or self.Active or self.Preparing or #self.Queue>0 then return end
@@ -94537,32 +94669,45 @@ function Pallet:ClaimSuperJob()
     for _=1,#queue do
         local entry=table.remove(queue,1);entry.Queued=nil
         if not self:SuperEntryValid(entry)then self:DropSuperEntry(entry,true);continue end
-        if self.Context.Clock()<(entry.RetryAt or 0)then self:QueueSuperEntry(entry);continue end
-        if not self:SuperRestReady(entry)then self:QueueSuperEntry(entry);continue end
-        local sound=self.Sound;local profile=self.KickProfile
+        local now=self.Context.Clock()
+        local held=self:SuperHeld(entry);local capture=false
+        if not held then
+            if entry.Phase~='await-hold'and self.SuperBoardOwner==entry then self:IdleSuperBoard(entry)end
+            self:ResetSuperHold(entry)
+            -- One initial physical pass may ragdoll a captured ground target
+            -- so its separate KickAP can lift it. Never burst during ascent.
+            if entry.Value.Value==true or now<(entry.NextGroundAt or 0)or now<(entry.RetryAt or 0)then
+                if self.SuperBoardOwner==entry then self:IdleSuperBoard(entry)end
+                self.Status='Super Fast: waiting for independent airborne hold'
+                self:QueueSuperEntry(entry);continue
+            end
+            capture=true
+        else
+            if entry.StableFrame~=self.PhysicsFrame then entry.StableFrame=self.PhysicsFrame;entry.StableFrames=(entry.StableFrames or 0)+1 end
+            if entry.StableFrames<2 then self:QueueSuperEntry(entry);continue end
+            if now+1e-7<(entry.NextAt or 0)or now<(entry.RetryAt or 0)then self:QueueSuperEntry(entry);continue end
+        end
+        local sound,profile=self.Sound,self.KickProfile
         local main=self.Model and self.Model:FindFirstChild('Main')
         local owned=self.Context.PhysicsOwned or self.Context.Owned
         if alive(sound)and not isolatedAssembly(sound,self.Model)then
             self.Status='Super Fast: waiting for separate pallet assembly'
-            self:RestoreSuperBoard(true);self:QueueSuperEntry(entry);continue
+            self:RestoreSuperBoard(false);self:QueueSuperEntry(entry);continue
         end
         if not self.NativeKickReady or not alive(sound)or not alive(main)or not profile or not profile.Lift or not profile.Lift.Parent then
             self:QueueSuperEntry(entry)
-            if self.Context.Clock()>=(self.SourceWarmAt or 0)then self.SourceWarmAt=self.Context.Clock()+.5;self:Warm()end
+            if now>=(self.SourceWarmAt or 0)then self.SourceWarmAt=now+.5;self:Warm()end
             return
         end
-        if not owned(sound)or not owned(entry.Root)then
-            self.Status='Super Fast: waiting for isolated owned pallet and target'
-            if self.SuperBoardOwner==entry then self:RestoreSuperBoard(true)end
+        local receiver,kind=Reaction.Resolve(entry.Character)
+        if not owned(sound)or not owned(entry.Root)or not receiver then
+            if self.SuperBoardOwner==entry then self:IdleSuperBoard(entry)end
+            self.Status='Super Fast: waiting for owned board, target and usable receiver'
             self:QueueSuperEntry(entry);continue
         end
-        if entry.Sound and entry.Sound~=sound then
-            entry.Phase='pair1';entry.PairHits=0;entry.Departures=0;entry.Attempt=nil;entry.SeenReaction=nil
-        end
-        entry.Sound=sound
-        local job={Entry=entry,Character=entry.Character,Root=entry.Root,Sound=sound,Main=main,Model=self.Model,Profile=profile}
+        local job={Entry=entry,Character=entry.Character,Root=entry.Root,Sound=sound,Main=main,Model=self.Model,Profile=profile,Receiver=receiver,ReceiverKind=kind,Capture=capture}
         self.SuperFlight=job
-        entry.Profile=profile
+        if not self:LaunchSuperStroke(job)then self:DropSuperEntry(entry,true);return end
         return job
     end
     if #queue==0 then self.SuperQueue=nil end
@@ -94570,82 +94715,75 @@ end
 function Pallet:AdvanceSuperBeforePhysics()
     local job=self.SuperFlight or self:ClaimSuperJob()
     if not job then return end
-    local entry=job.Entry
-    if not self:SuperJobValid(job)then self:DropSuperEntry(entry,true);return end
-    if entry.Phase=='fly1'or entry.Phase=='fly2'or entry.Phase=='fly3'then return end
-    if job.ContactFrame or self.Context.Clock()+1e-7<(entry.NextAt or 0)then return end
-    if not entry.Attempt then
-        entry.Attempt=entry.Observer and entry.Observer:StartAttempt()
-        entry.SeenReaction=entry.Value.Value==true
+    if not self:SuperJobValid(job)then self:DropSuperEntry(job.Entry,true);return end
+    if not job.Capture and not self:SuperHeld(job.Entry)then self:AbortSuperStroke(job,'Super Fast: hold lost; reacquiring');return end
+    if not self:DriveSuperStroke(job)then self:DropSuperEntry(job.Entry,true)end
+end
+function Pallet:CompleteSuperStroke(job)
+    local entry=job.Entry;local now=self.Context.Clock()
+    self:SuperReactionSeen(entry)
+    if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
+    self:IdleSuperBoard(entry)
+    entry.Completed=(entry.Completed or 0)+1
+    if job.Capture then
+        self:ResetSuperHold(entry);entry.NextGroundAt=now+.8;entry.NextAt=now+.1
+    else
+        local index=entry.BurstIndex or 1
+        local shots=index<=2 and 2 or index==3 and 3 or 4
+        entry.BurstHits=(entry.BurstHits or 0)+1
+        self.SuperBodyContacts=(self.SuperBodyContacts or 0)+1
+        if entry.BurstHits>=shots then
+            entry.Bursts=(entry.Bursts or 0)+1;entry.BurstIndex=math.min(index+1,4);entry.BurstHits=0
+            -- These are visible-series timings, not a server kick countdown.
+            -- Measure from the actual series start; never replay overdue shots.
+            entry.NextAt=math.max(now+.1,(entry.BurstStarted or now)+(index<=2 and 2 or .6))
+            entry.BurstStarted=nil;entry.Phase='between-series'
+        else
+            entry.NextAt=math.max(now,job.Started+.1);entry.Phase='between-strokes'
+        end
     end
-    local started,reason=self:BeginRootContact(entry.Character,function()return self:SuperJobValid(job)end,function()
-        return self:HoldSuperBoard(job,true)
-    end)
-    if started then
-        job.ContactFrame=self.PhysicsFrame;job.ContactAt=self.Context.Clock()
-        entry.Attempts=(entry.Attempts or 0)+1
-        self.SuperStrikes=(self.SuperStrikes or 0)+1
-        if entry.Phase=='burst'then self.SuperBodyContacts=(self.SuperBodyContacts or 0)+1 end
-        self.Status=entry.Phase=='burst'and'Super Fast: short final burst'or'Super Fast: paired contacts'
-        return entry
-    elseif reason=='native-touch-error'then
-        -- The primitive may fail after issuing begin. Attempt its end and
-        -- return the owned board rather than retaining a half-started stage.
-        pcall(self.Context.NativeTouch,job.Sound,entry.Root,1)
-        self:DropSuperEntry(entry,true)
-    end
+    self:ReleaseSuperJob(job)
 end
 function Pallet:AdvanceSuperFlight()
     local job=self.SuperFlight;if not job then return end
     local entry=job.Entry
     if not self:SuperJobValid(job)then self:DropSuperEntry(entry,true);return end
-    if job.ContactFrame and self.PhysicsFrame>job.ContactFrame then
-        if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
-        job.ContactFrame=nil
-        self:SuperReactionSeen(entry)
-        entry.PairHits=(entry.PairHits or 0)+1
-        local limit=entry.Phase=='burst'and 3 or 2
-        if entry.PairHits<limit then
-            -- The two flashes in the 30fps reference are about three frames
-            -- apart. Keep that short gap independent of the client's FPS.
-            entry.NextAt=job.ContactAt+.1
-            -- End the physical overlap between contacts too. Holding the
-            -- rotating board inside the body keeps reapplying ragdoll even
-            -- after NativeTouch(end), defeating the recovery sequence.
-            local assembly=isolatedAssembly(job.Sound,job.Model)
-            if not assembly then self:DropSuperEntry(entry,true);return end
-            local clear=(entry.Root.Size.Magnitude+job.Sound.Size.Magnitude)*.5+2
-            assembly.CFrame=assembly.CFrame+(entry.Root.Position+Vector3.new(0,clear,0)-job.Sound.Position)
-            assembly.AssemblyLinearVelocity=Vector3.zero
-            job.Profile.Lift.Position=Vector3.new(entry.Root.Position.X,10000,entry.Root.Position.Z)
-            return
-        end
-        entry.Phase=entry.Phase=='pair1'and'fly1'or entry.Phase=='pair2'and'fly2'or'fly3'
-        job.FlightFrame=self.PhysicsFrame;job.Started=self.Context.Clock()
-        job.Profile.Lift.Position=Vector3.new(entry.Root.Position.X,10000,entry.Root.Position.Z)
-        self.SuperLaunches=(self.SuperLaunches or 0)+1
-        self.Status='Super Fast: pair completed; lifting away'
+    if not job.Capture and not self:SuperHeld(entry)then self:AbortSuperStroke(job,'Super Fast: hold lost; reacquiring');return end
+    if job.ContactFrame then
+        if self.PhysicsFrame>job.ContactFrame then self:CompleteSuperStroke(job)end
         return
     end
-    if entry.Phase~='fly1'and entry.Phase~='fly2'and entry.Phase~='fly3'then return end
-    self:SuperReactionSeen(entry)
-    local clear=(entry.Root.Size.Magnitude+job.Sound.Size.Magnitude)*.5+1
-    if self.PhysicsFrame>job.FlightFrame and job.Sound.Position.Y-entry.Root.Position.Y>clear then
-        self.SuperDepartures=(self.SuperDepartures or 0)+1
-        entry.Departures=(entry.Departures or 0)+1
-        self.Status='Super Fast: upward departure observed'
-        local nextPhase=entry.Phase=='fly1'and'pair2'or entry.Phase=='fly2'and'burst'or'pair1'
-        local retryPhase=entry.Phase=='fly1'and'pair1'or entry.Phase=='fly2'and'pair2'or'burst'
-        self:RestSuperEntry(job,nextPhase,retryPhase)
-    elseif self.Context.Clock()-job.Started>.35 then
-        -- A blocked flight does not unlock the final stage or fabricate exit.
-        local retryPhase=entry.Phase=='fly1'and'pair1'or entry.Phase=='fly2'and'pair2'or'burst'
-        self:RestSuperEntry(job,retryPhase,retryPhase)
-        self.Status='Super Fast: blocked flight; retrying pair'
+    if self.PhysicsFrame<=job.StartFrame then return end
+    local hit,kind=false,nil
+    if self.Context.ReceiverOverlaps then
+        local ok,value=pcall(self.Context.ReceiverOverlaps,job.Sound,job.Receiver)
+        if ok and value==true then hit=true;kind='receiver-overlap'
+        elseif not ok then self.LastError='Super receiver query: '..tostring(value)end
+    end
+    if not hit and crossedReceiver(job)then hit=true;kind='receiver-center-sweep'end
+    if hit then
+        local started,reason
+        if self.Context.NativeTouch then
+            started,reason=self:BeginRootContact(entry.Character,function()return self:SuperJobValid(job)end,nil,job.Receiver)
+        end
+        if reason=='native-touch-error'then
+            pcall(self.Context.NativeTouch,job.Sound,job.Receiver,1);self:DropSuperEntry(entry,true);return
+        end
+        job.ContactFrame=self.PhysicsFrame;job.NativeStarted=started==true;job.EntryKind=kind
+        entry.Phase=job.Capture and'capture-contact'or'contact';entry.LastEntryKind=kind
+        entry.LastReceiverKind=job.ReceiverKind
+        self.SuperStrikes=(self.SuperStrikes or 0)+1
+        self.SuperInboundCrossings=(self.SuperInboundCrossings or 0)+1
+        self.Status='Super Fast: inbound receiver crossing observed'
+        return
+    end
+    job.PreviousSound=job.Sound.Position;job.PreviousReceiver=job.Receiver.Position
+    if self.Context.Clock()-job.Started>.4 then
+        entry.Misses=(entry.Misses or 0)+1
+        self:AbortSuperStroke(job,'Super Fast: incoming stroke missed; recapturing')
     end
 end
 function Pallet:SuperContact(character,valid)
-    if not self.Context.NativeTouch then return nil end
     if self.Closed or next(self.Pauses)or self.Active or(valid and not valid())then return false end
     local value=state(character)
     local root=character and(character:FindFirstChild('HumanoidRootPart')or character:FindFirstChild('saviHRP')or character:FindFirstChild('realHrp'))
@@ -94654,11 +94792,12 @@ function Pallet:SuperContact(character,valid)
     local entry=self.SuperStates[character]
     if entry and(entry.Value~=value or entry.Root~=root)then self:DropSuperEntry(entry,true);entry=nil end
     if not entry then
-        entry={Character=character,Root=root,Value=value,Valid=valid,Phase='pair1',PairHits=0,Departures=0}
+        entry={Character=character,Root=root,Value=value,Valid=valid,Phase='await-hold',BurstIndex=1,BurstHits=0,StableFrames=0}
         entry.Observer=Reaction.new(character,self.Context.Clock)
         self.SuperStates[character]=entry;self:QueueSuperEntry(entry)
     else entry.Valid=valid end
-    return self:AdvanceSuperBeforePhysics()==entry
+    self:AdvanceSuperBeforePhysics()
+    return false -- native begin is deferred until the actual inbound crossing
 end
 
 function Pallet:EndSourceContact(character,contact)
@@ -94810,10 +94949,10 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=11,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
+    local info={Version=12,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
         NativeContactBegins=self.SourceBegins or 0,NativeContactEnds=self.SourceEnds or 0,NativePalletReady=self.NativeKickReady==true,NativeTargets={},
         SuperFastPlacements=self.SuperStrikes or 0,SuperFastObservedDepartures=self.SuperDepartures or 0,SuperFastFlightActive=self.SuperFlight~=nil,
-        SuperFastBodyContacts=self.SuperBodyContacts or 0,SuperFastLaunches=self.SuperLaunches or 0,SuperFastTargets={},
+        SuperFastInboundCrossings=self.SuperInboundCrossings or 0,SuperFastBodyContacts=self.SuperBodyContacts or 0,SuperFastLaunches=self.SuperLaunches or 0,SuperFastTargets={},
         LocalRetryRateLimit=self.ContactRate,LocalRetryInterval=self.IntervalSeconds,Status=self.Status,OwnershipReason=self.OwnershipReason,Entries={}}
     for _,entry in pairs(self.Entries)do if not entry.Done then
         local reaction=entry.Reaction and entry.Reaction:Describe()
@@ -94827,8 +94966,8 @@ function Pallet:Evidence()
     end end
     for character,reaction in pairs(self.SourceReactions or{})do info.NativeTargets[#info.NativeTargets+1]={Character=character.Name,Reaction=reaction:Describe()}end
     for character,entry in pairs(self.SuperStates or{})do
-        info.SuperFastTargets[#info.SuperFastTargets+1]={Character=character.Name,Phase=entry.Phase,PairContacts=entry.PairHits,
-            Attempts=entry.Attempts or 0,ObservedDepartures=entry.Departures or 0,RecoveryNext=entry.RecoveryNext,
+        info.SuperFastTargets[#info.SuperFastTargets+1]={Character=character.Name,Phase=entry.Phase,BurstIndex=entry.BurstIndex,BurstContacts=entry.BurstHits,Bursts=entry.Bursts or 0,
+            Attempts=entry.Attempts or 0,CompletedStrokes=entry.Completed or 0,Misses=entry.Misses or 0,LastReceiverKind=entry.LastReceiverKind,LastEntryKind=entry.LastEntryKind,
             GameReactionObserved=entry.SeenReaction==true,Reaction=entry.Observer and entry.Observer:Describe()}
     end
     return info
@@ -95051,7 +95190,7 @@ function Loop:Physics(session)
     end
     self.Context.Collisions(session.Character,false)
     if not self.Context.PreserveCharacterRig then self.Context.Limbs(session.Character,true)end
-    if self.Context.Stabilize and session.SourceReady and(self.Context.NetworkOwned or self.Context.Owned)(session.Root)then
+    if self.Context.Stabilize and session.SourceReady and not session.RecoveringHold and(self.Context.NetworkOwned or self.Context.Owned)(session.Root)then
         self.Context.Stabilize(session.Character)
     end
 end
@@ -95122,6 +95261,51 @@ function Loop:FlushReleases()
         end
     end
 end
+-- Releasing an acknowledged marker is part of the healthy source cycle. A
+-- real loss of simulation ownership/overhead hold is different: retain the new
+-- grab while recovering instead of immediately releasing it and letting go.
+function Loop:TrackHold(session,position,now,networkOwned)
+    if not self.Context.RecoverLostHold then return end
+    local distance=(session.Root.Position-position).Magnitude
+    local close=networkOwned and finite(distance)and distance<=3
+    if close then
+        if session.HoldSampleFrame~=self.Frame then
+            session.HoldSampleFrame=self.Frame;session.HoldSamples=(session.HoldSamples or 0)+1
+        end
+        if session.HoldSamples>=2 then
+            session.HadPhysicalHold=true
+            if session.RecoveringHold and self.Context.Owned(session.Root)then
+                session.RecoveringHold=nil;session.RecoveryStarted=nil;session.RecoveryGrabAt=nil
+                session.SourceNextAt=nil;session.SourceDeadline=nil
+            end
+        end
+    else
+        session.HoldSamples=0;session.HoldSampleFrame=nil
+        if session.HadPhysicalHold and not session.RecoveringHold then
+            session.RecoveringHold=true;session.RecoveryStarted=now;session.RecoveryGrabAt=nil
+            session.SourceReady=nil;session.SourceNextAt=nil;session.SourceDeadline=nil
+            if self.Context.CancelRagdoll then self.Context.CancelRagdoll(session.Character)end
+        end
+    end
+end
+function Loop:RecoverHoldCycle(session,now)
+    local ctx=self.Context
+    if now<(session.RecoveryGrabAt or 0)or session.Acquiring then return end
+    if not(ctx.NetworkOwned or ctx.Owned)(session.Root)and now-(session.RecoveryStarted or now)>=.2 then
+        self:Acquire(session,now);return
+    end
+    if ctx.Grab(session.Root)~=false then session.Requested=true;self.Calls+=1 end
+    session.RecoveryGrabAt=now+.1
+end
+function Loop:RepairHoldMover(session)
+    if not self.Context.RecoverLostHold then return end
+    local root=session.Root;local mover=session.Position
+    if not mover or mover.Parent~=root then
+        local old=root:FindFirstChild("KickAP");if old then old:Destroy()end
+        mover=Instance.new("BodyPosition");mover.Name="KickAP";mover.D=self.Context.SourceMode and 100 or 200
+        mover.Position=root.Position;mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge);mover.Parent=root;session.Position=mover
+    elseif mover.MaxForce.Magnitude==0 then mover.MaxForce=Vector3.new(math.huge,math.huge,math.huge)end
+end
 function Loop:Update(session,position,now,ping)
     local ctx=self.Context;local root=session.Root
     -- The native cycle intentionally releases its grab marker. Once the
@@ -95134,6 +95318,7 @@ function Loop:Update(session,position,now,ping)
     elseif ctx.NativePhases~=true then
         session.CapturedFrame=nil;session.CaptureAcknowledged=nil
     end
+    self:RepairHoldMover(session)
     session.Position.Position=position
     if self.Excursion or self.CaptureAnchor then return end
     if not self.NativeTick then
@@ -95143,6 +95328,10 @@ function Loop:Update(session,position,now,ping)
     if session.Acquiring then return end
     if ctx.OwnershipBusy()then if session.Physics then self:Physics(session)end;return end
     local _,localRoot=ctx.LocalCharacter();if not localRoot then return end
+    if ctx.AcquireInitial and not session.CaptureAcknowledged and not ctx.Owned(root)then
+        self:TrackHold(session,position,now,networkOwned)
+        self:Acquire(session,now);return
+    end
     if(root.Position-localRoot.Position).Magnitude>33 then
         if ctx.Owned(root)then ctx.Teleport(root,position)
         else self:Acquire(session,now);return end
@@ -95153,6 +95342,7 @@ function Loop:Update(session,position,now,ping)
     local queued=session.Releases and #session.Releases>0
     local repeatReady=not queued and Handoff.CanGrab(session,self.Frame,now,(ctx.MarkerOwned or ctx.Owned)(root))
     if repeatReady and not ctx.IntervalSeconds and ctx.IntervalReady then repeatReady=ctx.IntervalReady(session.Player,session.Character)end
+    self:TrackHold(session,position,now,networkOwned)
     if ctx.SourceMode then
         if self:SourceCycle(session,now,period,networkOwned)then session.SourcePrimaryFrame=self.Frame end
     elseif repeatReady then
@@ -95218,6 +95408,7 @@ local sourceSteps={Faster={{'G','R'}},Normal={{'G','R'}},['Super Fast']={{'G','R
 function Loop:SourceCycle(session,now,period,networkOwned)
     local ctx=self.Context;local root=session.Root
     if not self:Valid(session)then return end
+    if ctx.RecoverLostHold and session.RecoveringHold then self:RecoverHoldCycle(session,now);return end
     local requested=ctx.SourceMode()
     local mode=requested=='Normal'and'Normal'or requested=='Super Fast'and'Super Fast'or'Faster'
     if session.SourceMode~=mode then
@@ -95344,7 +95535,7 @@ function Loop:Evidence()
  local result={FullCycleTiming=self.Context.IntervalSeconds~=nil,NativeFrames=self.Context.NativePhases==true,LowLatency=self.Context.LowLatency==true,GrabRequests=self.Calls,ReleaseRequests=self.Released,Targets={}}
  for _,session in pairs(self.Sessions)do result.Targets[#result.Targets+1]={Name=session.Player.Name,Phase=session.Handoff and session.Handoff.Phase,
   LastObserved=session.LastHandoff and session.LastHandoff.Observed,PhysicsOwned=self.Context.NetworkOwned and self.Context.NetworkOwned(session.Root)==true,
-  MarkerOwned=(self.Context.MarkerOwned or self.Context.Owned)(session.Root)==true,Acquiring=session.Acquiring==true}end
+  MarkerOwned=(self.Context.MarkerOwned or self.Context.Owned)(session.Root)==true,Acquiring=session.Acquiring==true,RecoveringHold=session.RecoveringHold==true}end
  return result
 end
 function Loop:Dispose()
