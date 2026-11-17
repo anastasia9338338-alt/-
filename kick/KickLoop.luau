@@ -435,13 +435,13 @@ function Loop:Update(session,position,now,ping)
     elseif session.EKI then self:RestoreEKI(session)end
     session.OwnedAt=ctx.Owned(root)and(session.OwnedAt or now)or nil
 end
--- Both modes retain v4.94 Faster's confirmed-capture -> Grab/Release cycle.
--- Normal keeps its old pre-physics cadence; Faster repeats that same pair once
--- after the solver, without same-callback bursts or catch-up traffic.
+-- Normal retains its old pre-physics cadence. Faster inherits v5.01 Super
+-- Fast's refresh cycle; the new Super Fast improves physical contact cadence
+-- without multiplying remote batches or replaying delayed requests.
 local sourceSteps={Faster={{'G','R'}},Normal={{'G','R'}},['Super Fast']={{'G','R'}}}
 -- Supplied Shadow Core Normal: ownership refresh, P=20000/D=75 overhead
 -- hold, actor-facing gyro, and six native release requests every three steps.
--- Faster retains that operation with a two-step period. The expensive initial
+-- Faster and Super Fast retain that operation with a one-step period. The initial
 -- approach is separate and never restarts merely because a marker was released.
 function Loop:ShadowCycle(session,now,period,networkOwned)
     local ctx=self.Context;local requested=ctx.SourceMode()
@@ -457,7 +457,7 @@ function Loop:ShadowCycle(session,now,period,networkOwned)
     if ctx.Grab(session.Root)~=false then session.Requested=true;self.Calls+=1 end
     session.ShadowFrame=(session.ShadowFrame or 0)+1
     local due=period and now+1e-7>=(session.ShadowNextAt or now+period)
-        or not period and session.ShadowFrame>=(mode=='Normal'and 3 or mode=='Super Fast'and 1 or 2)
+        or not period and session.ShadowFrame>=(mode=='Normal'and 3 or 1)
     if period and not session.ShadowNextAt then session.ShadowNextAt=now+period end
     if not due then return end
     session.ShadowSit=session.ShadowSit or{Value=session.Humanoid.Sit}

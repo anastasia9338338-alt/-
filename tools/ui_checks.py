@@ -91,9 +91,16 @@ end)
         s+='local UIStyle=(function()\n'+modules['UIStyle']+'\nend)()\nUIStyle.ApplyBase(Library)\n'
     if 'GUIStyle'in modules:
         s+='local GUIStyle=(function()\n'+modules['GUIStyle']+'\nend)()\n'
+    if 'BackgroundCatalog'in modules:
+        s+='local Catalog=(function()\n'+modules['BackgroundCatalog']+'\nend)()\n'
+        s+='local Appearance=(function(...)\n'+modules['GUIAppearance']+'\nend)(function(name)assert(name=="BackgroundCatalog");return Catalog end)\n'
     s+=startup_program(modules.get('Main'))
     body='ui_reference_body.luau' if 'ShadowObsidian'in modules.get('UIStyle','') else 'ui_native_body.luau'
-    return s+(support/body).read_text()
+    body_source=(support/body).read_text()
+    if 'BackgroundCatalog'in modules:
+        body_source=body_source.replace('local inputListeners=table.clone(UIS.InputBegan.Connections)',
+            (support/'ui_gallery_body.luau').read_text()+'\nlocal inputListeners=table.clone(UIS.InputBegan.Connections)')
+    return s+body_source
 
 if __name__=='__main__':
     args=argparse.ArgumentParser();args.add_argument('--luau',type=Path,required=True);args.add_argument('--bundle',type=Path);a=args.parse_args()

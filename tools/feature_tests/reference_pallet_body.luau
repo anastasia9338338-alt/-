@@ -5,9 +5,10 @@ for _,fps in ipairs({15,30,60,120,240})do
         f.Sim:Run(3,fps)
         check(f.Pallet.Passes>0,"Reference pallet stalled at "..fps.." / "..mode)
         check(f.Data.Spawned==0,"Cached pallet was respawned for each target pass")
-        check(f.Pallet.Passes<=math.floor(3*fps/3)+1,"Source passes bypassed their impact/exit physics frames")
-        if fps>=60 and mode=="Faster"then check(f.Pallet.Passes>=27 and f.Pallet.Passes<=31,"Fast complete-pass clock drifted from 0.10 s")end
-        if fps>=60 and mode=="Super Fast"then check(f.Pallet.Passes>=46 and f.Pallet.Passes<=51,"Super Fast complete-pass clock drifted from 0.06 s")end
+        local minimum=mode=="Super Fast"and 2 or 3
+        check(f.Pallet.Passes<=math.floor(3*fps/minimum)+1,"Source passes bypassed their impact/exit physics frames")
+        if fps>=60 and mode=="Faster"then check(f.Pallet.Passes>=46 and f.Pallet.Passes<=51,"Faster did not inherit the previous Super Fast 0.06 s clock")end
+        if fps>=60 and mode=="Super Fast"then check(f.Pallet.Passes>=89 and f.Pallet.Passes<=91,"Super Fast lost its two-frame bounded 30/s contact cadence")end
         check(not f.Target.Flag.Value and f.Pallet.Confirmed==0,"A placement was labelled a server-confirmed ragdoll")
         local before=f.Pallet.StrikeAttempts;f.Sim:Tick(1.5)
         check(f.Pallet.StrikeAttempts-before<=1,"A frame stall replayed a backlog of strikes")

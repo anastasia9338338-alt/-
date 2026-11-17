@@ -109,6 +109,13 @@ def run_feature_checks(modules,runner,folder):
         run('ui_motion',read('ui_engine_mock.luau')+'\nlocal Motion=(function()\n'+modules['UIMotion']+'\nend)()\n'+read('ui_motion_body.luau'))
     if 'Watermark'in modules:
         run('watermark',read('ui_engine_mock.luau')+'\nlocal HUD=(function()\n'+modules['Watermark']+'\nend)()\n'+read('watermark_body.luau'))
+    if 'NetworkTelemetry'in modules:
+        run('network_telemetry',read('ui_engine_mock.luau')+'\nlocal Telemetry=(function()\n'+modules['NetworkTelemetry']+'\nend)()\n'+read('network_telemetry_body.luau'))
+    if 'BackgroundStore'in modules:
+        prefix=read('ui_engine_mock.luau')+'\nlocal Catalog=(function()\n'+modules['BackgroundCatalog']+'\nend)()\n'
+        prefix+='local Assets={};for _,item in ipairs(Catalog.Items)do Assets[item.Key]="aGVsbG8="end\n'
+        prefix+='local Store=(function(...)\n'+modules['BackgroundStore']+'\nend)(function(name)if name=="BackgroundCatalog"then return Catalog elseif name=="BackgroundAssets"then return Assets end;error(name)end)\n'
+        run('background_store',prefix+read('background_store_body.luau'))
     if {'AquaAssets','AquaPose','AquaMesh','AquaModel'}<=modules.keys():
         program=read('model_mock.luau')+'\n'+read('aqua_mock.luau')
         for name,alias in [('AquaAssets','Assets'),('AquaPose','Pose'),('AquaMesh','Mesh'),('AquaEffects','Effects')]:

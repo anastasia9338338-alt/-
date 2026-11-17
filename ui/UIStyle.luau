@@ -19,7 +19,7 @@ function Style.Theme()
         GlassTransparency=0,RowTransparency=0,HeaderTransparency=0,FontFace="Code",BackgroundImage=""}
 end
 function Style.Window()
-    return {Title="astral",Subtitle="FTAP | v5.01",Footer="astral | v5.01",Icon=Style.BrandIcon,
+    return {Title="astral",Subtitle="FTAP | v5.02",Footer="astral | v5.02",Icon=Style.BrandIcon,
         NotifySide="Right",BackgroundImage=108109283852139,ShowCustomCursor=true,
         SidebarCompacted=true,CornerRadius=100,Size=UDim2.fromOffset(650,500),
         ToggleKeybind=Enum.KeyCode.RightShift,Center=true,AutoShow=true,

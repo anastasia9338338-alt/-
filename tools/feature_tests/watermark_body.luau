@@ -8,9 +8,12 @@ padding.PaddingLeft=UDim.new(0,28);padding.PaddingRight=UDim.new(0,12)
 local widget={Label=label,SetText=function(_,value)label.Text=value end,Centered=true}
 local reads=0
 local stats={Network={ServerStatsItem={["Data Ping"]={GetValue=function()reads+=1;return 73 end}}}}
+local transportReads=0
+function localPlayer:GetNetworkPing()transportReads+=1;return .08 end
 Players.MaxPlayers=25
 local library={Scheme={HeaderColor=label.BackgroundColor3,HeaderTransparency=.2},Registry={[label]={}}}
 local hud=HUD.Install({Widget=widget,RunService=RunService,Players=Players,Player=localPlayer,Workspace=workspace,Stats=stats,Library=library})
+check(hud.Values.Ping=="80"and reads==0,"HUD labelled replication Data Ping as network latency")
 check(widget.Centered==nil,"HUD kept a center-lock flag that blocks saved positions")
 check(label.Position.X.Scale==.5 and label.Position.Y.Offset==12,"HUD was not initially placed at top center")
 check(label.BackgroundColor3.R==35/255 and label.TextColor3.R==239/255,"HUD overwrote the shared slate theme")
@@ -22,6 +25,7 @@ local afterDragReads=reads
 advance(3.2)
 check(label.Position==dragged and label.AnchorPoint.X==0,"Periodic telemetry snapped a dragged HUD back to center")
 check(reads-afterDragReads<=4,"Telemetry sampled network stats more than once per second")
+check(transportReads<=5,"HUD oversampled isolated transport latency")
 local saved=UDim2.new(.73,-40,.25,18);label.Position=saved
 workspace.CurrentCamera.ViewportSize=Vector2.new(180,400)
 hud:Update()

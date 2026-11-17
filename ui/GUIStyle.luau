@@ -86,10 +86,8 @@ function Style:Apply()
  for _,node in ipairs(lib.ScreenGui:GetDescendants())do
   if node:IsA('TextLabel')or node:IsA('TextButton')or node:IsA('TextBox')then
    local record=self.Records[node]
-   if not record then record={Size=node.TextSize,Face=node.FontFace,Position=node.Position,Bounds=node.Size};self.Records[node]=record end
+   if not record then record={Size=node.TextSize,Face=node.FontFace};self.Records[node]=record end
    node.TextSize=math.clamp(math.floor(record.Size*c.Scale+.5),8,40)
-   node.Position=UDim2.new(record.Position.X.Scale,record.Position.X.Offset,record.Position.Y.Scale,record.Position.Y.Offset*c.Scale)
-   node.Size=UDim2.new(record.Bounds.X.Scale,record.Bounds.X.Offset,record.Bounds.Y.Scale,record.Bounds.Y.Offset*c.Scale)
    node.FontFace=face and Font.new(face.Family,record.Face.Weight,record.Face.Style)or record.Face
   end
   if node.Name=='SliderFill'then node.BackgroundColor3=c.Fill
@@ -108,6 +106,8 @@ function Style:Apply()
    self.Adornments[label]=a
   end
   local row=a.RowSize
+  if a.LastPosition and label.Position~=a.LastPosition then a.Position=label.Position end
+  if a.LastSize and label.Size~=a.LastSize then a.Size=label.Size end
   if row.Y.Scale==0 then label.Parent.Size=UDim2.new(row.X.Scale,row.X.Offset,0,row.Y.Offset*c.Scale)end
   a.Icon.Visible=c.Icons;a.Line.Visible=c.Separators;a.Line.BackgroundColor3=c.LineColor;a.Line.BackgroundTransparency=c.LineAlpha
   if c.Icons then
@@ -117,6 +117,7 @@ function Style:Apply()
    label.Position=UDim2.new(a.Position.X.Scale,a.Position.X.Offset+c.IconSize+5,a.Position.Y.Scale,a.Position.Y.Offset*c.Scale)
    label.Size=UDim2.new(a.Size.X.Scale,a.Size.X.Offset-c.IconSize-5,a.Size.Y.Scale,a.Size.Y.Offset*c.Scale)
   else label.Position=UDim2.new(a.Position.X.Scale,a.Position.X.Offset,a.Position.Y.Scale,a.Position.Y.Offset*c.Scale);label.Size=UDim2.new(a.Size.X.Scale,a.Size.X.Offset,a.Size.Y.Scale,a.Size.Y.Offset*c.Scale) end
+  a.LastPosition=label.Position;a.LastSize=label.Size
  end end
  table.sort(names)
  if #names~=(self.NameCount or-1)then self.NameCount=#names;if #names>0 then self.Target:SetValues(names)end end
@@ -133,6 +134,6 @@ function Style:Dispose()
   end
   a.Icon:Destroy();a.Line:Destroy()
  end
- for node,r in pairs(self.Records)do if node.Parent then node.TextSize=r.Size;node.FontFace=r.Face;node.Position=r.Position;node.Size=r.Bounds end end
+ for node,r in pairs(self.Records)do if node.Parent then node.TextSize=r.Size;node.FontFace=r.Face end end
 end
 return Style

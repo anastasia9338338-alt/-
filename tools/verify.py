@@ -23,6 +23,9 @@ def main():
     if 'ReferenceTrajectory'in modules.get('PalletRagdoll',''):
         from check_transfer_preservation import check
         check(modules)
+    if 'BackgroundAssets'in modules:
+        from check_gallery_assets import check
+        check(modules)
     for name,body in modules.items():
         for dependency in re.findall(r'requireModule\(["\'](\w+)["\']\)',body):
             assert dependency in modules,(name,'missing module',dependency)

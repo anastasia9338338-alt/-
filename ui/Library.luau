@@ -3126,7 +3126,7 @@ function Library:AddDraggableLabel(...)
 
             IconImage = IconImage or New("ImageLabel", {
                 BackgroundTransparency = 1,
-                ImageColor3 = "FontColor",
+                ImageColor3 = "AccentColor",
                 Size = UDim2.fromOffset(16, 16),
                 ZIndex = 2,
                 Parent = Label,
@@ -4088,7 +4088,7 @@ function Library:GetAddonHost(control)
         label.Parent=row;label.Position=UDim2.fromOffset(12,0);label.Size=UDim2.new(1,-24,1,0)
         control.Holder=row;control.AddonRow=row
     end
-    local inset=control.Type=="Toggle" and (control.SettingsGear and 80 or 48) or 10
+    local inset=control.Type=="Toggle" and 72 or 10
     local host=New("Frame",{Name="Addons",AnchorPoint=Vector2.new(1,.5),
         Position=UDim2.new(1,-inset,.5,0),Size=UDim2.fromOffset(0,26),
         AutomaticSize=Enum.AutomaticSize.X,BackgroundTransparency=1,Parent=row})
@@ -4098,7 +4098,7 @@ function Library:GetAddonHost(control)
     local function reserve()
         if control.Destroyed then return end
         local width=layout.AbsoluteContentSize.X/Library.DPIScale
-        inset=control.Type=="Toggle" and (control.SettingsGear and 80 or 48) or 10
+        inset=control.Type=="Toggle" and 72 or 10
         host.Position=UDim2.new(1,-inset,.5,0)
         local text=isButton and control.Content or label
         if text then
@@ -4110,7 +4110,24 @@ function Library:GetAddonHost(control)
     control.Connections=control.Connections or{}
     table.insert(control.Connections,layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(reserve))
     control.AddonHost=host;control.RefreshAddons=reserve
+    reserve()
     return host
+end
+
+-- A fixed rail keeps bind, activation and settings aligned on every row.
+function Library:LayoutToggle(control)
+    if not control or not control.Control then return end
+    local widget=control.Control
+    widget.AnchorPoint=Vector2.new(1,.5)
+    widget.Position=UDim2.new(1,-30,.5,0)
+    widget.Size=UDim2.fromOffset(control.Variant=="Switch"and 32 or 20,20)
+    if control.SettingsGear then
+        control.SettingsGear.Position=UDim2.new(1,-3,.5,0)
+        control.SettingsGear.Size=UDim2.fromOffset(22,22)
+    end
+    control.TextLabel.Position=UDim2.fromOffset(4,0)
+    if control.RefreshAddons then control.RefreshAddons()
+    else control.TextLabel.Size=UDim2.new(1,-84,1,0)end
 end
 
 -- Gear panels reuse the existing controls and their callbacks/settings IDs.
@@ -4145,10 +4162,7 @@ function Library:AttachSettings(owner, controls)
             ImageColor3="FontColor",ImageTransparency=.25,Parent=owner.Holder})
         local icon=Library:GetCustomIcon("settings");if icon then Library:ApplyLucideIcon(gear,icon)end
         owner.SettingsGear=gear
-        local checkbox=owner.Holder:FindFirstChild("Checkbox")
-        if checkbox then checkbox.Position=UDim2.new(1,-42,.5,0)end
-        if owner.RefreshAddons then owner.RefreshAddons()
-        elseif owner.TextLabel then owner.TextLabel.Size=UDim2.new(1,-86,1,0)end
+        Library:LayoutToggle(owner)
         data={Frame=frame,Body=body,Gear=gear,Controls={},Connections={}}
         owner.SettingsPanel=data;Library.SettingsPanels[frame]=data
         local function fit()
@@ -7181,7 +7195,7 @@ do
         local Button = New("TextButton", {
             Active = not Toggle.Disabled,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 18),
+            Size = UDim2.new(1, 0, 0, 28),
             Text = "",
             Visible = Toggle.Visible,
             Parent = Container,
@@ -7198,12 +7212,6 @@ do
             Parent = Button,
         })
 
-        New("UIListLayout", {
-            FillDirection = Enum.FillDirection.Horizontal,
-            HorizontalAlignment = Enum.HorizontalAlignment.Right,
-            Padding = UDim.new(0, 6),
-            Parent = Label,
-        })
 
         local Checkbox = New("Frame", {
             BackgroundColor3 = "MainColor",
@@ -7356,6 +7364,8 @@ do
         setmetatable(Toggle, BaseAddons)
 
         Toggle.Holder = Button
+        Toggle.Control = Checkbox
+        Library:LayoutToggle(Toggle)
         table.insert(Groupbox.Elements, Toggle)
 
         Toggle.Default = Toggle.Value
@@ -7443,7 +7453,7 @@ do
         local Button = New("TextButton", {
             Active = not Toggle.Disabled,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 18),
+            Size = UDim2.new(1, 0, 0, 28),
             Text = "",
             Visible = Toggle.Visible,
             Parent = Container,
@@ -7459,12 +7469,6 @@ do
             Parent = Button,
         })
 
-        New("UIListLayout", {
-            FillDirection = Enum.FillDirection.Horizontal,
-            HorizontalAlignment = Enum.HorizontalAlignment.Right,
-            Padding = UDim.new(0, 6),
-            Parent = Label,
-        })
 
         local Switch = New("Frame", {
             AnchorPoint = Vector2.new(1, 0),
@@ -7634,6 +7638,8 @@ do
         setmetatable(Toggle, BaseAddons)
 
         Toggle.Holder = Button
+        Toggle.Control = Switch
+        Library:LayoutToggle(Toggle)
         table.insert(Groupbox.Elements, Toggle)
 
         Toggle.Default = Toggle.Value
@@ -10559,9 +10565,9 @@ end
 function Library:SetBackgroundImage(Image: string | number)
     assert(typeof(Image) == "string" or typeof(Image) == "number", "Expected string/number got " .. typeof(Image))
 
-    Library.Scheme.BackgroundImage = ""
+    Library.Scheme.BackgroundImage = tostring(Image)
     if Library.Window then
-        Library.Window:SetBackgroundImage("")
+        Library.Window:SetBackgroundImage(Image)
     end
 
     Library:UpdateColorsUsingRegistry()
@@ -11094,8 +11100,6 @@ function Library:CreateWindow(WindowInfo)
     local ResizeButton
     local Tabs
     local Container
-    local BackgroundImage
-    local HasBackgroundImage = false
     local BottomBackground
     local BottomBackgroundCorner
     local FooterLabel
@@ -11157,53 +11161,6 @@ function Library:CreateWindow(WindowInfo)
             ZIndex = 2
         })
 
-        local BackgroundIcon = Library:GetCustomIcon(WindowInfo.BackgroundImage)
-        HasBackgroundImage = BackgroundIcon ~= nil
-        BackgroundImage = New("ImageLabel", {
-            Active = false,
-            Position = UDim2.fromScale(0, 0),
-            Size = UDim2.fromScale(1, 1),
-            ScaleType = Enum.ScaleType.Stretch,
-            ZIndex = Overlay.ZIndex + 1,
-            BackgroundTransparency = 1,
-            ImageTransparency = 0.75,
-            Visible = false,
-            Parent = ScreenGui,
-        })
-        if BackgroundIcon then
-            Library:ApplyLucideIcon(BackgroundImage, BackgroundIcon)
-        end
-
-        table.insert(
-            Library.Corners,
-            New("UICorner", {
-                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
-                Parent = BackgroundImage,
-            })
-        )
-
-        Library:GiveSignal(RunService.RenderStepped:Connect(function()
-            if not (BackgroundImage and MainFrame) then
-                return
-            end
-
-            local ShouldShow = HasBackgroundImage and MainFrame.Visible
-            BackgroundImage.Visible = ShouldShow
-
-            if not ShouldShow then
-                return
-            end
-
-            BackgroundImage.Position = UDim2.fromOffset(
-                MainFrame.AbsolutePosition.X,
-                MainFrame.AbsolutePosition.Y
-            )
-            BackgroundImage.Size = UDim2.fromOffset(
-                MainFrame.AbsoluteSize.X,
-                MainFrame.AbsoluteSize.Y
-            )
-        end))
-
         if WindowInfo.Center then
             MainFrame.Position = UDim2.new(0.5, -MainFrame.Size.X.Offset / 2, 0.5, -MainFrame.Size.Y.Offset / 2)
         end
@@ -11233,6 +11190,8 @@ function Library:CreateWindow(WindowInfo)
         if WindowInfo.Icon then
             local Icon = Library:GetCustomIcon(WindowInfo.Icon)
             WindowIcon = New("ImageLabel", {
+                Name = "AstralBrandIcon",
+                ImageColor3 = "AccentColor",
                 Size = WindowInfo.IconSize,
                 Parent = TitleHolder,
             })
@@ -11401,6 +11360,7 @@ function Library:CreateWindow(WindowInfo)
 
         --// Bottom Bar \\--
         BottomBackground = New("Frame", {
+            BackgroundTransparency = 1,
             AnchorPoint = Vector2.new(0, 1),
             BackgroundColor3 = function()
                 return Library:GetBetterColor(Library.Scheme.BackgroundColor, 4)
@@ -11475,6 +11435,7 @@ function Library:CreateWindow(WindowInfo)
 
         --// Tabs \\--
         Tabs = New("ScrollingFrame", {
+            BackgroundTransparency = 1,
             AutomaticCanvasSize = Enum.AutomaticSize.Y,
             BackgroundColor3 = "BackgroundColor",
             CanvasSize = UDim2.fromScale(0, 0),
@@ -11498,6 +11459,7 @@ function Library:CreateWindow(WindowInfo)
 
         --// Container \\--
         Container = New("Frame", {
+            BackgroundTransparency = 1,
             AnchorPoint = Vector2.new(1, 0),
             BackgroundColor3 = function()
                 return Library:GetBetterColor(Library.Scheme.BackgroundColor, 1)
@@ -11539,60 +11501,11 @@ function Library:CreateWindow(WindowInfo)
         WindowInfo.Title = title
     end
 
-    function Window:SetBackgroundImage(Image: string)
-        local ValidIcon = false
-
-        if typeof(Image) == "string" then
-            local BackgroundIcon = Library:GetCustomIcon(Image)
-
-            if BackgroundIcon then
-                ValidIcon = true
-
-                Library:ApplyLucideIcon(BackgroundImage, BackgroundIcon)
-            elseif Image:match("http://") or Image:match("https://") then
-                local RawFileName = Image:match("(.+)%..+$")
-                local _, Domain = Image:match("^(https?://)([^/]+)");
-
-                if RawFileName and Domain then
-                    local Extention = string.sub(Image, #RawFileName + 1, #Image)
-                    local FileNamePos = RawFileName:gsub("\\", "/"):find("/[^/]*$")
-                    local FileName = FileNamePos and Image:sub(FileNamePos + 1) or nil
-
-                    if FileName then
-                        ValidIcon = true
-
-                        local AssetName = Domain .. FileName
-                        if #AssetName > 255 then
-                            local NewLength = 255 - #Domain - #Extention
-                            if NewLength < 0 then
-                                AssetName = Domain .. Extention
-                            else
-                                AssetName = Domain .. string.sub(FileName:sub(1, #FileName - #Extention), 1, NewLength) .. Extention
-                            end
-                        end
-
-                        if CustomImageManagerAssets[FileName] == nil then
-                            CustomImageManager.AddAsset(FileName, 0, Image)
-                        else
-                            CustomImageManager.DownloadAsset(FileName, true)
-                        end
-
-                        BackgroundImage.Image = CustomImageManager.GetAsset(FileName)
-                        BackgroundImage.ImageRectOffset = Vector2.zero
-                        BackgroundImage.ImageRectSize = Vector2.zero
-                    end
-                end
-            end
-        end
-
-        if not ValidIcon then
-            BackgroundImage.Image = ""
-            BackgroundImage.ImageRectOffset = Vector2.zero
-            BackgroundImage.ImageRectSize = Vector2.zero
-        end
-
-        HasBackgroundImage = ValidIcon
-        WindowInfo.BackgroundImage = Image
+    function Window:SetBackgroundImage(Image)
+        if tostring(Image or "")=="" then return end -- theme resets preserve the selected wallpaper
+        Window.BackgroundSource=Image
+        local control=Library.Options.AstralGUIBackgroundURL
+        if control and tostring(control.Value)~=tostring(Image)then control:SetValue(tostring(Image))end
     end
 
     function Window:SetFooter(Footer: string)
@@ -11906,7 +11819,7 @@ function Library:CreateWindow(WindowInfo)
 
             if Icon then
                 TabIcon = New("ImageLabel", {
-                    ImageColor3 = Icon.Custom and "WhiteColor" or "AccentColor",
+                    ImageColor3 = "AccentColor",
                     ImageTransparency = 0.5,
                     ScaleType = Enum.ScaleType.Fit,
                     Size = UDim2.fromScale(1, 1),
@@ -12632,10 +12545,12 @@ function Library:CreateWindow(WindowInfo)
 
             do
                 GroupboxHolder = New("Frame", {
+                    BackgroundTransparency = function()return Library.AppearanceController and Library.AppearanceController:PanelAlpha()or Library.Scheme.GlassTransparency end,
                     BackgroundColor3 = "BackgroundColor",
                     Size = UDim2.fromScale(1, 0),
                     Parent = BoxHolder,
                 })
+                GroupboxHolder:SetAttribute("AstralWallpaperPanel",true)
                 table.insert(
                     Library.Corners,
                     New("UICorner", {
@@ -14372,6 +14287,7 @@ function Library:CreateWindow(WindowInfo)
     end))
 
     Window.MainFrame = MainFrame
+    Window.BackgroundSource = WindowInfo.BackgroundImage
     Library.Window = Window
 
     return Window
@@ -15189,6 +15105,7 @@ function Library:StylePopupSurface(frame)
             return ColorSequence.new(Library.Scheme.BodyTopColor,Library.Scheme.BodyBottomColor)
         end,Parent=frame})
     end
+    self:RegisterArtworkSurface(frame)
 end
 function Library:RegisterArtworkSurface(frame)
     self.ArtworkSurfaces=self.ArtworkSurfaces or setmetatable({},{__mode='k'})

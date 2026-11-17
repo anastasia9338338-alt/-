@@ -7,7 +7,7 @@ for _,mode in ipairs({"Normal","Faster","Super Fast"})do
     local loop=setmetatable({Context=context,Sessions={},Calls=0,Released=0,Frame=0},Loop)
     function loop:Valid(entry)return valid and entry==session end
     for i=1,60 do loop.Frame=i;loop:SourceCycle(session,i/60,nil,true)end
-    local expected=mode=="Normal"and 120 or mode=="Faster"and 180 or 360
+    local expected=mode=="Normal"and 120 or 360
     check(releases==expected and grabs==60,"Source refresh cadence changed or Super Fast stayed in capture-only mode: "..mode)
     valid=false;local before=grabs+releases;loop:SourceCycle(session,2,nil,true)
     check(grabs+releases==before,"Cancelled source cycle kept issuing remote requests")

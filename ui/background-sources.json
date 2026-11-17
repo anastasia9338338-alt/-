@@ -1,0 +1,82 @@
+[
+  {
+    "key": "Winter01",
+    "name": "Снежная лестница",
+    "source": "https://i.pinimg.com/736x/1f/e5/29/1fe529587285dae0fd004497ac8d2cc1.jpg",
+    "bytes": 97227,
+    "sha256": "a266c99d049ed218056c3abce20898aafabcef94bcc7a58b0549a30108d5d6e6",
+    "user_supplied": true
+  },
+  {
+    "key": "Winter02",
+    "name": "Кот у зимнего леса",
+    "source": "https://i.pinimg.com/736x/90/6f/58/906f58d7915dc3d12b1c27fed66a0177.jpg",
+    "bytes": 146739,
+    "sha256": "fb1384140e03539c0231f82464d5422b626952dc22cdb7cb2d964a1e9cf3c238",
+    "user_supplied": true
+  },
+  {
+    "key": "Winter03",
+    "name": "Зимний поезд",
+    "source": "https://raw.githubusercontent.com/dharmx/walls/6bf4d733ebf2b484a37c17d742eb47e5139e6a14/anime/a_train_on_tracks_in_a_snowy_city.jpg",
+    "bytes": 315856,
+    "sha256": "9f429b154f6d0b0428dbca1850de20512ff9807d0363784669bc7a7a90d05465",
+    "user_supplied": false
+  },
+  {
+    "key": "Winter04",
+    "name": "Иней над озером",
+    "source": "https://raw.githubusercontent.com/dharmx/walls/6bf4d733ebf2b484a37c17d742eb47e5139e6a14/anime/a_tree_branch_with_snow_on_it.jpg",
+    "bytes": 237622,
+    "sha256": "52e9abc3d81eeced967b7732fdeb2ca2ba0abc280268b1b432fb9e50b537d07f",
+    "user_supplied": false
+  },
+  {
+    "key": "Winter05",
+    "name": "Горная тишина",
+    "source": "https://raw.githubusercontent.com/dharmx/walls/6bf4d733ebf2b484a37c17d742eb47e5139e6a14/cold/a_mountain_with_snow_and_trees.jpg",
+    "bytes": 237435,
+    "sha256": "232190e0769dc35b3395162815e7fa7bbff99c7badcba2e08b4a7d7ad73e3920",
+    "user_supplied": false
+  },
+  {
+    "key": "Winter06",
+    "name": "Рассвет в горах",
+    "source": "https://raw.githubusercontent.com/dharmx/walls/6bf4d733ebf2b484a37c17d742eb47e5139e6a14/cold/a_mountain_with_snow_and_clouds.jpg",
+    "bytes": 294633,
+    "sha256": "766197a6fa5065253846f90b1f1ee24c12d642263cc77de663271f61f99737e4",
+    "user_supplied": false
+  },
+  {
+    "key": "Winter07",
+    "name": "Холодное озеро",
+    "source": "https://raw.githubusercontent.com/dharmx/walls/6bf4d733ebf2b484a37c17d742eb47e5139e6a14/mountain/a_mountain_with_snow_on_top_and_a_body_of_water.jpg",
+    "bytes": 448718,
+    "sha256": "ad079656a2f4aa647f2176e21319029f10ea8f5f20b988c18e41e92c3c949e48",
+    "user_supplied": false
+  },
+  {
+    "key": "Winter08",
+    "name": "Снег в городе",
+    "source": "https://raw.githubusercontent.com/dharmx/walls/6bf4d733ebf2b484a37c17d742eb47e5139e6a14/architecture/a_city_in_the_snow.jpg",
+    "bytes": 584243,
+    "sha256": "c32bac3e4759b19aba99eb87f1bfa41fb9a25e0a0887d66a9b58a9e760714f0c",
+    "user_supplied": false
+  },
+  {
+    "key": "Winter09",
+    "name": "Берёзовая зима",
+    "source": "https://raw.githubusercontent.com/dharmx/walls/6bf4d733ebf2b484a37c17d742eb47e5139e6a14/digital/a_group_of_trees_in_a_snowy_field.jpg",
+    "bytes": 1395614,
+    "sha256": "138e4afe6c6ba8d18c063a61917fd4d49d96a3aeb524ca450357533bb88a860e",
+    "user_supplied": false
+  },
+  {
+    "key": "Winter10",
+    "name": "Зимняя прогулка",
+    "source": "https://raw.githubusercontent.com/dharmx/walls/6bf4d733ebf2b484a37c17d742eb47e5139e6a14/digital/a_group_of_people_walking_on_a_snowy_road_with_a_dog.jpg",
+    "bytes": 303191,
+    "sha256": "6a80102e0fc1b77ead4abcc45397bafd12ff8af3f3b6e50473cd5f1b542f041b",
+    "user_supplied": false
+  }
+]

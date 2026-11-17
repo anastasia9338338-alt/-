@@ -11,7 +11,7 @@ source=(ROOT/'astral.lua').read_text()
 updates={}
 if a.module_dir:
     updates.update({p.stem:p.read_text()for p in a.module_dir.glob('*.luau')})
-for name in ('Library','UIMotion','Watermark','UIStyle','GUIStyle'):
+for name in ('Library','UIMotion','Watermark','UIStyle','GUIStyle','GUIAppearance','BackgroundCatalog','BackgroundAssets','BackgroundStore','NetworkTelemetry'):
     updates[name]=(ROOT/'ui'/f'{name}.luau').read_text()
 updates['PalletRagdoll']=(ROOT/'kick/ReferencePallet.luau').read_text()
 updates['ReferenceAntiKick']=(ROOT/'kick/ReferenceAntiKick.luau').read_text()

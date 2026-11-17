@@ -22,6 +22,7 @@ function HUD.Install(context)
     label.TextTruncate=Enum.TextTruncate.AtEnd;label.BorderSizePixel=0
     local round=label:FindFirstChildOfClass("UICorner")or Instance.new("UICorner")
     round.CornerRadius=UDim.new(1,0);round.Parent=label
+    if context.Library and context.Library.RegisterArtworkSurface then context.Library:RegisterArtworkSurface(label)end
     self.Connections[#self.Connections+1]=context.RunService.RenderStepped:Connect(function(dt)
         if not finite(dt)or dt<=0 or dt>.5 then return end
         self.Frames+=1;self.FrameTime+=dt
@@ -37,7 +38,10 @@ function HUD:Update()
     if self.Closed then return end
     local ctx=self.Context;local label=ctx.Widget.Label
     if not label.Parent then self:Dispose();return end
-    local ping="—";local ok,value=pcall(function()return ctx.Stats.Network.ServerStatsItem["Data Ping"]:GetValue()end)
+    local ping="—";local ok,value=pcall(function()
+        if ctx.PingMs then return ctx.PingMs()end
+        return ctx.Player:GetNetworkPing()*1000
+    end)
     if ok and finite(value)and value>=0 then ping=tostring(math.floor(value+.5))end
     local max=ctx.Players.MaxPlayers
     self.Values={Players=#ctx.Players:GetPlayers(),MaxPlayers=finite(max)and math.floor(max)or nil,FPS=self.FPS,Ping=ping}

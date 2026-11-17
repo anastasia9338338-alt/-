@@ -146,8 +146,8 @@ function Pallet:Profile(entry)
     if entry.Manual or not entry.Continuous then return 8,1/60,0 end -- source task.wait() descent
     local mode=self.Context.KickMode and self.Context.KickMode()or "Faster"
     if mode=="Normal"then return 8,math.max(1/60,self.IntervalSeconds*.5),0 end
-    if mode=="Super Fast"then return 2,0,.06 end
-    return 4,0,.1
+    if mode=="Super Fast"then return 1,0,self.IntervalSeconds end -- one contact frame, one exit frame; bounded at 30 passes/s
+    return 2,0,.06 -- the v5.01 Super Fast profile is now Faster
 end
 function Pallet:Place(entry,point,velocity)
     local assembly=isolated(self.Sound,self.Model)
@@ -241,7 +241,7 @@ end
 function Pallet:Evidence()
     local targets={};for _,entry in pairs(self.Entries)do targets[#targets+1]={Name=entry.Character.Name,Stage=entry.Stage,Phase=entry.Phase,Passes=entry.Passes or 0,Continuous=entry.Continuous}end
     return {Mechanism="ReferenceTrajectory",PlacementAttempts=self.StrikeAttempts,CompletedPasses=self.Passes,ConfirmedRagdollStates=self.Confirmed,
-        FastPassPeriod=.1,SuperFastPassPeriod=.06,PhysicalFrames=self.PhysicsFrame,Targets=targets,LastError=self.LastError}
+        FastPassPeriod=.06,SuperFastPassPeriod=self.IntervalSeconds,SuperFastMinimumPhysicsFrames=2,PhysicalFrames=self.PhysicsFrame,Targets=targets,LastError=self.LastError}
 end
 function Pallet:Summary()return string.format("%s | source passes: %d | placements: %d",self.Status,self.Passes,self.StrikeAttempts)end
 function Pallet:Dispose()
