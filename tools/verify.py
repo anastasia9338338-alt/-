@@ -20,6 +20,9 @@ def main():
     pattern=re.compile(r'^sources\.(\w+) = \[========\[\n(.*?)\n\]========\]',re.M|re.S)
     matches=pattern.findall(source);modules=dict(matches)
     assert len(matches)==len(modules)and {'Main','Bootstrap','Notices','ExtraFeatures'}<=modules.keys()
+    if 'ReferenceTrajectory'in modules.get('PalletRagdoll',''):
+        from check_transfer_preservation import check
+        check(modules)
     for name,body in modules.items():
         for dependency in re.findall(r'requireModule\(["\'](\w+)["\']\)',body):
             assert dependency in modules,(name,'missing module',dependency)

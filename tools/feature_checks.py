@@ -42,6 +42,8 @@ def run_feature_checks(modules,runner,folder):
             ('SlideTeleport','Slide','slide_teleport_body.luau'),('PalletMagnet','Magnet','pallet_magnet_body.luau'),
             ('WaterRescue','Rescue','water_rescue_body.luau'),('BlobmanCadence','Cadence','blobman_cadence_body.luau')]:
         if module in modules:
+            if module=='FoodRemover'and 'Native Hold ->'in modules[module]:body='food_native_body.luau'
+            if module=='PalletMagnet'and 'User-provided underfoot lock'in modules[module]:body='pallet_lock_body.luau'
             run(module.lower(),read('model_mock.luau')+'\nlocal PhysicalProperties={new=function(...)return{...}end}\nlocal '+alias+'=(function()\n'+modules[module]+'\nend)()\n'+read(body))
     if 'local spinState = {Enabled = false}'in modules.get('Main',''):
         main=modules['Main'];start=main.index('local spinState = {Enabled = false}')
@@ -54,7 +56,7 @@ def run_feature_checks(modules,runner,folder):
         end=main.index('\n            end})',start)+len('\n            end')
         program=read('model_mock.luau')+'\n'+read('teleport_cursor_prefix.luau')+'\nlocal teleport='+main[start:end]+'\n'+read('teleport_cursor_body.luau')
         run('teleport_cursor',program)
-    if 'BlobmanCadence'in modules:
+    if 'BlobmanCadence'in modules and '        tbl14.BlobLoopTokens='in modules.get('Main',''):
         main=modules['Main'];start=main.index('        tbl14.BlobLoopTokens=')
         end=main.index('\n\t\ttbl14.LoopLock =',start)
         program=read('model_mock.luau')+'\nlocal Cadence=(function()\n'+modules['BlobmanCadence']+'\nend)()\n'+read('blobman_loop_prefix.luau')+'\n'+main[start:end]+'\n'+read('blobman_loop_body.luau')
@@ -64,7 +66,11 @@ def run_feature_checks(modules,runner,folder):
         end=main.index('        tbl12.UFOBlaster=',start)
         program=read('model_mock.luau')+'\nlocal Flags=(function()\n'+modules['GameFlags']+'\nend)()\n'+read('ufo_spawn_prefix.luau')+'\n'+main[start:end]+'\n'+read('ufo_spawn_body.luau')
         run('ufo_spawn',program)
-    if 'PalletRagdoll'in modules and 'Resonance29Ragdoll'in modules:
+    reference_pallet='ReferenceTrajectory'in modules.get('PalletRagdoll','')
+    if reference_pallet:
+        from transfer_checks import run_transfer_checks
+        run_transfer_checks(modules,runner,folder)
+    if not reference_pallet and 'PalletRagdoll'in modules and 'Resonance29Ragdoll'in modules:
         program=read('kick_mock.luau')+'\nlocal Source=(function()\n'+modules['Resonance29Ragdoll']+'\nend)()\n'
         program+='local Ownership=(function()\n'+modules['PalletOwnership']+'\nend)()\nlocal Reaction=(function()\n'+modules['PalletReaction']+'\nend)()\n'
         if 'PalletStroke'in modules:
@@ -91,7 +97,7 @@ def run_feature_checks(modules,runner,folder):
         run('nativeui',program(modules))
         library=modules['Library']
         slider=library[library.index('    function Funcs:AddSlider('):library.index('    function Funcs:AddDropdown(')]
-        run('slider',read('slider_mock.luau')+'\n'+slider+'\n'+read('slider_body.luau'))
+        if not reference_pallet:run('slider',read('slider_mock.luau')+'\n'+slider+'\n'+read('slider_body.luau'))
         start=library.index('        table.insert(KeyPicker.Connections, UserInputService.InputBegan:Connect(')
         end=library.index('\n        KeyPicker:Update()',start)
         declaration=re.search(r'local SlideForwardConn, SlideBackConn, InputChanged',library)

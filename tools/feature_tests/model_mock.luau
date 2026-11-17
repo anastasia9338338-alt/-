@@ -67,6 +67,7 @@ function CFrame.new(x,y,z)
  return frame(Vector3.new(x or 0,y or 0,z or 0))
 end
 local CFMethods={}
+function CFMethods:GetComponents()return self.Position.X,self.Position.Y,self.Position.Z,table.unpack(self.R)end
 function CFMethods:VectorToWorldSpace(v)return mv(self.R,v)end
 function CFMethods:VectorToObjectSpace(v)local r=self.R;return mv({r[1],r[4],r[7],r[2],r[5],r[8],r[3],r[6],r[9]},v)end
 function CFMethods:Inverse()local r=self.R;local t={r[1],r[4],r[7],r[2],r[5],r[8],r[3],r[6],r[9]};return frame(-mv(t,self.Position),t)end

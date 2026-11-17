@@ -9,11 +9,13 @@ local widget={Label=label,SetText=function(_,value)label.Text=value end,Centered
 local reads=0
 local stats={Network={ServerStatsItem={["Data Ping"]={GetValue=function()reads+=1;return 73 end}}}}
 Players.MaxPlayers=25
-local hud=HUD.Install({Widget=widget,RunService=RunService,Players=Players,Player=localPlayer,Workspace=workspace,Stats=stats})
+local library={Scheme={HeaderColor=label.BackgroundColor3,HeaderTransparency=.2},Registry={[label]={}}}
+local hud=HUD.Install({Widget=widget,RunService=RunService,Players=Players,Player=localPlayer,Workspace=workspace,Stats=stats,Library=library})
 check(widget.Centered==nil,"HUD kept a center-lock flag that blocks saved positions")
 check(label.Position.X.Scale==.5 and label.Position.Y.Offset==12,"HUD was not initially placed at top center")
 check(label.BackgroundColor3.R==35/255 and label.TextColor3.R==239/255,"HUD overwrote the shared slate theme")
 check(label.BackgroundTransparency<.3 and label:FindFirstChildOfClass("UICorner").CornerRadius.Scale==1,"HUD lost its compact translucent pill surface")
+check(library.Registry[label].BackgroundColor3=="HeaderColor"and library.Registry[label].BackgroundTransparency=="HeaderTransparency","HUD does not follow both theme surface properties")
 check(not label.Text:find("Coins",1,true)and not label.Text:find(":",1,true),"HUD reintroduced removed coin/time fields")
 local dragged=UDim2.fromOffset(210,180);label.Position=dragged;label.AnchorPoint=Vector2.new(0,0)
 local afterDragReads=reads
@@ -32,4 +34,4 @@ check(reads==before,"Invalid frame deltas performed a telemetry update")
 hud:Dispose();hud:Dispose();before=reads;advance(2)
 check(reads==before and label.Text=="astral","Disposed HUD kept sampling stats or lost original text")
 for _,connection in ipairs(hud.Connections)do check(not connection.Connected,"HUD event listener survived disposal")end
-print('PASS: '..checks..' draggable HUD position/config retention, slate styling, minimal telemetry, viewport bounds, sampling and cleanup checks (mocked)')
+print('PASS: '..checks..' draggable HUD position/config retention, shared theme, minimal telemetry, viewport bounds, sampling and cleanup checks (mocked)')

@@ -20,9 +20,14 @@ for _,mode in ipairs({'Normal','No Ragdoll'})do for _,fps in ipairs({20,30,60,12
  check(f.Guard.Rig.Active,'Release dropped protection before the native ragdoll flag cleared')
  f.Rag.Value=false;f.Step(math.ceil(.3*fps),fps)
  check(not f.Guard.Rig.Active and f.Motor.Enabled and not f.Socket.Enabled,'Release left ragdoll constraints or protection latched')
- check(f.Hum:GetStateEnabled('Physics')and f.Hum:GetStateEnabled('FallingDown'),'Original state permissions were not restored')
+ if f.Guard.Rig.Context.PreventRagdoll then
+  check(not f.Hum:GetStateEnabled('Physics')and not f.Hum:GetStateEnabled('FallingDown'),'Enabled prearmed guard lost its engine state protection')
+ else
+  check(f.Hum:GetStateEnabled('Physics')and f.Hum:GetStateEnabled('FallingDown'),'Original state permissions were not restored')
+ end
  local before=#f.Data.Clears;f.Step(fps,fps);check(#f.Data.Clears==before,'Idle anti-grab kept firing requests')
  f.Guard:Dispose();f.Guard:Dispose()
+ check(f.Hum:GetStateEnabled('Physics')and f.Hum:GetStateEnabled('FallingDown'),'Final guard disposal did not restore engine state permissions')
  check(not f.Pre.Connections[1].Connected and not f.Heart.Connections[1].Connected,'Unload leaked frame handlers')
 end end
 do
@@ -77,6 +82,9 @@ do
  weld.Enabled=true;check(not weld.Enabled,'Active external grab link was re-enabled between physics frames')
  weld.Part0=foreign;weld.Part1=other;check(weld.Enabled,'Reused grab weld remained disabled for another avatar')
  weld.Part0=f.Torso;check(not weld.Enabled,'Reused grab weld did not protect the local avatar again')
+ -- A cleared Held flag alone is not release while a native foreign grab
+ -- weld still links this avatar. Model the server detaching that link too.
+ weld.Part0=foreign
  f.Data.Held=false;f.Rag.Value=false;f.Step(20,60)
  check(weld.Enabled and not f.Guard.Rig.Active and not f.Hum.Sit,'Released grab link or Sit flag remained latched')
  f.Guard:Dispose();f.Hum.Sit=true;check(f.Hum.Sit,'Disposed guard retained humanoid hooks')

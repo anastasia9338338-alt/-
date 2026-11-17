@@ -1,5 +1,6 @@
 -- Exercise local replication-property bookkeeping only. Setter success and
 -- readback are not server acknowledgement, a remote hit or a player kick.
+-- The bookkeeping fixture begins after one acknowledged physical hold frame.
 local function ekiFixture(original,withReader)
  local sim=Sim.new();currentSim=sim
  local targetState=target('EKIVictim');local root=targetState.Torso
@@ -8,7 +9,7 @@ local function ekiFixture(original,withReader)
   ApplyFailures=0,ResetFailures=0,ResetThrows=0,ResetValues={}}
  local mover={Position=root.Position,Parent=root,Destroy=function()end}
  local session={Player=player,Character=targetState.Character,Root=root,Humanoid=targetState.Humanoid,
-  Position=mover,Orientation=mover,Physics={},EKIAt=0}
+  Position=mover,Orientation=mover,Physics={},EKIAt=0,CapturedFrame=0}
  local context={Clock=function()return state.Now end,Enabled=function()return true end,Selected=function()return true end,
   Character=function()return targetState.Character,root,targetState.Humanoid end,
   LocalCharacter=function()return {},actor,targetState.Humanoid end,

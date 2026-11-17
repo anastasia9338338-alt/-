@@ -89,8 +89,11 @@ end)
     s+='local ThemeManager=(function(...)\n'+modules['ThemeManager']+'\nend)(function(name)assert(name=="AppIdentity");return Identity end)\n'
     if 'UIStyle'in modules:
         s+='local UIStyle=(function()\n'+modules['UIStyle']+'\nend)()\nUIStyle.ApplyBase(Library)\n'
+    if 'GUIStyle'in modules:
+        s+='local GUIStyle=(function()\n'+modules['GUIStyle']+'\nend)()\n'
     s+=startup_program(modules.get('Main'))
-    return s+(support/'ui_native_body.luau').read_text()
+    body='ui_reference_body.luau' if 'ShadowObsidian'in modules.get('UIStyle','') else 'ui_native_body.luau'
+    return s+(support/body).read_text()
 
 if __name__=='__main__':
     args=argparse.ArgumentParser();args.add_argument('--luau',type=Path,required=True);args.add_argument('--bundle',type=Path);a=args.parse_args()
