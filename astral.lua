@@ -1,4 +1,4 @@
--- Astral v4.99 | Flat body-to-sky pallet cycles and retained capture movement.
+-- Astral v5.00 | Retained target capture and paired Super Fast body contacts.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -19781,7 +19781,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.99 | FTAP")
+                                warn("Astral v5.00 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -23139,7 +23139,7 @@ end
                     end,
                     Destroy=function(model)tbl12.DestroyToy(model)end,
                 })
-                tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,Pulsed=false,SourceKick=true,
+                tbl12.PalletRagdoll=requireModule("PalletRagdoll").Install({RunService=RunService,Clock=os.clock,Wait=task.wait,SpawnThread=task.spawn,MaximumSpeed=true,ContactRate=30,States=tbl7.States,Pulsed=false,SourceKick=true,ShadowPallet=true,
                     ContactMultiplier=function()return tbl9.NKSourceMode=="Normal"and 1 or 2 end,
                     KickMode=function()return tbl9.NKSourceMode or "Faster"end,
                     SuperHold=function(character)
@@ -23206,7 +23206,7 @@ end
                     NeedsApproach=function(part)local _,root=tbl12.Char();return root and(root.Position-part.Position).Magnitude>=31 end,
                     Gravity=function()return workspace.Gravity end,
                     Notify=function(reason)fn18('Кик: '..reason)end,
-                    Acquire=function(part,valid)if tbl7.States.Owning or tbl9.NKSourceMode=="Super Fast"then return false end;return tbl12.SNO(part,.9,valid,true)end,
+                    Acquire=function(part,valid)if tbl7.States.Owning or tbl12.PalletRagdoll and tbl12.PalletRagdoll.Shadow or tbl9.NKSourceMode=="Super Fast"then return false end;return tbl12.SNO(part,.9,valid,true)end,
                     Destroy=function(model)tbl12.PalletSupply:Destroy(model)end,
                     ParkPosition=function()return Vector3.new(0,1000,0)end,
                     PingSeconds=tbl12.KickPingSeconds,Busy=function(value)tbl7.States.Ragdolling=value end,
@@ -34861,7 +34861,7 @@ Escape Timer: %*]]
                     if not tbl8.AntiKick and not tbl12.WaitForRuntimeToggle("AntiKick")then return end
                     if flag11 then return end
                     local character,root,hum=tbl12.Char()
-                    local target=root and(root:FindFirstChild("RagdollTouchedHitbox")or root:FindFirstChild("FirePlayerPart"))
+                    local target=tbl12.AntiKickItems:ResolveTarget()
                     if target and target:IsA("BasePart")and hum and hum.Health>0 and(not localPlayer.InPlot.Value or localPlayer.InOwnedPlot.Value)then
                         local items=tbl12.AntiKickItems
                         if not items.ActiveModel or not items.ActiveModel.Parent then items:Spawn(root)end
@@ -36067,7 +36067,7 @@ Escape Timer: %*]]
                 return false
             end
             tbl12.KickLoop=requireModule("KickLoop").Install({RunService=RunService,Clock=os.clock,SpawnThread=task.spawn,MaximumSpeed=true,LowLatency=true,NativePhases=true,PreserveCharacterRig=true,
-                SourceMode=function()return tbl9.NKSourceMode or "Faster"end,
+                ShadowSource=true,SourceMode=function()return tbl9.NKSourceMode or "Faster"end,
                 Enabled=function()return not flag11 and (tbl8.LoopApplyMethodT or tbl8.LoopApplyMethodTServer)and tbl7.TargetMethods.Kick and not localPlayer.InPlot.Value end,
                 Selected=function(player)return player and player.Parent and (tbl8.LoopApplyMethodTServer or tbl7.SelectedPlayers[player]==true)and not tbl12.IsProtectedPlayer(player)end,
                 Targets=function()return tbl12.GetTargets(tbl8.LoopApplyMethodTServer==true,tbl7.SelectedPlayers)end,
@@ -36076,7 +36076,7 @@ Escape Timer: %*]]
                 NetworkOwned=tbl12.IsNetworkOwner,MarkerOwned=tbl12.IsPartOwner,
                 OwnershipBusy=function()return tbl7.States.Owning==true or tbl12.PalletRagdoll.Preparing or tbl12.PalletRagdoll.Ownership.InFlight or tbl12.PalletRagdoll:IsContactActive()end,
                 Grab=tbl12.RequestNativeOwnership,Release=tbl12.RNO,
-                AcquireInitial=true,RecoverLostHold=true,
+                AcquireInitial=true,RecoverLostHold=true,KeepCapture=true,
                 Acquire=function(root,valid,recovery)return tbl12.AcquireKickTarget(root,valid,recovery)end,
                 ReleaseCaptureMovement=function()return tbl12.KickCapture:ReleaseMovement()end,
                 Teleport=function(root,position)tbl12.Teleport(root,position)end,
@@ -36093,8 +36093,8 @@ Escape Timer: %*]]
                 Limbs=tbl12.RepositionLimbs,
                 RestoreMotors=function(character)tbl12.ToggleMotor6D(character,true,true)end,
                 RequestRagdoll=function(character,valid)
-                    -- Use the supplied kick's spinning pallet / root contact.
-                    -- Ownership refresh does not wait for a sweep or hitbox exit.
+                    -- Normal/Faster use the supplied downward pallet path;
+                    -- Super Fast owns its separate paired-contact sequence.
                     local started=tbl12.PalletRagdoll:SourceContact(character,valid)
                     if started==nil then return tbl12.PalletRagdoll:Request(character,valid)end
                     return started
@@ -36306,7 +36306,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.99",true)
+            box:AddLabel("Astral v5.00",true)
         end
 
         do
@@ -38052,14 +38052,14 @@ Escape Timer: %*]]
 
         local v21=v20
         v21:AddDropdown("AstralOwnershipMode",{Text="Kick Mode",Values={"Faster","Normal","Super Fast"},Default="Faster",AllowNull=false,
-            Tooltip="Normal: v4.94 Faster. Faster: twice the same refresh cadence. Super Fast: a horizontal pallet touches the body, rises clear, and returns after a short gap. Loop MS still controls full ownership cycles.",
+            Tooltip="Normal: supplied source hold and eight-step pallet pass. Faster: same pass in four steps. Super Fast: two body hits, up, two hits, up, then paired body contacts. Approach runs only for initial capture or actual physical ownership loss.",
             Callback=function(value)tbl9.NKSourceMode=value;tbl12.PalletRagdoll:SetKickMode(value)end})
         v21:AddDropdown("AstralKickApproach",{Text="Capture Approach",Values={"Behind","Below"},Default="Behind",AllowNull=false,
             Tooltip="Behind: approach behind the target. Below: approach from underneath. Applies to initial capture and recovery.",
             Callback=function(value)tbl9.NKApproach=value;if tbl12.KickCapture.Busy then tbl12.KickCapture:Cancel()end end})
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
-            Tooltip="Base ragdoll retry rate for Normal. Faster uses twice this rate, up to one paired contact per physics step.",
+            Tooltip="Source pallet step rate. Normal uses eight downward steps; Faster uses four. Super Fast keeps its separate paired-contact timing.",
             Callback=function(value)tbl12.PalletRagdoll:SetContactRate(value)end})
 
 		v21:AddToggle("RagdollNK", {
@@ -46448,6 +46448,101 @@ end
 return Supply
 
 ]========]
+sources.ShadowPallet = [========[
+-- Movement from the supplied Shadow Core pallet ragdoll. A single pallet is
+-- shared across requests; placement attempts are not server hit confirmations.
+local Shadow={};Shadow.__index=Shadow
+function Shadow.new(context)
+    return setmetatable({Context=context,Entries={},Queue={},Attempts=0,Passes=0,Frame=0},Shadow)
+end
+function Shadow:Valid(entry)
+    local c=entry and entry.Character
+    local root=c and c.Parent and c:FindFirstChild('HumanoidRootPart')
+    local hum=c and c:FindFirstChildOfClass('Humanoid')
+    return not self.Closed and c and root==entry.Root and root.Parent and not root.Anchored
+        and hum and hum.Health>0 and(not entry.Valid or entry.Valid())
+end
+function Shadow:Request(character,valid)
+    if self.Closed then return false end
+    local entry=self.Entries[character]
+    if entry and not self:Valid(entry)then self:Cancel(character);entry=nil end
+    if entry then entry.Valid=valid;return true end
+    local root=character and character:FindFirstChild('HumanoidRootPart')
+    entry={Character=character,Root=root,Valid=valid,Index=0,Phase='down'}
+    if not self:Valid(entry)then return false end
+    self.Entries[character]=entry;self.Queue[#self.Queue+1]=entry
+    return true
+end
+function Shadow:Cancel(character)
+    local entry=self.Entries[character]
+    self.Entries[character]=nil
+    if entry and self.Active==entry then self.Active=nil;self.Context.Park()end
+    for i=#self.Queue,1,-1 do if self.Queue[i]==entry then table.remove(self.Queue,i)end end
+end
+function Shadow:Clear(park)
+    self.Active=nil;table.clear(self.Entries);table.clear(self.Queue)
+    if park then self.Context.Park()end
+end
+function Shadow:Step()
+    local ctx=self.Context
+    if self.Closed then return end
+    if not ctx.Enabled()then if self.Active or next(self.Entries)then self:Clear(true)end;return end
+    if not ctx.Ready()then
+        if self.Active then
+            self.Active.Index=0;self.Active.Phase='down'
+            self.Queue[#self.Queue+1]=self.Active;self.Active=nil
+        end
+        if next(self.Entries)then ctx.Prepare()end
+        return
+    end
+    local now=ctx.Clock()
+    local step=ctx.StepSeconds and ctx.StepSeconds()or 1/60
+    local nextAt=self.NextStepAt or now
+    if now+1e-7<nextAt then return end
+    self.NextStepAt=now-nextAt>=step and now+step or nextAt+step;self.Frame+=1
+    if self.Active and not self:Valid(self.Active)then self:Cancel(self.Active.Character)end
+    while not self.Active and #self.Queue>0 do
+        local entry=table.remove(self.Queue,1)
+        if self.Entries[entry.Character]==entry and self:Valid(entry)then self.Active=entry
+        else self.Entries[entry.Character]=nil end
+    end
+    local entry=self.Active;if not entry then return end
+    local model,sound,assembly=ctx.Board()
+    if not model or not sound or not assembly then return end
+    if self.PoseModel~=model or self.PoseAssembly~=assembly or self.PoseSound~=sound then
+        self.PoseModel,self.PoseAssembly,self.PoseSound=model,assembly,sound
+        self.SoundToAssembly=assembly==sound and CFrame.new()or sound.CFrame:ToObjectSpace(assembly.CFrame)
+    end
+    ctx.Style()
+    local function place(point,velocity)
+        -- Moving the assembly through SoundPart preserves welded visible
+        -- geometry even when Main, rather than SoundPart, is the assembly root.
+        assembly.CFrame=CFrame.new(point)*self.SoundToAssembly
+        assembly.AssemblyLinearVelocity=velocity;assembly.AssemblyAngularVelocity=Vector3.zero
+    end
+    if entry.Phase=='return'then
+        place(entry.Root.Position+Vector3.new(0,10000,0),Vector3.zero)
+        entry.Index=0;entry.Phase='down';self.Active=nil
+        self.Queue[#self.Queue+1]=entry
+        return
+    end
+    entry.Index=math.min(8,entry.Index+(ctx.Mode()=='Faster'and 2 or 1))
+    local top=entry.Root.Position+Vector3.new(0,10000,0)
+    local point=top:Lerp(entry.Root.Position,entry.Index/8)
+    place(point,Vector3.new(0,entry.Index==8 and -10 or -9997,0))
+    self.Attempts+=1
+    if entry.Index==8 then
+        self.Passes+=1;entry.Phase='return'
+        if ctx.Record then ctx.Record(entry.Character,now)end
+    end
+end
+function Shadow:Dispose()
+    if self.Closed then return end
+    self:Clear(true);self.Closed=true
+end
+return Shadow
+
+]========]
 sources.Bootstrap = [========[
 local sources = ...
 local env = getgenv and getgenv() or _G
@@ -46477,9 +46572,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.99: unload the running Astral in Settings before executing this update")
+    warn("Astral v5.00: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.99 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v5.00 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -46665,7 +46760,7 @@ end
 function Style.Window()
     -- BetterOrion is the main library used by the supplied TheWorst source.
     -- Keep Astral's identity, control IDs and menu key on that presentation.
-    return {Title="astral",Subtitle="FTAP | v4.99",Footer="",Icon=Style.BrandIcon,
+    return {Title="astral",Subtitle="FTAP | v5.00",Footer="",Icon=Style.BrandIcon,
         ToggleKeybind=Enum.KeyCode.RightShift,Center=true,AutoShow=true,
         Font=Enum.Font.Gotham,Size=UDim2.fromOffset(600,400),MinContainerWidth=320,
         ShowMobileButtons=false,IconSize=UDim2.fromOffset(22,22),CornerRadius=10,BackgroundImage="",
@@ -46860,12 +46955,15 @@ return Drone
 
 ]========]
 sources.AntiKickItems = [========[
+-- Astral: standalone protection attachment controller.
+-- Requires the host's existing spawn/sticky APIs; this is a ModuleScript,
+-- not a launcher. It only attaches inventory items to Context.Character().
 local Items = {}
 Items.__index = Items
 Items.Definitions = {
     Shuriken = {Id = "NinjaShuriken", Place = "Back"},
     Katana = {Id = "NinjaKatana", Place = "Back"},
-    Pickaxe = {Id = "ToolPickaxe", Place = "Hand"},
+    Pickaxe = {Id = "ToolPickaxe", Place = "Back"},
     Pencil = {Id = "ToolPencil", Place = "Hand"},
     Kunai = {Id = "NinjaKunai", Place = "Back"},
     Cleaver = {Id = "ToolCleaver", Place = "Hand"},
@@ -46896,6 +46994,25 @@ end
 function Items.Install(context)
     return setmetatable({Context=context,Selected="Shuriken",Placement="Auto",CustomId="NinjaShuriken",Generation=0,Rotation={X=0,Y=0,Z=0},PoseDirty=false,NextPose=0,NextOwn=0,GuardEnabled=true},Items)
 end
+function Items:ResolveTarget()
+    local character=self.Context.Character()
+    local root=character and character.Parent and character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    -- Match the supplied source's actual sticky attachment target. The
+    -- fallback keeps older character versions supported.
+    for _,name in ipairs({"FirePlayerPart","RagdollTouchedHitbox"}) do
+        local target=root:FindFirstChild(name)
+        if target and target:IsA("BasePart") and target:IsDescendantOf(character) then return target end
+    end
+    return nil
+end
+function Items:_OwnershipPart(model,sticky)
+    model=model or self.ActiveModel
+    sticky=sticky or self.StickyPart
+    local sound=model and model:FindFirstChild("SoundPart")
+    if sound and sound:IsA("BasePart") then return sound end
+    return sticky
+end
 function Items:_Inventory(model)
     return model and model.Parent and (not self.Context.IsInventoryModel or self.Context.IsInventoryModel(model))
 end
@@ -46911,7 +47028,7 @@ function Items:Reset(destroy)
     local model,pending=self.ActiveModel,self.PendingModel
     self:_Reserve(model,false);if pending~=model then self:_Reserve(pending,false) end
     self.ActiveModel,self.PendingModel,self.StickyPart,self.Target,self.Character=nil,nil,nil,nil,nil
-    self.Repair,self.Acquiring,self.LocalFrames,self.HoldLocal=nil,nil,nil,nil
+    self.Repair,self.Acquiring,self.LocalFrames,self.HoldLocal,self.Spawning=nil,nil,nil,nil,nil
     self.PoseDirty,self.RemoteDirty=false,false
     self.NextPose,self.NextOwn=0,0
     if destroy then self:_Destroy(model);if pending~=model then self:_Destroy(pending) end end
@@ -46949,6 +47066,8 @@ function Items:IsAttached(target)
     return attached
 end
 function Items:_Owned(part)
+    if part==self.StickyPart then part=self:_OwnershipPart() end
+    if not part or not part.Parent then return false end
     local marker,physics=self.Context.IsOwner,self.Context.IsPhysicsOwner
     -- Native sticky authorization and physical simulation are separate. A
     -- stale PartOwner or a local physics-owner result alone cannot prove both.
@@ -46958,12 +47077,14 @@ function Items:_Owned(part)
 end
 function Items:_Acquire(now,part,target)
     if self.Acquiring or now<self.NextOwn or not self.Context.Own then return end
+    part=self:_OwnershipPart()
+    if not part or not part.Parent then return end
     self.NextOwn=now+.45
     local ticket={};self.Acquiring=ticket
     local version,model=self.Generation,self.ActiveModel
     local function valid()
         return self.Generation==version and self.ActiveModel==model and self.GuardEnabled and self:_Valid(target)
-            and not self:IsAttached(target)
+            and part.Parent and part:IsDescendantOf(model) and not self:IsAttached(target)
     end
     (self.Context.SpawnThread or task.spawn)(function()
         if valid() then pcall(self.Context.Own,part,valid) end
@@ -47059,6 +47180,7 @@ function Items:SetCustomId(value)
 end
 function Items:Spawn(anchor)
     if self.Closed or not self.Context.Enabled() or not anchor or not anchor.Parent then return end
+    if self.Spawning then return end
     -- The outer worker may retry Spawn after server destruction. Release the
     -- old reservation before adopting a replacement and never duplicate it.
     if self.ActiveModel and self:_Inventory(self.ActiveModel) then
@@ -47069,17 +47191,23 @@ function Items:Spawn(anchor)
     local version,character=self.Generation,self.Context.Character()
     local definition=self.Definitions[self.Selected]
     local id=definition and definition.Id or self.CustomId
-    local model=self.Context.Spawn(id,anchor.CFrame+Vector3.new(0,15,0))
+    local ticket={};self.Spawning=ticket
+    local function finish()
+        if self.Spawning==ticket then self.Spawning=nil end
+    end
+    local ok,model=pcall(self.Context.Spawn,id,anchor.CFrame+Vector3.new(0,15,0))
+    if not ok then finish();self.LastReason="Toy spawn failed";return end
     local function valid()
         return not self.Closed and version==self.Generation and self.Context.Enabled()
             and self.Context.Character()==character and character and character.Parent and self:_Inventory(model)
     end
-    if not valid() then self:_Destroy(model);return end
+    if not valid() then self:_Destroy(model);finish();return end
     self.PendingModel=model;self:_Reserve(model,true)
     local function abandon()
         self:_Reserve(model,false)
         if self.PendingModel==model then self.PendingModel=nil end
         self:_Destroy(model)
+        finish()
     end
     local part=model:WaitForChild("StickyPart",1.5)
     local weld=part and part:WaitForChild("StickyWeld",1.5)
@@ -47095,13 +47223,14 @@ function Items:Spawn(anchor)
     end
     -- An unsuccessful acquisition is temporary; the repair worker retries it.
     -- Marked PartOwner alone is insufficient to move a physical assembly.
-    pcall(self.Context.Own,part,valid)
+    pcall(self.Context.Own,self:_OwnershipPart(model,part),valid)
     if not valid() then abandon();return end
     self.ActiveModel,self.PendingModel,self.StickyPart,self.Character=model,nil,part,character
     self.HoldLocal=nil;self.Repair=nil
     local hold=model:FindFirstChild("HoldPart",true)
     if hold and hold:IsA("BasePart") then self.HoldLocal=part.CFrame:ToObjectSpace(hold.CFrame) end
     self.PoseDirty,self.RemoteDirty=true,true
+    finish()
     return model,part,weld
 end
 function Items:Attach(target,timeout)
@@ -47132,6 +47261,9 @@ function Items:Offset(target)
     if place=="Auto" then local def=self.Definitions[self.Selected];place=def and def.Place or "Back" end
     if self.Selected=="Shuriken" and self.Placement=="Auto" then
         return CFrame.new(0,-.3,0)*CFrame.Angles(math.pi/2,0,0)*rotation
+    end
+    if self.Selected=="Pickaxe" and self.Placement=="Auto" then
+        return CFrame.new(0,0,.7)*CFrame.Angles(math.pi/2,0,0)*CFrame.Angles(0,math.rad(135),0)*rotation
     end
     local character=self.Context.Character()
     local body=character and (place=="Hand" and (character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm"))
@@ -93808,7 +93940,7 @@ return Builds
 sources.PalletRagdoll = [========[
 -- Shared source pallet operation. One-shot effects wait for ragdoll state;
 -- Normal/Faster retain native retries; Super Fast places a horizontal owned
--- pallet at the body, observes its upward exit, and returns after a short gap.
+-- pallet in two double-hit groups with upward exits, then paired body hits.
 local requireModule=...
 local Source=requireModule("Resonance29Ragdoll")
 local Ownership=requireModule("PalletOwnership")
@@ -93834,6 +93966,18 @@ function Pallet.Install(context)
         MaximumSpeed=context.MaximumSpeed==true,IntervalSeconds=.1,Status="Pallet ragdoll idle",PhysicsFrame=0,
         RateAt=context.Clock(),RatePasses=0,RateContacts=0,PassRate=0,TouchRate=0,Pauses={}},Pallet)
     self.States=context.States or {}
+    if context.ShadowPallet then
+        self.Shadow=requireModule('ShadowPallet').new({Clock=context.Clock,Mode=context.KickMode,
+            StepSeconds=function()return math.max(1/60,self.IntervalSeconds*.5)end,
+            Enabled=function()return not self.Closed and not self:IsSuperMode()and not next(self.Pauses)end,
+            Ready=function()return not self.Active and not self.SuperFlight and not self.Preparing
+                and self.NativeKickReady and alive(self.Sound)and context.Owned(self.Sound)
+                and isolatedAssembly(self.Sound,self.Model)~=nil end,
+            Prepare=function()if not self.Active then self:Warm()end end,
+            Board=function()return self.Model,self.Sound,isolatedAssembly(self.Sound,self.Model)end,
+            Style=function()self:SetShadowStyle(true)end,Park=function()self:ParkShadow()end,
+            Record=function()self.Passes+=1;self.LastPassAt=context.Clock()end})
+    end
     self.Pulsed=context.Pulsed~=false;self.PulsePause=.25;self.PulseBurst=4;self.PulseRecovery=.8
     self:SetContactRate(context.ContactRate or 10)
     local available,physics=pcall(function()return context.RunService.PreSimulation end)
@@ -93924,6 +94068,10 @@ function Pallet.Install(context)
         if self.SuperFlight or self.SuperQueue then
             local ok,why=pcall(self.AdvanceSuperBeforePhysics,self)
             if not ok then self.LastError=tostring(why);self:StopSuperFlight(true)end
+        end
+        if self.Shadow then
+            local ok,why=pcall(self.Shadow.Step,self.Shadow)
+            if not ok then self.LastError=tostring(why);self.Shadow:Clear(true)end
         end
         self:Step();self:Watchdog()
     end)
@@ -94313,6 +94461,7 @@ function Pallet:Park()
     local mover=main and main:FindFirstChild("RagdollBP")
     if mover then mover.MaxForce=Vector3.zero end
     if self.Context.SourceKick then
+        if self.Shadow and not self:IsSuperMode()and self.NativeKickReady then self:ParkShadow();return end
         if self.NativeKickReady and self.KickProfile and self.KickProfile.Model==self.Model then return end
         self:ConfigureKickPallet()
         return
@@ -94326,6 +94475,31 @@ function Pallet:Park()
         assembly.CFrame=assembly.CFrame+(position-sound.Position)
         self.LastTransformPart=sound;self.LastTransformFrame=self.PhysicsFrame
     end
+end
+function Pallet:SetShadowStyle(active)
+    local profile=self.KickProfile;if not profile then return end
+    if active then
+        if profile.Angular and profile.Angular.Parent then profile.Angular.MaxTorque=0;profile.Angular.AngularVelocity=Vector3.zero end
+        if profile.Lift and profile.Lift.Parent then profile.Lift.MaxForce=Vector3.zero end
+        for part in pairs(profile.Parts)do if part.Parent then part.LocalTransparencyModifier=1 end end
+        if profile.Sound.Parent then profile.Sound.Size=profile.Size end
+    elseif profile.ShadowActive then
+        for part,props in pairs(profile.Parts)do if part.Parent then part.LocalTransparencyModifier=props.LocalTransparencyModifier end end
+        if profile.Sound.Parent then profile.Sound.Size=Vector3.new(6,2,6)end
+        if profile.Angular and profile.Angular.Parent then
+            profile.Angular.MaxTorque=math.huge;profile.Angular.AngularVelocity=profile.NativeAngularVelocity
+        end
+    end
+    profile.ShadowActive=active==true
+end
+function Pallet:ParkShadow()
+    local sound=self.Sound
+    if not alive(sound)or not self.Context.Owned(sound)then return end
+    local assembly=isolatedAssembly(sound,self.Model);if not assembly then return end
+    self:SetShadowStyle(true)
+    assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=Vector3.zero
+    local point=self.Context.SuperIdlePosition and self.Context.SuperIdlePosition(nil,sound)
+    if point then assembly.CFrame=assembly.CFrame+(point-sound.Position)end
 end
 function Pallet:DisableKickProfile()
     local profile=self.KickProfile
@@ -94346,7 +94520,7 @@ function Pallet:ConfigureKickPallet()
     local profile={Model=self.Model,Sound=sound,Size=sound.Size,Parts={},Created={}}
     self.KickProfile=profile
     for _,part in ipairs(self.Model:GetChildren())do if part:IsA('BasePart')then
-        profile.Parts[part]={CanCollide=part.CanCollide,CanQuery=part.CanQuery,Massless=part.Massless}
+        profile.Parts[part]={CanCollide=part.CanCollide,CanQuery=part.CanQuery,Massless=part.Massless,LocalTransparencyModifier=part.LocalTransparencyModifier}
         part.CanCollide=false;part.CanQuery=false;part.Massless=true
     end end
     local attachment=Instance.new('Attachment');attachment.Name='KickPalletAttachment';attachment.Parent=sound
@@ -94364,6 +94538,7 @@ function Pallet:ConfigureKickPallet()
     sound.Size=Vector3.new(6,2,6);sound.CanTouch=true
     self.NativeKickReady=true
     if self:IsSuperMode()then self:IdleSuperBoard()
+    elseif self.Shadow then self:ParkShadow()
     else
         assembly.CFrame=assembly.CFrame+(Vector3.new(0,1000,0)-sound.Position)
         assembly.AssemblyLinearVelocity=Vector3.zero;assembly.AssemblyAngularVelocity=angular.AngularVelocity
@@ -94390,6 +94565,7 @@ function Pallet:ShowPallet()
     end
 end
 function Pallet:ForgetModel()
+    if self.Shadow then self.Shadow:Clear(false)end
     self:StopSuperFlight(true)
     for character,contact in pairs(self.SourcePending or{})do self:EndSourceContact(character,contact)end
     self:DisableKickProfile()
@@ -94447,6 +94623,7 @@ function Pallet:Maintain(character,valid)
 end
 function Pallet:SourceContact(character,valid)
     if self.Context.KickMode and self.Context.KickMode()=='Super Fast'then return self:SuperContact(character,valid)end
+    if self.Shadow then return self.Shadow:Request(character,valid)end
     return self:BeginRootContact(character,valid)
 end
 function Pallet:BeginRootContact(character,valid,prepare,receiver)
@@ -94494,7 +94671,9 @@ end
 -- One real pallet is shared fairly between target sequences. The local phase
 -- counts schedule attempts; they are not server hit or kick acknowledgements.
 function Pallet:SetKickMode(value)
+    if self.Shadow then self.Shadow:Clear(false);self:SetShadowStyle(false)end
     if value~='Super Fast'then self:StopSuperFlight(true)else self:IdleSuperBoard()end
+    if self.Shadow and value~='Super Fast'then self:ParkShadow()end
 end
 function Pallet:SuperEntryValid(entry)
     if self.Closed or next(self.Pauses)or not entry or entry.Cancelled
@@ -94612,8 +94791,15 @@ end
 function Pallet:SetSuperPose(job,position)
     local assembly=isolatedAssembly(job.Sound,job.Model)
     if not assembly or not finiteVector(position)then return false end
-    local assemblyToMain=assembly.CFrame:ToObjectSpace(job.Main.CFrame)
-    local mainToSound=job.Main.CFrame:ToObjectSpace(job.Sound.CFrame)
+    local profile=self.KickProfile
+    -- Rigid offsets do not change during a stroke. Recomputing inverse(A)*A
+    -- at every contact unnecessarily accumulates floating point pose error.
+    if profile.PoseAssembly~=assembly then
+        profile.PoseAssembly=assembly
+        profile.AssemblyToMain=assembly==job.Main and CFrame.new()or assembly.CFrame:ToObjectSpace(job.Main.CFrame)
+        profile.MainToSound=job.Main.CFrame:ToObjectSpace(job.Sound.CFrame)
+    end
+    local assemblyToMain,mainToSound=profile.AssemblyToMain,profile.MainToSound
     local rotation=self:SuperFlatRotation(self.KickProfile,job.Main,job.Sound)
     local flatMain=CFrame.new(position-rotation:VectorToWorldSpace(mainToSound.Position))*rotation
     assembly.CFrame=flatMain*assemblyToMain:Inverse()
@@ -94642,6 +94828,7 @@ function Pallet:SuperHeld(entry)
 end
 function Pallet:ResetSuperHold(entry)
     entry.StableFrames=0;entry.StableFrame=nil;entry.NextAt=nil;entry.Phase='await-hold'
+    entry.Stage='pair1';entry.PairHits=0;entry.PairStarted=nil
 end
 -- Used only for preparation, cancellation and waiting for capture. Healthy
 -- body/up/body cycles stay above the target and never park on the ground.
@@ -94692,6 +94879,17 @@ function Pallet:DriveSuperStroke(job)
     assembly.AssemblyLinearVelocity=Vector3.new(math.clamp(offset.X*12,-80,80),160+math.clamp(gravity,0,1000)*(self.PhysicsDt or 1/60)*.5,math.clamp(offset.Z*12,-80,80))
     return true
 end
+function Pallet:HoldSuperBody(entry)
+    local sound,profile=self.Sound,self.KickProfile
+    if self.SuperBoardOwner~=entry or not profile or not alive(sound)or not profile.Lift or not profile.Lift.Parent then return false end
+    local main=profile.Lift.Parent;local assembly=isolatedAssembly(sound,self.Model)
+    local owned=self.Context.PhysicsOwned or self.Context.Owned
+    if not assembly or not owned(sound)or not owned(entry.Root)then return false end
+    profile.Lift.Position=entry.Root.Position+(main.Position-sound.Position)
+    profile.Lift.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
+    assembly.AssemblyLinearVelocity=entry.Root.AssemblyLinearVelocity
+    return true
+end
 function Pallet:LaunchSuperStroke(job)
     local entry=job.Entry
     local function stage()
@@ -94717,7 +94915,8 @@ function Pallet:LaunchSuperStroke(job)
     end
     if not started then return false end
     job.Started=self.Context.Clock();job.StartFrame=self.PhysicsFrame;job.ContactFrame=self.PhysicsFrame
-    entry.Attempts=(entry.Attempts or 0)+1;entry.Phase=job.Capture and'capture-contact'or'contact'
+    if not job.Capture then entry.PairStarted=entry.PairStarted or job.Started end
+    entry.Attempts=(entry.Attempts or 0)+1;entry.Phase=job.Capture and'capture-contact'or entry.Stage=='body-tail'and'body-tail-contact'or'contact'
     if entry.Observer then entry.Attempt=entry.Observer:StartAttempt()end
     self.SuperStrikes=(self.SuperStrikes or 0)+1
     self.Status='Super Fast: horizontal body contact'
@@ -94739,7 +94938,10 @@ function Pallet:ClaimSuperJob()
             capture=true
         else
             if entry.StableFrame~=self.PhysicsFrame then entry.StableFrame=self.PhysicsFrame;entry.StableFrames=(entry.StableFrames or 0)+1 end
-            if entry.StableFrames<2 or now+1e-7<(entry.NextAt or 0)or now<(entry.RetryAt or 0)then self:QueueSuperEntry(entry);continue end
+            if entry.StableFrames<2 or now+1e-7<(entry.NextAt or 0)or now<(entry.RetryAt or 0)then
+                if entry.Stage=='body-tail'then self:HoldSuperBody(entry)end
+                self:QueueSuperEntry(entry);continue
+            end
         end
         local sound,profile=self.Sound,self.KickProfile
         local main=self.Model and self.Model:FindFirstChild('Main')
@@ -94780,7 +94982,9 @@ function Pallet:CompleteSuperStroke(job)
         self:ResetSuperHold(entry);entry.NextGroundAt=now+.5
     else
         self.SuperBodyContacts=(self.SuperBodyContacts or 0)+1
-        entry.NextAt=math.max(now,job.Started+.1);entry.Phase='above-body'
+        entry.Stage=entry.Stage=='pair1'and'pair2'or'body-tail'
+        entry.NextAt=math.max(now,(entry.PairStarted or job.Started)+.1)
+        entry.PairHits=0;entry.PairStarted=nil;entry.Phase='above-body'
     end
     self.Status='Super Fast: upward departure observed; returning to body'
     self:ReleaseSuperJob(job)
@@ -94793,7 +94997,21 @@ function Pallet:AdvanceSuperFlight()
     if job.ContactFrame then
         if self.PhysicsFrame<=job.ContactFrame then return end
         if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
-        job.ContactFrame=nil;job.FlightFrame=self.PhysicsFrame;job.FlightStarted=self.Context.Clock()
+        job.ContactFrame=nil
+        entry.PairHits=(entry.PairHits or 0)+1;entry.BodyContacts=(entry.BodyContacts or 0)+1
+        if not job.Capture and(entry.PairHits<2 or entry.Stage=='body-tail')then
+            self:SuperReactionSeen(entry)
+            if not self:HoldSuperBody(entry)then self:DropSuperEntry(entry,true);return end
+            if entry.PairHits>=2 then
+                entry.BodyPairs=(entry.BodyPairs or 0)+1
+                entry.NextAt=math.max(self.Context.Clock(),(entry.PairStarted or job.Started)+.1)
+                entry.PairHits=0;entry.PairStarted=nil;entry.Phase='body-tail-gap'
+            else
+                entry.NextAt=math.max(self.Context.Clock(),job.Started+.05);entry.Phase='pair-gap'
+            end
+            self:ReleaseSuperJob(job);return
+        end
+        job.FlightFrame=self.PhysicsFrame;job.FlightStarted=self.Context.Clock()
         job.RiseRequired=math.max(6,verticalHalf(job.Sound)+verticalHalf(entry.Root)+1)
         entry.Phase=job.Capture and'capture-rise'or'rise'
         self.SuperLaunches=(self.SuperLaunches or 0)+1
@@ -94815,7 +95033,7 @@ function Pallet:SuperContact(character,valid)
     local entry=self.SuperStates[character]
     if entry and(entry.Value~=value or entry.Root~=root)then self:DropSuperEntry(entry,true);entry=nil end
     if not entry then
-        entry={Character=character,Root=root,Value=value,Valid=valid,Phase='await-hold',StableFrames=0}
+        entry={Character=character,Root=root,Value=value,Valid=valid,Phase='await-hold',StableFrames=0,Stage='pair1',PairHits=0}
         entry.Observer=Reaction.new(character,self.Context.Clock)
         self.SuperStates[character]=entry;self:QueueSuperEntry(entry)
     else entry.Valid=valid end
@@ -94832,6 +95050,7 @@ function Pallet:EndSourceContact(character,contact)
     if self.SourcePending and self.SourcePending[character]==contact then self.SourcePending[character]=nil end
 end
 function Pallet:Cancel(character)
+    if self.Shadow then self.Shadow:Cancel(character)end
     if self.SuperStates and self.SuperStates[character]then self:DropSuperEntry(self.SuperStates[character],true)end
     if self.SourcePending then self:EndSourceContact(character,self.SourcePending[character])end
     if self.SourceReactions and self.SourceReactions[character]then self.SourceReactions[character]:Dispose();self.SourceReactions[character]=nil end
@@ -94857,7 +95076,7 @@ function Pallet:Apply(character,valid)
     return entry.Success==true
 end
 function Pallet:Step()
-    if self.Closed or self.Active or self.SuperFlight or self.Preparing or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
+    if self.Closed or self.Active or self.SuperFlight or self.Shadow and self.Shadow.Active or self.Preparing or next(self.Pauses)or self.States.Ragdolling or self.Context.Clock()<(self.NextStart or 0)then return end
     local entry
     -- A one-shot effect can finish on Ragdolled=true. A continuous kick must
     -- still dispatch the native operation for a target held in that state.
@@ -94910,6 +95129,7 @@ end
 function Pallet:Pause(token,value)
     self.Pauses[token]=value and true or nil
     if value then
+        if self.Shadow then self.Shadow:Clear(true)end
         self:StopSuperFlight(true)
         local characters={}
         for character in pairs(self.Entries)do characters[#characters+1]=character end
@@ -94972,7 +95192,8 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=13,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
+    local info={Version=15,Mechanism=self.Shadow and not self:IsSuperMode()and 'Supplied Shadow Core downward pallet path; placements are not server hit acknowledgements'or self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
+        ShadowPlacements=self.Shadow and self.Shadow.Attempts or 0,ShadowPasses=self.Shadow and self.Shadow.Passes or 0,
         NativeContactBegins=self.SourceBegins or 0,NativeContactEnds=self.SourceEnds or 0,NativePalletReady=self.NativeKickReady==true,NativeTargets={},
         SuperFastPlacements=self.SuperStrikes or 0,SuperFastObservedDepartures=self.SuperDepartures or 0,SuperFastFlightActive=self.SuperFlight~=nil,
         SuperFastInboundCrossings=self.SuperInboundCrossings or 0,SuperFastBodyContacts=self.SuperBodyContacts or 0,SuperFastLaunches=self.SuperLaunches or 0,SuperFastTargets={},
@@ -94989,7 +95210,7 @@ function Pallet:Evidence()
     end end
     for character,reaction in pairs(self.SourceReactions or{})do info.NativeTargets[#info.NativeTargets+1]={Character=character.Name,Reaction=reaction:Describe()}end
     for character,entry in pairs(self.SuperStates or{})do
-        info.SuperFastTargets[#info.SuperFastTargets+1]={Character=character.Name,Phase=entry.Phase,
+        info.SuperFastTargets[#info.SuperFastTargets+1]={Character=character.Name,Phase=entry.Phase,Stage=entry.Stage,PairHits=entry.PairHits,BodyPairs=entry.BodyPairs or 0,BodyContacts=entry.BodyContacts or 0,
             Attempts=entry.Attempts or 0,CompletedStrokes=entry.Completed or 0,Misses=entry.Misses or 0,LastReceiverKind=entry.LastReceiverKind,LastEntryKind=entry.LastEntryKind,
             GameReactionObserved=entry.SeenReaction==true,Reaction=entry.Observer and entry.Observer:Describe()}
     end
@@ -95003,7 +95224,9 @@ function Pallet:Describe()
         self.PassRate=(self.Passes-self.RatePasses)/dt;self.TouchRate=(self.Contacts-self.RateContacts)/dt
         self.RateAt=now;self.RatePasses=self.Passes;self.RateContacts=self.Contacts
     end
-    if self.Context.SourceKick then
+    if self.Shadow and not self:IsSuperMode()then
+        return self.Status..string.format("\nsource pallet stages: %d | completed passes: %d | one-shot ragdoll states: %d",self.Shadow.Attempts,self.Shadow.Passes,self.Confirmed)
+    elseif self.Context.SourceKick then
         return self.Status..string.format("\nroot contact calls: %d | ended: %d | one-shot ragdoll states: %d",self.SourceBegins or 0,self.SourceEnds or 0,self.Confirmed)
     end
     return self.Status..string.format("\nplacements: %d | local touches: %d | one-shot ragdoll states: %d\nmeasured: %.1f placements/s | %.1f local touches/s",self.Passes,self.Contacts,self.Confirmed,self.PassRate,self.TouchRate)
@@ -95011,6 +95234,7 @@ end
 function Pallet:Dispose()
     if self.Closed then return end
     self.Closed=true;self.Connection:Disconnect();self.PhysicsConnection:Disconnect();self.Ownership:Dispose()
+    if self.Shadow then self.Shadow:Dispose()end
     for _,entry in pairs(self.Entries)do entry.Pulse=nil;entry.InitialContact=nil;entry.InitialActive=nil;entry.ContactInFlight=nil;entry.Done=true;entry.Success=false;if entry.Reaction then entry.Reaction:Dispose()end end
     table.clear(self.Queue)
     self:SafePark()
@@ -95157,6 +95381,9 @@ function Loop:Remove(player)
     local restores={};session.Restores=restores
     restores.Position=function()if session.Position and session.Position.Parent then session.Position:Destroy()end end
     restores.Orientation=function()if session.Orientation and session.Orientation.Parent then session.Orientation:Destroy()end end
+    if session.ShadowSit then restores.ShadowSit=function()
+        if session.Humanoid.Parent and session.Humanoid.Sit==true then session.Humanoid.Sit=session.ShadowSit.Value end
+    end end
     if session.EKI then restores.EKI=function()assert(self:RestoreEKI(session),session.EKIError or 'Replication reset rejected')end end
     if session.Weld then restores.Weld=function()if session.Weld.Parent then session.Weld.Enabled=session.WeldEnabled end end end
     if session.Physics then
@@ -95198,13 +95425,36 @@ function Loop:Create(player,character,root,humanoid)
     position=Instance.new("BodyPosition");position.Name="KickAP";position.D=self.Context.SourceMode and 100 or 200;position.MaxForce=Vector3.new(math.huge,math.huge,math.huge)
     position.Position=root.Position;position.Parent=root
     orientation=nil
-    if not self.Context.SourceMode then
+    if not self.Context.SourceMode or self.Context.ShadowSource then
         orientation=Instance.new("BodyGyro");orientation.Name="KickAO";orientation.MaxTorque=Vector3.new(math.huge,math.huge,math.huge);orientation.D=200
         orientation.CFrame=CFrame.new();orientation.Parent=root
     end
     session.Position,session.Orientation=position,orientation
     if self.Context.WarmRagdoll and self:RagdollRequired()then self.Context.WarmRagdoll()end
     self.Sessions[player]=session;return session
+end
+function Loop:ShadowHold(session)
+    if not self.Context.ShadowSource then return end
+    local source=self.Context.SourceMode()~='Super Fast'
+    session.Position.P=source and 20000 or 10000
+    session.Position.D=source and 75 or 100
+    local gyro=session.Orientation
+    if source then
+        if not gyro or gyro.Parent~=session.Root then
+            gyro=Instance.new('BodyGyro');gyro.Name='KickAO'
+            gyro.MaxTorque=Vector3.new(math.huge,math.huge,math.huge)
+            gyro.Parent=session.Root;session.Orientation=gyro
+        end
+        gyro.P=3000;gyro.D=500
+        local _,actor=self.Context.LocalCharacter()
+        if actor then gyro.CFrame=actor.CFrame end
+    elseif gyro then
+        gyro:Destroy();session.Orientation=nil
+    end
+    if not source and session.ShadowSit then
+        if session.Humanoid.Parent and session.Humanoid.Sit==true then session.Humanoid.Sit=session.ShadowSit.Value end
+        session.ShadowSit=nil
+    end
 end
 function Loop:Physics(session)
     if not session.Physics or self.Context.PreserveCharacterRig then
@@ -95222,7 +95472,7 @@ function Loop:Physics(session)
     end
     self.Context.Collisions(session.Character,false)
     if not self.Context.PreserveCharacterRig then self.Context.Limbs(session.Character,true)end
-    if self.Context.Stabilize and session.SourceReady and not session.RecoveringHold and(self.Context.NetworkOwned or self.Context.Owned)(session.Root)then
+    if self.Context.Stabilize and not(self.Context.ShadowSource and self.Context.SourceMode()~='Super Fast')and session.SourceReady and not session.RecoveringHold and(self.Context.NetworkOwned or self.Context.Owned)(session.Root)then
         self.Context.Stabilize(session.Character)
     end
 end
@@ -95308,7 +95558,7 @@ function Loop:TrackHold(session,position,now,networkOwned)
         end
         if session.HoldSamples>=2 then
             session.HadPhysicalHold=true
-            if session.RecoveringHold and self.Context.Owned(session.Root)then
+            if session.RecoveringHold and(self.Context.Owned(session.Root)or self.Context.KeepCapture and networkOwned and session.CaptureAcknowledged)then
                 session.RecoveringHold=nil;session.RecoveryStarted=nil;session.RecoveryGrabAt=nil
                 session.SourceNextAt=nil;session.SourceDeadline=nil
             end
@@ -95353,6 +95603,7 @@ function Loop:Update(session,position,now,ping)
         session.CapturedFrame=nil;session.CaptureAcknowledged=nil
     end
     self:RepairHoldMover(session)
+    self:ShadowHold(session)
     session.Position.Position=position
     if self.Excursion or self.CaptureAnchor then return end
     if not self.NativeTick then
@@ -95367,7 +95618,9 @@ function Loop:Update(session,position,now,ping)
         self:Acquire(session,now);return
     end
     if(root.Position-localRoot.Position).Magnitude>33 then
-        if ctx.Owned(root)then ctx.Teleport(root,position)
+        if networkOwned and session.CaptureAcknowledged then
+            if not ctx.ShadowSource then ctx.Teleport(root,position)end
+        elseif ctx.Owned(root)then ctx.Teleport(root,position)
         else self:Acquire(session,now);return end
     end
     -- Ownership phases gate only the next outgoing Grab. Hold updates,
@@ -95439,9 +95692,60 @@ end
 -- Normal keeps its old pre-physics cadence; Faster repeats that same pair once
 -- after the solver, without same-callback bursts or catch-up traffic.
 local sourceSteps={Faster={{'G','R'}},Normal={{'G','R'}},['Super Fast']={{'G','R'}}}
+-- Supplied Shadow Core Normal: ownership refresh, P=20000/D=75 overhead
+-- hold, actor-facing gyro, and six native release requests every three steps.
+-- Faster retains that operation with a two-step period. The expensive initial
+-- approach is separate and never restarts merely because a marker was released.
+function Loop:ShadowCycle(session,now,period,networkOwned)
+    local ctx=self.Context;local mode=ctx.SourceMode()=='Normal'and'Normal'or'Faster'
+    if session.SourceMode~=mode then
+        session.ShadowNextAt=nil;session.ShadowFrame=0;session.SourceMode=mode
+    end
+    if not networkOwned or not session.CaptureAcknowledged then
+        session.SourceReady=nil
+        return self:MaintainCapture(session,now,period,networkOwned)
+    end
+    session.SourceReady=true
+    if ctx.Grab(session.Root)~=false then session.Requested=true;self.Calls+=1 end
+    session.ShadowFrame=(session.ShadowFrame or 0)+1
+    local due=period and now+1e-7>=(session.ShadowNextAt or now+period)
+        or not period and session.ShadowFrame>=(mode=='Normal'and 3 or 2)
+    if period and not session.ShadowNextAt then session.ShadowNextAt=now+period end
+    if not due then return end
+    session.ShadowSit=session.ShadowSit or{Value=session.Humanoid.Sit}
+    session.Humanoid.Sit=true
+    local complete=true
+    for _=1,6 do
+        if not self:Valid(session)then return end
+        local ok,why=pcall(ctx.Release,session.Root)
+        if not ok then complete=false;session.LastError=tostring(why);break end
+        self.Released+=1
+    end
+    session.Requested=not complete;session.ShadowFrame=0
+    session.ShadowNextAt=period and now+period or nil
+    session.ShadowBursts=(session.ShadowBursts or 0)+1
+    return true
+end
+-- A retained capture is not a refresh loop. Once both ownership facts were
+-- observed, a transient marker change does not justify another Grab while
+-- the same root is still locally simulated. Actual loss re-enters acquisition.
+function Loop:MaintainCapture(session,now,period,networkOwned)
+    local ctx=self.Context;local requested=ctx.SourceMode()
+    session.SourceMode=requested=='Normal'and'Normal'or requested=='Super Fast'and'Super Fast'or'Faster'
+    if ctx.Owned(session.Root)then session.CaptureAcknowledged=true end
+    if networkOwned and session.CaptureAcknowledged then
+        session.SourceReady=true;session.CaptureRetryAt=nil;return
+    end
+    session.SourceReady=nil
+    if now<(session.CaptureRetryAt or 0)then return end
+    if ctx.Grab(session.Root)~=false then session.Requested=true;self.Calls+=1 end
+    session.CaptureRetryAt=now+math.max(period or .1,.1)
+end
 function Loop:SourceCycle(session,now,period,networkOwned)
     local ctx=self.Context;local root=session.Root
     if not self:Valid(session)then return end
+    if ctx.ShadowSource and ctx.SourceMode()~='Super Fast'then return self:ShadowCycle(session,now,period,networkOwned)end
+    if ctx.KeepCapture then return self:MaintainCapture(session,now,period,networkOwned)end
     if ctx.RecoverLostHold and session.RecoveringHold then self:RecoverHoldCycle(session,now);return end
     local requested=ctx.SourceMode()
     local mode=requested=='Normal'and'Normal'or requested=='Super Fast'and'Super Fast'or'Faster'
@@ -95503,7 +95807,7 @@ end
 function Loop:AfterPhysics()
     local ctx=self.Context
     local mode=ctx.SourceMode and ctx.SourceMode()
-    if self.Closed or not self.DistinctPhysicsPhases or(mode~='Faster'and mode~='Super Fast')or not ctx.Enabled()
+    if self.Closed or ctx.ShadowSource or ctx.KeepCapture or not self.DistinctPhysicsPhases or(mode~='Faster'and mode~='Super Fast')or not ctx.Enabled()
         or self.Excursion or self.CaptureAnchor or ctx.OwnershipBusy()then return end
     local _,actor,hum=ctx.LocalCharacter()
     if not actor or not hum or hum.Health<=0 then return end
