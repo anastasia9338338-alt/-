@@ -1,4 +1,4 @@
--- Astral v4.96 | Paired Super Fast contacts and continuous body phase.
+-- Astral v4.97 | Super Fast recovery phases and budgeted avatar PCLD rendering.
 -- Original authorship/license notices remain in the embedded sources.
 local sources = {}
 sources.UIMotion = [========[
@@ -19757,7 +19757,7 @@ do
 								flag11 = false
 								fallenPartsDestroyHeight = (0/0)
 
-                                warn("Astral v4.96 | FTAP")
+                                warn("Astral v4.97 | FTAP")
 							end
 
 							app.OriginalFallenHeight = workspace.FallenPartsDestroyHeight
@@ -36227,7 +36227,7 @@ Escape Timer: %*]]
             box:AddLabel("Выбери цель во вкладке Target и включи Enable Kick.",true)
             box:AddLabel("Удачной игры!",true)
             box:AddDivider()
-            box:AddLabel("Astral v4.96",true)
+            box:AddLabel("Astral v4.97",true)
         end
 
         do
@@ -37973,7 +37973,7 @@ Escape Timer: %*]]
 
         local v21=v20
         v21:AddDropdown("AstralOwnershipMode",{Text="Kick Mode",Values={"Faster","Normal","Super Fast"},Default="Faster",AllowNull=false,
-            Tooltip="Normal: v4.94 Faster. Faster: twice the same refresh cadence. Super Fast: two contacts, upward flight, two more contacts, upward flight, then body contacts. Loop MS still controls full ownership cycles.",
+            Tooltip="Normal: v4.94 Faster. Faster: twice the same refresh cadence. Super Fast: two contacts, upward flight and short off-body gap; repeat the pair, then a bounded final burst. Loop MS still controls full ownership cycles.",
             Callback=function(value)tbl9.NKSourceMode=value;tbl12.PalletRagdoll:SetKickMode(value)end})
         tbl12.KickLoop.MaximumSpeed=true;tbl12.PalletRagdoll.MaximumSpeed=true
         v21:AddSlider("AstralPalletContactRate",{Text="Pallet Retry Rate",Default=30,Min=5,Max=30,Rounding=0,Suffix="/s",
@@ -39119,6 +39119,7 @@ Escape Timer: %*]]
             Enabled=function()return not flag11 and tbl8.PCLDESP end,
             Character=function(player)return tbl12.Char(player)end,
             Detector=tbl12.DetectPCLD,Waiting=tbl12.IsWaitingPCLD,
+            CoverageChanged=function(detector)if tbl12.UpdatePCLDESP then tbl12.UpdatePCLDESP(detector)end end,
             Frame=function(part)
                 local record=espConfig.Server.Objects[part]
                 return record and record.Clone and record.Clone.Parent and record.Clone.CFrame or part.CFrame
@@ -42115,7 +42116,7 @@ local function restFrames(character,root)
  return frames
 end
 function Avatars.Install(ctx)
- local self=setmetatable({Context=ctx,Mode='Box',Records={},Elapsed=0,Limit=150,Status='Box'},Avatars)
+ local self=setmetatable({Context=ctx,Mode='Box',Records={},ByDetector={},VisibleCount=0,Elapsed=0,Limit=150,Status='Box'},Avatars)
  self.Connection=ctx.RunService.Heartbeat:Connect(function(dt)
   if self.Closed then return end
   self.Elapsed+=dt or 0;if self.Elapsed<.2 then return end;self.Elapsed=0
@@ -42123,18 +42124,35 @@ function Avatars.Install(ctx)
   if not ok then self.LastError=tostring(why);self:Clear();self.Status='Avatar PCLD: '..self.LastError end
  end)
  local watched,cameraSignal=pcall(function()return ctx.Workspace:GetPropertyChangedSignal('CurrentCamera')end)
- if watched and cameraSignal then self.CameraConnection=cameraSignal:Connect(function()self:SyncCamera()end)end
+ if watched and cameraSignal then self.CameraConnection=cameraSignal:Connect(function()
+  self:SyncCamera();if self:Active()then self:Render()end
+ end)end
  return self
 end
 function Avatars:SyncCamera()
  if not self.Viewport or not self.Viewport.Parent then return end
  local camera=self.Context.Workspace.CurrentCamera
- self.Viewport.CurrentCamera=camera
- self.Viewport.Visible=camera~=nil and self:Active()
+ if self.Viewport.CurrentCamera~=camera then self.Viewport.CurrentCamera=camera end
+ local visible=camera~=nil and self:Active()and self.VisibleCount>0
+ if self.Viewport.Visible~=visible then self.Viewport.Visible=visible end
+ if camera~=self.BoundCamera then
+  for _,connection in ipairs(self.CameraPoseConnections or{})do connection:Disconnect()end
+  self.CameraPoseConnections={};self.BoundCamera=camera;self.CameraState=nil
+  if camera and self:Active()then
+   for _,property in ipairs({'CFrame','FieldOfView','ViewportSize'})do
+    self.CameraPoseConnections[#self.CameraPoseConnections+1]=camera:GetPropertyChangedSignal(property):Connect(function()
+     -- Camera motion may reveal stationary detectors. This only changes
+     -- visibility; the pose still comes from the native Box frame.
+     if self:Active()then self:Render()end
+    end)
+   end
+  end
+ end
 end
 function Avatars:SurfaceReady()
  return alive(self.Gui)and alive(self.Viewport)and alive(self.Container)
-  and self.Viewport.Parent==self.Gui and self.Container.Parent==self.Viewport
+  and alive(self.Batch)and alive(self.Storage)and alive(self.Highlight)
+  and self.Viewport.Parent==self.Gui and self.Container.Parent==self.Viewport and self.Batch.Parent==self.Container
   and self.Gui~=self.Context.Workspace and not self.Gui:IsDescendantOf(self.Context.Workspace)
   and self.Viewport.CurrentCamera~=nil
 end
@@ -42159,13 +42177,20 @@ function Avatars:EnsureSurface()
   viewport.Ambient=Color3.new(1,1,1);viewport.LightColor=Color3.new(1,1,1)
   viewport.LightDirection=Vector3.new(-1,-1,-1);viewport.Parent=gui
   local world=Instance.new('WorldModel');world.Name='AstralPCLDAvatars';world.Parent=viewport
+  local batch=Instance.new('Model');batch.Name='VisibleAvatars';batch.Parent=world
+  local storage=Instance.new('Folder');storage.Name='HiddenAvatars';storage.Parent=gui
+  -- All PCLDs use the same outline settings. One outline pass for the batch
+  -- replaces an independent Highlight for every avatar.
+  local highlight=Instance.new('Highlight');highlight.Name='PCLDColors';highlight.Adornee=batch
+  highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;highlight.FillTransparency=1;highlight.Parent=world
   gui.Parent=parent
   self.Gui,self.Viewport,self.Container=gui,viewport,world
+  self.Batch,self.Storage,self.Highlight=batch,storage,highlight;self.Style=nil
   self:SyncCamera()
  end)
  if not ok then
   if gui then gui:Destroy()end
-  self.Gui,self.Viewport,self.Container=nil,nil,nil;self.LastError=tostring(why)
+  self.Gui,self.Viewport,self.Container=nil,nil,nil;self.Batch,self.Storage,self.Highlight=nil,nil,nil;self.LastError=tostring(why)
   self.Status='Avatar PCLD unavailable: '..self.LastError..'; Box fallback';return false
  end
  return self:SurfaceReady()
@@ -42173,18 +42198,33 @@ end
 function Avatars:Active()return not self.Closed and self.Mode=='Avatar'and self.Context.Enabled()end
 function Avatars:Has(detector)
  if not self:Active()or not self:SurfaceReady()then return false end
- for _,r in pairs(self.Records)do if r.Detector==detector and alive(r.Model)and not r.Dirty then return true end end
- return false
+ local r=self.ByDetector[detector]
+ return r~=nil and alive(r.Model)and not r.Dirty and r.Renderable==true
+end
+function Avatars:SetCoverage(r,visible)
+ visible=visible==true
+ if r.Renderable==visible then return end
+ self.VisibleCount+=visible and 1 or -1
+ r.Renderable=visible
+ local parent=visible and self.Batch or self.Storage
+ if alive(r.Model)then r.Model.Parent=alive(parent)and parent or nil end
+ if self.Context.CoverageChanged then self.Context.CoverageChanged(r.Detector)end
 end
 function Avatars:Remove(player)
  local r=self.Records[player];if not r then return end;self.Records[player]=nil
+ if self.ByDetector[r.Detector]==r then self.ByDetector[r.Detector]=nil end
+ self:SetCoverage(r,false)
  for _,c in ipairs(r.Connections)do c:Disconnect()end;r.Model:Destroy()
 end
 function Avatars:Clear()
  local list={};for p in pairs(self.Records)do list[#list+1]=p end
  for _,p in ipairs(list)do self:Remove(p)end
+ self.VisibleCount=0
  if self.RenderConnection then self.RenderConnection:Disconnect();self.RenderConnection=nil end
+ for _,connection in ipairs(self.CameraPoseConnections or{})do connection:Disconnect()end
+ self.CameraPoseConnections={};self.BoundCamera=nil;self.CameraState=nil
  if self.Viewport then self.Viewport.Visible=false end
+ if self.Highlight then self.Highlight.Enabled=false end
 end
 function Avatars:SetMode(value)
  if value~='Box'and value~='Avatar'then return false end
@@ -42248,23 +42288,39 @@ function Avatars:Build(player,character,root,detector)
   if #parts==0 or #parts>320 or not finite(lo)or not finite(hi)or hi.Y-lo.Y<.1 then return end
   model.PrimaryPart=nil
   local center=(lo+hi)*.5
-  for _,p in ipairs(parts)do p.Offset=(CFrame.new(-center)*p.Frame)end
+  local radius=0
+  for _,p in ipairs(parts)do
+   p.Offset=CFrame.new(-center)*p.Frame;p.Part.CFrame=p.Offset
+   radius=math.max(radius,p.Offset.Position.Magnitude+p.Part.Size.Magnitude*.5)
+  end
+  -- PivotTo caches the fixed part offsets in the engine. Do not re-enter Lua
+  -- for every part/decal on every detector update.
+  model.WorldPivot=CFrame.new()
   model.Name='AstralPCLD/'..player.Name
-  local highlight=Instance.new('Highlight');highlight.Name='PCLDColors';highlight.Adornee=model;highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;highlight.Parent=model
   local surfaces={}
   for _,v in ipairs(model:GetDescendants())do if v:IsA('Decal')then surfaces[#surfaces+1]={Part=v,Source=originals[v],Transparency=transparency(v.Transparency)}end end
-  local record={Player=player,Character=character,Root=root,Model=model,Parts=parts,Highlight=highlight,Connections={},Detector=detector,
-   BodyHeight=hi.Y-lo.Y,Scale=1,Surfaces=surfaces,RigRoot=rigRoot}
+  local record={Player=player,Character=character,Root=root,Model=model,Parts=parts,Highlight=self.Highlight,Connections={},Detector=detector,
+   BodyHeight=hi.Y-lo.Y,Scale=1,Surfaces=surfaces,RigRoot=rigRoot,Radius=radius,Renderable=false}
+  local function invalidate()record.Dirty=true;self:SetCoverage(record,false)end
   local function dirty(v)
-   if v:IsA('BasePart')or v:IsA('Accessory')or v:IsA('Shirt')or v:IsA('Pants')or v:IsA('BodyColors')then record.Dirty=true end
+   if v:IsA('BasePart')and cosmetic(v,character,rigRoot)or v:IsA('Accessory')and v.Parent==character
+    or v:IsA('Shirt')or v:IsA('Pants')or v:IsA('BodyColors')or v:IsA('DataModelMesh')or v:IsA('Decal')then invalidate()end
   end
   if character.DescendantAdded then record.Connections[#record.Connections+1]=character.DescendantAdded:Connect(dirty)end
   if character.DescendantRemoving then record.Connections[#record.Connections+1]=character.DescendantRemoving:Connect(dirty)end
   for _,p in ipairs(parts)do
-   for _,property in ipairs({'Size','Color','Transparency'})do
-    record.Connections[#record.Connections+1]=p.Source:GetPropertyChangedSignal(property):Connect(function()record.Dirty=true end)
+   if p.Source~=rigRoot then record.Connections[#record.Connections+1]=p.Source:GetPropertyChangedSignal('Size'):Connect(invalidate)end
+   for _,property in ipairs({'Color','Transparency'})do
+    record.Connections[#record.Connections+1]=p.Source:GetPropertyChangedSignal(property):Connect(function()
+     if p.Part.Parent then p.Part[property]=property=='Transparency'and(p.Source==rigRoot and 1 or transparency(p.Source[property]))or p.Source[property]end
+    end)
    end
   end
+  for _,surface in ipairs(surfaces)do if surface.Source then
+   record.Connections[#record.Connections+1]=surface.Source:GetPropertyChangedSignal('Transparency'):Connect(function()
+    if surface.Part.Parent then surface.Part.Transparency=transparency(surface.Source.Transparency)end
+   end)
+  end end
   local function guard(instance,property,value)
    record.Connections[#record.Connections+1]=instance:GetPropertyChangedSignal(property):Connect(function()
     if instance.Parent and instance[property]~=value then instance[property]=value end
@@ -42281,7 +42337,7 @@ function Avatars:Build(player,character,root,detector)
   -- this frozen appearance copy after its initial sanitization.
   local known={};for _,v in ipairs(model:GetDescendants())do known[v]=true end
   record.Connections[#record.Connections+1]=model.DescendantAdded:Connect(function(v)if not known[v]then v:Destroy()end end)
-  self.Records[player]=record;model.Parent=self.Container;result=record
+  self.Records[player]=record;self.ByDetector[detector]=record;model.Parent=self.Storage;result=record
  end)
  if not prepared or not result then model:Destroy();self.LastError=not prepared and tostring(prepareWhy)or self.LastError end
  return result
@@ -42299,7 +42355,13 @@ function Avatars:Refresh()
     local r=self.Records[player]
     if r and(r.Character~=character or r.Root~=root or not alive(r.Model)or r.Dirty)then self:Remove(player);r=nil end
     if not r and built<3 then built+=1;r=self:Build(player,character,root,detector)end
-    if r then r.Detector=detector;keep[player]=true end
+    if r then
+     if r.Detector~=detector then
+      if self.ByDetector[r.Detector]==r then self.ByDetector[r.Detector]=nil end
+      self:SetCoverage(r,false);r.Detector=detector;self.ByDetector[detector]=r
+     end
+     keep[player]=true
+    end
    end
   end
  end
@@ -42310,37 +42372,64 @@ function Avatars:Refresh()
  end
  self:Render();self.Status='Avatar PCLD: '..tostring(count)
 end
+function Avatars:CameraSnapshot()
+ local camera=self.BoundCamera
+ local frame=camera and camera.CFrame;local size=camera and camera.ViewportSize;local fov=camera and camera.FieldOfView
+ local state=self.CameraState
+ if state and state.Frame==frame and state.Size==size and state.FOV==fov then return state end
+ state={Frame=frame,Size=size,FOV=fov};self.CameraState=state
+ if frame and size and size.X>0 and size.Y>0 and type(fov)=='number'and fov>0 and fov<179 then
+  state.Y=math.tan(math.rad(fov*.5));state.X=state.Y*size.X/size.Y
+  state.PadX=math.sqrt(1+state.X*state.X);state.PadY=math.sqrt(1+state.Y*state.Y)
+ end
+ return state
+end
+function Avatars:InView(r,frame,camera)
+ if not camera.X then return true end -- a camera still starting has no viewport
+ if r.ClipFrame==frame and r.ClipCamera==camera then return r.InView end
+ local offset=camera.Frame:VectorToObjectSpace(frame.Position-camera.Frame.Position)
+ local depth=-offset.Z;local radius=r.Radius
+ -- Conservative sphere/plane test includes partly visible hats and near-plane
+ -- intersections. Offscreen copies stay outside WorldModel and cost no draw.
+ local visible=depth+radius>0 and math.abs(offset.X)<=depth*camera.X+radius*camera.PadX
+  and math.abs(offset.Y)<=depth*camera.Y+radius*camera.PadY
+ r.ClipFrame=frame;r.ClipCamera=camera;r.InView=visible
+ return visible
+end
+function Avatars:ApplyStyle()
+ local conf=self.Context.Config();local style=self.Style or{};self.Style=style
+ local fill=transparency(conf.FillTransparency);local outline=transparency(conf.OutlineTransparency)
+ if style.Fill~=fill then self.Viewport.ImageTransparency=fill;style.Fill=fill end
+ if style.Color~=conf.FillColor then self.Viewport.ImageColor3=conf.FillColor;self.Highlight.FillColor=conf.FillColor;style.Color=conf.FillColor end
+ if style.Outline~=outline then self.Highlight.OutlineTransparency=outline;style.Outline=outline end
+ if style.OutlineColor~=conf.OutlineColor then self.Highlight.OutlineColor=conf.OutlineColor;style.OutlineColor=conf.OutlineColor end
+end
+function Avatars:RenderRecord(r,camera)
+ local character,root,h=self.Context.Character(r.Player)
+ if character~=r.Character or root~=r.Root or not h or h.Health<=0 or not alive(r.Detector)or self.Context.Waiting(r.Detector)then
+  self:Remove(r.Player);return
+ end
+ if r.Dirty then self:SetCoverage(r,false);return end
+ local frame=self.Context.Frame(r.Detector)
+ if not frame or not finite(frame.Position)or not self:InView(r,frame,camera)then self:SetCoverage(r,false);return end
+ -- No fit-to-box scale and no second interpolation/prediction pass. A stable
+ -- native frame performs no transform writes, even when camera/UI refreshes.
+ if r.LastFrame~=frame then r.Model:PivotTo(frame);r.LastFrame=frame end
+ self:SetCoverage(r,true)
+end
 function Avatars:Render(detector)
  if not self:Active()then self:Clear();return end
  if not self:SurfaceReady()then self:Clear();return end
- self:SyncCamera()
- local conf=self.Context.Config()
- -- One whole-view alpha matches Box transparency. Keep original skin/decal
- -- alpha within the WorldModel, avoiding multiple overlapping ghost layers.
- self.Viewport.ImageTransparency=transparency(conf.FillTransparency)
- self.Viewport.ImageColor3=conf.FillColor
- self.Viewport.Visible=true
- for player,r in pairs(self.Records)do if not detector or detector==r.Detector then
-  local character,root,h=self.Context.Character(player)
-  if character~=r.Character or root~=r.Root or not h or h.Health<=0 or not alive(r.Detector)or self.Context.Waiting(r.Detector)then self:Remove(player)
-  else
-   local frame=self.Context.Frame(r.Detector)
-   if frame and finite(frame.Position)then
-    -- No fit-to-box scale and no second interpolation/prediction pass.
-    for _,p in ipairs(r.Parts)do if p.Part:IsDescendantOf(r.Model)then
-     p.Part.CFrame=frame*p.Offset
-     local value=p.Source==r.RigRoot and 1 or transparency(p.Source.Transparency)
-     if p.Part.Transparency~=value then p.Part.Transparency=value end
-    end end
-    for _,s in ipairs(r.Surfaces)do if s.Part.Parent then
-     local original=s.Source and s.Source.Parent and transparency(s.Source.Transparency)or s.Transparency
-     s.Part.Transparency=original
-    end end
-    r.Highlight.FillColor=conf.FillColor;r.Highlight.OutlineColor=conf.OutlineColor
-    r.Highlight.FillTransparency=1;r.Highlight.OutlineTransparency=conf.OutlineTransparency;r.Highlight.Enabled=true
-   else r.Highlight.Enabled=false end
-  end
- end end
+ self:SyncCamera();self:ApplyStyle()
+ local camera=self:CameraSnapshot()
+ if detector then
+  local r=self.ByDetector[detector];if r then self:RenderRecord(r,camera)end
+ else
+  for _,r in pairs(self.Records)do self:RenderRecord(r,camera)end
+ end
+ local visible=self.VisibleCount>0 and self.BoundCamera~=nil
+ if self.Viewport.Visible~=visible then self.Viewport.Visible=visible end
+ if self.Highlight.Enabled~=visible then self.Highlight.Enabled=visible end
 end
 function Avatars:Dispose()
  if self.Closed then return end;self.Closed=true;self:Clear();self.Connection:Disconnect()
@@ -46306,9 +46395,9 @@ local Identity=requireModule("AppIdentity")
 Identity.RetireLegacyAstral(env)
 local app=Identity.Runtime(env)
 if app.Running or app.Starting then
-    warn("Astral v4.96: unload the running Astral in Settings before executing this update")
+    warn("Astral v4.97: unload the running Astral in Settings before executing this update")
     pcall(function()game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title="Astral v4.96 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
+        Title="Astral v4.97 update",Text="Unload the old Astral in Settings, then execute this file again.",Duration=8})end)
     return
 end
 assert(type(setfenv)=="function","Astral requires setfenv to isolate its runtime")
@@ -46494,7 +46583,7 @@ end
 function Style.Window()
     -- BetterOrion is the main library used by the supplied TheWorst source.
     -- Keep Astral's identity, control IDs and menu key on that presentation.
-    return {Title="astral",Subtitle="FTAP | v4.96",Footer="",Icon=Style.BrandIcon,
+    return {Title="astral",Subtitle="FTAP | v4.97",Footer="",Icon=Style.BrandIcon,
         ToggleKeybind=Enum.KeyCode.RightShift,Center=true,AutoShow=true,
         Font=Enum.Font.Gotham,Size=UDim2.fromOffset(600,400),MinContainerWidth=320,
         ShowMobileButtons=false,IconSize=UDim2.fromOffset(22,22),CornerRadius=10,BackgroundImage="",
@@ -93636,7 +93725,8 @@ return Builds
 ]========]
 sources.PalletRagdoll = [========[
 -- Shared source pallet operation. One-shot effects wait for ragdoll state;
--- continuous kick requests keep attempting while held, even if already ragdolled.
+-- Normal/Faster retain native retries; Super Fast separates contact groups and
+-- gives the board real clearances instead of holding it in the target.
 local requireModule=...
 local Source=requireModule("Resonance29Ragdoll")
 local Ownership=requireModule("PalletOwnership")
@@ -94365,6 +94455,7 @@ function Pallet:DropSuperEntry(entry,park)
     if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
     if self.SuperBoardOwner==entry then self:RestoreSuperBoard(park)end
     if self.SuperStates and self.SuperStates[entry.Character]==entry then self.SuperStates[entry.Character]=nil end
+    if entry.Observer then entry.Observer:Dispose();entry.Observer=nil end
 end
 function Pallet:StopSuperFlight(park)
     local hadSuper=self.SuperFlight or self.SuperBoardOwner or next(self.SuperStates or{})
@@ -94376,6 +94467,7 @@ function Pallet:StopSuperFlight(park)
     for _,entry in pairs(self.SuperStates or{})do
         entry.Cancelled=true
         if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
+        if entry.Observer then entry.Observer:Dispose();entry.Observer=nil end
     end
     self.SuperQueue=nil;self.SuperStates=nil
     if hadSuper then self:RestoreSuperBoard(park)end
@@ -94393,8 +94485,8 @@ function Pallet:HoldSuperBoard(job,place)
     local assembly=isolatedAssembly(sound,job.Model)
     if not assembly then return false end
     if place then assembly.CFrame=assembly.CFrame+(root.Position-sound.Position)end
-    -- Keep the same source mover/rotation. While the pair/body phase runs,
-    -- follow the real root instead of allowing the sky goal to win each hit.
+    -- Keep the source mover/rotation during this one physics-step contact.
+    -- The gap and recovery phases remove physical overlap separately.
     job.Profile.Lift.Position=root.Position+(main.Position-sound.Position)
     assembly.AssemblyLinearVelocity=root.AssemblyLinearVelocity
     self.SuperBoardOwner=job.Entry
@@ -94405,6 +94497,40 @@ function Pallet:ReleaseSuperJob(job)
     self.SuperFlight=nil
     self:QueueSuperEntry(job.Entry)
 end
+function Pallet:SuperReactionSeen(entry)
+    local observer=entry.Observer
+    if observer then observer:Refresh()end
+    if entry.Value.Value==true or observer and entry.Attempt and observer:ObservedSince(entry.Attempt)then entry.SeenReaction=true end
+    return entry.SeenReaction==true
+end
+function Pallet:RestSuperEntry(job,nextPhase,retryPhase)
+    local entry=job.Entry
+    self:SuperReactionSeen(entry)
+    entry.Phase=nextPhase=='pair2'and'recover1'or nextPhase=='burst'and'recover2'or'recover3'
+    entry.RecoveryNext=nextPhase;entry.RecoveryRetry=retryPhase
+    entry.WaitStarted=self.Context.Clock();entry.PairHits=0;entry.NextAt=nil
+    entry.WaitFrame=self.PhysicsFrame
+    entry.RestSeconds=nextPhase==retryPhase and .15 or nextPhase=='pair1'and .18 or .1
+    -- A finished touch does not end a physical overlap. Remove the board as
+    -- well, then leave ownership refresh free during the short off-body gap.
+    self:RestoreSuperBoard(true);self:ReleaseSuperJob(job)
+end
+function Pallet:SuperRestReady(entry)
+    if not entry.RecoveryNext then return true end
+    self:SuperReactionSeen(entry)
+    if self.PhysicsFrame<=(entry.WaitFrame or self.PhysicsFrame)
+        or self.Context.Clock()+1e-7<(entry.WaitStarted or 0)+(entry.RestSeconds or .1)then
+        self.Status='Super Fast: board clear; short recovery gap';return false
+    end
+    -- Ragdolled is read-only telemetry, not a per-hit acknowledgment or a
+    -- readiness gate: the game can retain true across several valid strokes.
+    -- Entry here already requires an observed exit (or retries the same pair
+    -- after a blocked flight). Never replace that exit with a timer.
+    entry.Phase=entry.RecoveryNext
+    entry.RecoveryNext=nil;entry.RecoveryRetry=nil;entry.Attempt=nil;entry.SeenReaction=nil
+    entry.PairHits=0;entry.NextAt=nil
+    return true
+end
 function Pallet:ClaimSuperJob()
     if self.SuperFlight or self.Active or self.Preparing or #self.Queue>0 then return end
     local queue=self.SuperQueue or{}
@@ -94412,6 +94538,7 @@ function Pallet:ClaimSuperJob()
         local entry=table.remove(queue,1);entry.Queued=nil
         if not self:SuperEntryValid(entry)then self:DropSuperEntry(entry,true);continue end
         if self.Context.Clock()<(entry.RetryAt or 0)then self:QueueSuperEntry(entry);continue end
+        if not self:SuperRestReady(entry)then self:QueueSuperEntry(entry);continue end
         local sound=self.Sound;local profile=self.KickProfile
         local main=self.Model and self.Model:FindFirstChild('Main')
         local owned=self.Context.PhysicsOwned or self.Context.Owned
@@ -94429,15 +94556,13 @@ function Pallet:ClaimSuperJob()
             if self.SuperBoardOwner==entry then self:RestoreSuperBoard(true)end
             self:QueueSuperEntry(entry);continue
         end
-        if entry.Sound and entry.Sound~=sound then entry.Phase='pair1';entry.PairHits=0;entry.Departures=0 end
+        if entry.Sound and entry.Sound~=sound then
+            entry.Phase='pair1';entry.PairHits=0;entry.Departures=0;entry.Attempt=nil;entry.SeenReaction=nil
+        end
         entry.Sound=sound
         local job={Entry=entry,Character=entry.Character,Root=entry.Root,Sound=sound,Main=main,Model=self.Model,Profile=profile}
         self.SuperFlight=job
-        local clear=(entry.Root.Size.Magnitude+sound.Size.Magnitude)*.5
-        local place=self.SuperBoardOwner~=entry or entry.Phase~='press'or entry.Profile~=profile
-            or(sound.Position-entry.Root.Position).Magnitude>clear
         entry.Profile=profile
-        if not self:HoldSuperBoard(job,place)then self:DropSuperEntry(entry,true);return end
         return job
     end
     if #queue==0 then self.SuperQueue=nil end
@@ -94447,20 +94572,21 @@ function Pallet:AdvanceSuperBeforePhysics()
     if not job then return end
     local entry=job.Entry
     if not self:SuperJobValid(job)then self:DropSuperEntry(entry,true);return end
-    if entry.Phase=='fly1'or entry.Phase=='fly2'then return end
-    self:HoldSuperBoard(job,false)
+    if entry.Phase=='fly1'or entry.Phase=='fly2'or entry.Phase=='fly3'then return end
     if job.ContactFrame or self.Context.Clock()+1e-7<(entry.NextAt or 0)then return end
+    if not entry.Attempt then
+        entry.Attempt=entry.Observer and entry.Observer:StartAttempt()
+        entry.SeenReaction=entry.Value.Value==true
+    end
     local started,reason=self:BeginRootContact(entry.Character,function()return self:SuperJobValid(job)end,function()
-        -- The two short contacts each place the real transmitter at the body.
-        -- The final phase leaves it there and uses balanced native contacts.
-        return self:HoldSuperBoard(job,entry.Phase~='press')
+        return self:HoldSuperBoard(job,true)
     end)
     if started then
         job.ContactFrame=self.PhysicsFrame;job.ContactAt=self.Context.Clock()
         entry.Attempts=(entry.Attempts or 0)+1
         self.SuperStrikes=(self.SuperStrikes or 0)+1
-        if entry.Phase=='press'then self.SuperBodyContacts=(self.SuperBodyContacts or 0)+1 end
-        self.Status=entry.Phase=='press'and'Super Fast: body contacts'or'Super Fast: paired contacts'
+        if entry.Phase=='burst'then self.SuperBodyContacts=(self.SuperBodyContacts or 0)+1 end
+        self.Status=entry.Phase=='burst'and'Super Fast: short final burst'or'Super Fast: paired contacts'
         return entry
     elseif reason=='native-touch-error'then
         -- The primitive may fail after issuing begin. Attempt its end and
@@ -94476,35 +94602,45 @@ function Pallet:AdvanceSuperFlight()
     if job.ContactFrame and self.PhysicsFrame>job.ContactFrame then
         if self.SourcePending then self:EndSourceContact(entry.Character,self.SourcePending[entry.Character])end
         job.ContactFrame=nil
-        if entry.Phase=='press'then self:ReleaseSuperJob(job);return end
+        self:SuperReactionSeen(entry)
         entry.PairHits=(entry.PairHits or 0)+1
-        if entry.PairHits<2 then
+        local limit=entry.Phase=='burst'and 3 or 2
+        if entry.PairHits<limit then
             -- The two flashes in the 30fps reference are about three frames
             -- apart. Keep that short gap independent of the client's FPS.
             entry.NextAt=job.ContactAt+.1
+            -- End the physical overlap between contacts too. Holding the
+            -- rotating board inside the body keeps reapplying ragdoll even
+            -- after NativeTouch(end), defeating the recovery sequence.
+            local assembly=isolatedAssembly(job.Sound,job.Model)
+            if not assembly then self:DropSuperEntry(entry,true);return end
+            local clear=(entry.Root.Size.Magnitude+job.Sound.Size.Magnitude)*.5+2
+            assembly.CFrame=assembly.CFrame+(entry.Root.Position+Vector3.new(0,clear,0)-job.Sound.Position)
+            assembly.AssemblyLinearVelocity=Vector3.zero
+            job.Profile.Lift.Position=Vector3.new(entry.Root.Position.X,10000,entry.Root.Position.Z)
             return
         end
-        entry.Phase=entry.Phase=='pair1'and'fly1'or'fly2'
+        entry.Phase=entry.Phase=='pair1'and'fly1'or entry.Phase=='pair2'and'fly2'or'fly3'
         job.FlightFrame=self.PhysicsFrame;job.Started=self.Context.Clock()
         job.Profile.Lift.Position=Vector3.new(entry.Root.Position.X,10000,entry.Root.Position.Z)
         self.SuperLaunches=(self.SuperLaunches or 0)+1
         self.Status='Super Fast: pair completed; lifting away'
         return
     end
-    if entry.Phase~='fly1'and entry.Phase~='fly2'then return end
+    if entry.Phase~='fly1'and entry.Phase~='fly2'and entry.Phase~='fly3'then return end
+    self:SuperReactionSeen(entry)
     local clear=(entry.Root.Size.Magnitude+job.Sound.Size.Magnitude)*.5+1
     if self.PhysicsFrame>job.FlightFrame and job.Sound.Position.Y-entry.Root.Position.Y>clear then
         self.SuperDepartures=(self.SuperDepartures or 0)+1
         entry.Departures=(entry.Departures or 0)+1
-        entry.Phase=entry.Phase=='fly1'and'pair2'or'press'
-        entry.PairHits=0;entry.NextAt=nil
         self.Status='Super Fast: upward departure observed'
-        self:ReleaseSuperJob(job)
+        local nextPhase=entry.Phase=='fly1'and'pair2'or entry.Phase=='fly2'and'burst'or'pair1'
+        local retryPhase=entry.Phase=='fly1'and'pair1'or entry.Phase=='fly2'and'pair2'or'burst'
+        self:RestSuperEntry(job,nextPhase,retryPhase)
     elseif self.Context.Clock()-job.Started>.35 then
         -- A blocked flight does not unlock the final stage or fabricate exit.
-        entry.Phase=entry.Phase=='fly1'and'pair1'or'pair2'
-        entry.PairHits=0;entry.RetryAt=self.Context.Clock()+.15
-        self:RestoreSuperBoard(true);self:ReleaseSuperJob(job)
+        local retryPhase=entry.Phase=='fly1'and'pair1'or entry.Phase=='fly2'and'pair2'or'burst'
+        self:RestSuperEntry(job,retryPhase,retryPhase)
         self.Status='Super Fast: blocked flight; retrying pair'
     end
 end
@@ -94519,6 +94655,7 @@ function Pallet:SuperContact(character,valid)
     if entry and(entry.Value~=value or entry.Root~=root)then self:DropSuperEntry(entry,true);entry=nil end
     if not entry then
         entry={Character=character,Root=root,Value=value,Valid=valid,Phase='pair1',PairHits=0,Departures=0}
+        entry.Observer=Reaction.new(character,self.Context.Clock)
         self.SuperStates[character]=entry;self:QueueSuperEntry(entry)
     else entry.Valid=valid end
     return self:AdvanceSuperBeforePhysics()==entry
@@ -94673,7 +94810,7 @@ function Pallet:Warm()
     self.Context.SpawnThread(function()self:Prepare()end)
 end
 function Pallet:Evidence()
-    local info={Version=10,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
+    local info={Version=11,Mechanism=self.Context.SourceKick and 'Source spinning pallet and paired root contacts; calls are not server hit acknowledgements'or self.Context.ReceiverOverlaps and 'Receiver-aligned physical sweeps; observed local entry/exit are not server acknowledgements'or'Frame-gated source retries; not server hit acknowledgements',
         NativeContactBegins=self.SourceBegins or 0,NativeContactEnds=self.SourceEnds or 0,NativePalletReady=self.NativeKickReady==true,NativeTargets={},
         SuperFastPlacements=self.SuperStrikes or 0,SuperFastObservedDepartures=self.SuperDepartures or 0,SuperFastFlightActive=self.SuperFlight~=nil,
         SuperFastBodyContacts=self.SuperBodyContacts or 0,SuperFastLaunches=self.SuperLaunches or 0,SuperFastTargets={},
@@ -94691,7 +94828,8 @@ function Pallet:Evidence()
     for character,reaction in pairs(self.SourceReactions or{})do info.NativeTargets[#info.NativeTargets+1]={Character=character.Name,Reaction=reaction:Describe()}end
     for character,entry in pairs(self.SuperStates or{})do
         info.SuperFastTargets[#info.SuperFastTargets+1]={Character=character.Name,Phase=entry.Phase,PairContacts=entry.PairHits,
-            Attempts=entry.Attempts or 0,ObservedDepartures=entry.Departures or 0}
+            Attempts=entry.Attempts or 0,ObservedDepartures=entry.Departures or 0,RecoveryNext=entry.RecoveryNext,
+            GameReactionObserved=entry.SeenReaction==true,Reaction=entry.Observer and entry.Observer:Describe()}
     end
     return info
 end
