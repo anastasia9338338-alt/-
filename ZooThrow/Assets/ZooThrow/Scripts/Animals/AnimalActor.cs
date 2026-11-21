@@ -222,6 +222,14 @@ namespace ZooThrow.Animals
                     case LimbKind.Arm:
                         t.localRotation = Quaternion.Euler(Mathf.Sin(_phase + spec.phase) * 40f * _moving01 + Mathf.Sin(_time * 1.5f) * 4f, 0, spec.side * 8f);
                         break;
+                    case LimbKind.Tail:
+                        {
+                            // Swish faster while moving or celebrating; flukes beat up and down.
+                            float speed = _moving01 > 0.1f || _celebrate >= 0f ? 9f : 4f;
+                            float swing = Mathf.Sin(_time * speed + spec.phase) * (spec.pitchWag ? 18f : 25f);
+                            t.localRotation = spec.pitchWag ? Quaternion.Euler(swing, 0, 0) : Quaternion.Euler(0, swing, 0);
+                            break;
+                        }
                     case LimbKind.Wing:
                         {
                             bool flying = Data.movement == MovementStyle.Fly;

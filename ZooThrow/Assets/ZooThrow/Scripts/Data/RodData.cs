@@ -27,5 +27,21 @@ namespace ZooThrow.Data
         [Range(1f, 4f)] public float length = 2.2f;
         [Tooltip("Удилище светится (для редких удочек).")]
         public bool glows;
+
+        [Header("Внешний вид")]
+        [Tooltip("Цвет катушки.")]
+        public Color reelColor = new Color(0.9f, 0.85f, 0.7f);
+        [Tooltip("Цвет колец-ферул, наконечника и цепочки.")]
+        public Color metal = new Color(0.85f, 0.85f, 0.88f);
+        [Tooltip("Цвет узора на удилище и эмблемы на катушке.")]
+        public Color accent = Color.white;
+        public RodPattern pattern = RodPattern.Plain;
+        [Tooltip("Узор на удилище.")]
+        public RodGlyph motif = RodGlyph.None;
+        [Tooltip("Эмблема на катушке.")]
+        public RodGlyph emblem = RodGlyph.Leaf;
+        [Tooltip("Подвеска под катушкой.")]
+        public RodGlyph charm = RodGlyph.Leaf;
+        public Color charmColor = new Color(0.4f, 0.75f, 0.3f);
     }
 }

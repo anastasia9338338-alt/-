@@ -15,6 +15,12 @@ namespace ZooThrow.Data
 
     public enum BaitShape { Worm, Maggot, Corn, Shrimp, Minnow, Squid, Spoon, GlowOrb, DragonBait }
 
+    /// <summary>Small decorative symbol used for rod emblems, blank motifs and charms.</summary>
+    public enum RodGlyph { None, Leaf, Snowflake, Flower, Star, Triangle, Wave, Spiral, Anchor, Tag, Drop, Tassel, Sprout }
+
+    /// <summary>Surface treatment of the rod blank.</summary>
+    public enum RodPattern { Plain, BambooNodes, SpiralStripes, Ornament }
+
     public enum TrainerShape { PullUpBar, Dumbbells, Barbell, Kettlebell, PowerRack, CosmicMachine }
 
     public enum UpgradeEffect { PenCapacity, StrongArms, Luck, OfflineHours, TrainingBoost }

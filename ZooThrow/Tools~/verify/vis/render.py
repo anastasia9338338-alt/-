@@ -1,4 +1,5 @@
 import json, sys, os, math, glob
+CULL = os.environ.get('ZT_CULL', '1') != '0'
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -39,7 +40,9 @@ def render(tris, size=256, yaw_deg=35, pitch_deg=22, dist_k=2.4):
             shade = 0.45 + 0.55 * max(0.0, float(np.dot(n, light)))
             c = np.clip(col * shade + 0.04, 0, 1); front += 1
         else:
-            c = np.array([1.0, 0.0, 1.0]); back += 1
+            back += 1
+            if CULL: continue  # Unity culls back faces; set ZT_CULL=0 to show them in magenta instead
+            c = np.array([1.0, 0.0, 1.0])
         x0, x1 = int(max(0, math.floor(sx.min()))), int(min(size-1, math.ceil(sx.max())))
         y0, y1 = int(max(0, math.floor(sy.min()))), int(min(size-1, math.ceil(sy.max())))
         if x1 < x0 or y1 < y0: continue

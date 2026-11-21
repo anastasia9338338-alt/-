@@ -15,6 +15,10 @@ namespace ZooThrow.UI
         TextMeshProUGUI _grade, _flightDistance, _flightBiome, _preview;
         RectTransform _gradeRt, _flightRt;
         float _gradeTime = -1f;
+        RectTransform _hookRt, _reelRt;
+        TextMeshProUGUI _hookText, _reelText;
+        UIBar _reelBar;
+        float _hookTime;
         const float BarWidth = 860f;
 
         public void Build(UIManager ui, GameManager g, RectTransform layer)
@@ -65,6 +69,41 @@ namespace ZooThrow.UI
             _flightBiome = UIFactory.Text(_flightRt, "", 28, UITheme.TextDim, TextAlignmentOptions.Center, true, true);
             UIFactory.Place(_flightBiome.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(500, 40));
             _flightRt.gameObject.SetActive(false);
+
+            // Hook prompt: a big pulsing call to action while the bobber dips
+            var hook = UIFactory.Panel(layer, "Hook", new Color(0.75f, 0.12f, 0.12f, 0.9f), 30);
+            _hookRt = hook.rectTransform;
+            UIFactory.Place(_hookRt, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 120), new Vector2(760, 150));
+            UIFactory.Shadow(_hookRt, 30, 0.45f, 16f);
+            _hookText = UIFactory.Text(_hookRt, "ПОДСЕКАЙ!\n<size=45%>Жми ЛКМ / Пробел! Чем быстрее, тем выше шанс на редкий улов</size>", 72, Color.white, TextAlignmentOptions.Center, true, true);
+            UIFactory.Stretch(_hookText.rectTransform, 10, 6, 10, 6);
+            _hookRt.gameObject.SetActive(false);
+
+            // Reel panel: progress towards the pier
+            var reel = UIFactory.Panel(layer, "Reel", new Color(0.06f, 0.08f, 0.17f, 0.88f), 28);
+            _reelRt = reel.rectTransform;
+            UIFactory.Place(_reelRt, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 190), new Vector2(820, 150));
+            _reelText = UIFactory.Text(_reelRt, "", 30, Color.white, TextAlignmentOptions.Center, true, true);
+            UIFactory.Place(_reelText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -12), new Vector2(800, 44));
+            _reelBar = UIFactory.Bar(_reelRt, new Color(1, 1, 1, 0.12f), new Color(0.35f, 0.85f, 1f), 14);
+            UIFactory.Place(_reelBar.root, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 46), new Vector2(760, 40));
+            var reelHint = UIFactory.Text(_reelRt, "Жми ЛКМ / Пробел, чтобы тянуть быстрее", 20, UITheme.TextDim, TextAlignmentOptions.Center, false, true);
+            UIFactory.Place(reelHint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(800, 30));
+            _reelRt.gameObject.SetActive(false);
+        }
+
+        public void ShowHook(bool show)
+        {
+            _hookRt.gameObject.SetActive(show);
+            _hookTime = 0f;
+        }
+
+        public void ShowReel(bool show) => _reelRt.gameObject.SetActive(show);
+
+        public void SetReel(float progress, float metersLeft)
+        {
+            _reelBar.Set(progress);
+            _reelText.text = "Вытягиваем улов! Осталось " + NumberFormat.Meters(metersLeft);
         }
 
         RectTransform Zone(string name, Color c)
@@ -117,6 +156,12 @@ namespace ZooThrow.UI
         void Update()
         {
             if (_g == null) return;
+            if (_hookRt.gameObject.activeSelf)
+            {
+                _hookTime += Time.unscaledDeltaTime;
+                float k = 1f + Mathf.Abs(Mathf.Sin(_hookTime * 10f)) * 0.08f;
+                _hookRt.localScale = new Vector3(k, k, 1f);
+            }
             if (_meterPanel.gameObject.activeSelf)
                 _indicator.anchoredPosition = new Vector2(_g.Throw.Meter.Value * BarWidth, 0);
 

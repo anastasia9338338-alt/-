@@ -224,6 +224,9 @@ namespace ZooThrow.UI
         public void ShowMeter(bool show) => _throwHud.ShowMeter(show);
         public void ShowGrade(ThrowResult r) => _throwHud.ShowGrade(r);
         public void ShowFlight(bool show) => _throwHud.ShowFlight(show);
+        public void ShowHook(bool show) => _throwHud.ShowHook(show);
+        public void ShowReel(bool show) => _throwHud.ShowReel(show);
+        public void SetReel(float progress, float metersLeft) => _throwHud.SetReel(progress, metersLeft);
 
         public void ShowReward(OwnedAnimal owned, AnimalData data, bool firstTime, bool placed, double autoSold, bool big, Action onDismissed)
         {

@@ -57,7 +57,7 @@ static class Program
             Write(outDir, "animal_" + a.id, sb);
         }
         foreach (var f in db.baits) { var sb = new StringBuilder(); AppendMesh(sb, BaitModelFactory.Get(f), v => v); Write(outDir, "bait_" + f.id, sb); }
-        foreach (var r in db.rods) { var sb = new StringBuilder(); AppendMesh(sb, RodModelFactory.Get(r), v => Quaternion.Euler(0, 0, -50f) * v); Write(outDir, "rod_" + r.id, sb); }
+        foreach (var r in db.rods) { var sb = new StringBuilder(); AppendMesh(sb, RodModelFactory.Get(r), v => Quaternion.Euler(50f, 0, 0) * v); Write(outDir, "rod_" + r.id, sb); }
         foreach (var t in db.trainers) { var sb = new StringBuilder(); AppendMesh(sb, TrainerModelFactory.Get(t), v => v); Write(outDir, "trainer_" + t.id, sb); }
 
         var rng = new System.Random(3);

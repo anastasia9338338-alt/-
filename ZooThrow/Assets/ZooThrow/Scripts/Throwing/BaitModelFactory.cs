@@ -86,42 +86,4 @@ namespace ZooThrow.Throwing
             return m;
         }
     }
-
-    /// <summary>Fishing rod model built along +Y from the butt (y = 0) to the tip (y = length).</summary>
-    public static class RodModelFactory
-    {
-        static readonly Dictionary<string, Mesh> s_Cache = new Dictionary<string, Mesh>();
-
-        public static Vector3 TipLocal(RodData r) => new Vector3(0, r.length, 0);
-
-        public static Mesh Get(RodData r)
-        {
-            if (s_Cache.TryGetValue(r.id, out var m)) return m;
-            var mb = new MeshBuilder();
-            float len = r.length;
-            // Handle with grip rings
-            mb.Cylinder(Vector3.zero, 0.05f, 0.045f, len * 0.22f, 8, r.secondary);
-            for (int i = 0; i < 3; i++) mb.Cylinder(new Vector3(0, len * (0.03f + i * 0.06f), 0), 0.056f, 0.056f, 0.02f, 8, MeshBuilder.Shade(r.secondary, 0.7f));
-            // Reel
-            mb.Box(new Vector3(0, len * 0.14f, 0.07f), new Vector3(0.03f, 0.05f, 0.06f), MeshBuilder.Shade(r.secondary, 1.2f));
-            mb.Push(new Vector3(-0.05f, len * 0.14f, 0.12f), Quaternion.Euler(0, 0, 90f));
-            mb.Cylinder(Vector3.zero, 0.06f, 0.06f, 0.1f, 10, Color.Lerp(r.secondary, Color.white, 0.4f));
-            mb.Pop();
-            mb.Box(new Vector3(0.07f, len * 0.14f, 0.12f), new Vector3(0.02f, 0.02f, 0.08f), Color.white);
-            // Blank: tapered rod
-            mb.Cylinder(new Vector3(0, len * 0.22f, 0), 0.035f, 0.012f, len * 0.78f, 6, r.primary, false);
-            // Line guides
-            for (int i = 1; i <= 4; i++)
-            {
-                float y = len * (0.3f + i * 0.16f);
-                mb.Box(new Vector3(0, y, 0.025f), new Vector3(0.012f, 0.012f, 0.03f), Color.Lerp(r.primary, Color.white, 0.5f));
-            }
-            if (r.glows)
-                for (int i = 0; i < 4; i++)
-                    mb.Sphere(new Vector3(0, len * (0.35f + i * 0.15f), 0), Vector3.one * 0.05f, r.lineColor, 5, 3);
-            m = mb.ToMesh("Rod_" + r.id);
-            s_Cache[r.id] = m;
-            return m;
-        }
-    }
 }

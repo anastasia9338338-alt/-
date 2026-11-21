@@ -314,23 +314,39 @@ namespace ZooThrow.Data
         // ---------------- Rods (shop 1) ----------------
         static void AddRods(GameDatabase db)
         {
-            void R(string id, string name, int tier, double price, float distance, float luck, string reqBiome, string c1, string c2, string line, float length, bool glows, string desc)
+            RodData R(string id, string name, int tier, double price, float distance, float luck, string reqBiome, float length, bool glows, string desc)
             {
                 var r = Make<RodData>("Rod_" + id);
                 r.id = id; r.displayName = name; r.tier = tier; r.price = price; r.distanceBonus = distance; r.luck = luck;
-                r.requiredBiomeId = reqBiome; r.primary = C(c1); r.secondary = C(c2); r.lineColor = C(line); r.length = length;
-                r.glows = glows; r.description = desc;
+                r.requiredBiomeId = reqBiome; r.length = length; r.glows = glows; r.description = desc;
                 db.rods.Add(r);
+                return r;
             }
-            R("bamboo_rod", "Бамбуковая удочка", 0, 0, 0, 1f, "", "#D8C27A", "#6B4A2A", "#FFFFFF", 2.0f, false, "Бесплатная стартовая удочка.");
-            R("willow_rod", "Ивовая удочка", 1, 100, 8, 1f, "", "#A8C86A", "#5A3A1A", "#FFFFFF", 2.2f, false, "Гибкая и лёгкая.");
-            R("carbon_rod", "Карбоновая удочка", 2, 1200, 20, 1.03f, "river", "#2A2A33", "#E8402A", "#FFE36A", 2.4f, false, "Забрасывает заметно дальше.");
-            R("pike_spinning", "Спиннинг «Щучий»", 3, 15000, 40, 1.06f, "lake", "#3D8BFF", "#1A1A2A", "#9FD8FF", 2.5f, false, "Для крупной озёрной рыбы.");
-            R("sea_spinning", "Морской спиннинг", 4, 200000, 75, 1.1f, "mangrove", "#FFFFFF", "#1E5FA8", "#7FD3FF", 2.7f, false, "Выдерживает рывки тунца.");
-            R("ice_spinning", "Ледяной спиннинг", 5, 3000000, 120, 1.13f, "open_sea", "#BFE8FF", "#3D8BFF", "#E6F7FF", 2.8f, true, "Не замерзает даже в Арктике.");
-            R("volcano_rod", "Вулканический спиннинг", 6, 50000000, 190, 1.17f, "arctic", "#2E2424", "#FF6A1F", "#FFC21A", 3.0f, true, "Выкован в лаве.");
-            R("atlantis_trident", "Трезубец Атлантиды", 7, 800000000, 280, 1.22f, "volcano", "#FFD54A", "#2BB5C8", "#FFF3B0", 3.2f, true, "Удочка древних морских царей.");
-            R("legend_rod", "Радужная удочка «Легенда»", 8, 15000000000, 400, 1.3f, "atlantis", "#FF5AC8", "#5AD8FF", "#FFFFFF", 3.4f, true, "Достаёт до самой Бездны.");
+            void Look(RodData r, string blank, string grip, string reel, string metal, string accent, string line,
+                RodPattern pattern, RodGlyph motif, RodGlyph emblem, RodGlyph charm, string charmColor)
+            {
+                r.primary = C(blank); r.secondary = C(grip); r.reelColor = C(reel); r.metal = C(metal); r.accent = C(accent);
+                r.lineColor = C(line); r.pattern = pattern; r.motif = motif; r.emblem = emblem; r.charm = charm; r.charmColor = C(charmColor);
+            }
+            const string Gold = "#E8C24A", Silver = "#D8DDE4";
+            Look(R("bamboo_rod", "Бамбуковая удочка", 0, 0, 0, 1f, "", 2.0f, false, "Бесплатная стартовая удочка."),
+                "#D9B867", "#6B4628", "#E8DCC0", "#C8B070", "#7FA84A", "#FFFFFF", RodPattern.BambooNodes, RodGlyph.Leaf, RodGlyph.Leaf, RodGlyph.Leaf, "#6DBA4A");
+            Look(R("willow_rod", "Ивовая удочка", 1, 100, 8, 1f, "", 2.2f, false, "Гибкая и лёгкая."),
+                "#8DB04A", "#6B4628", "#E0D2A8", Gold, "#C8E08A", "#FFFFFF", RodPattern.Plain, RodGlyph.Leaf, RodGlyph.Leaf, RodGlyph.Sprout, "#6DBA4A");
+            Look(R("carbon_rod", "Карбоновая удочка", 2, 1200, 20, 1.03f, "river", 2.4f, false, "Забрасывает заметно дальше."),
+                "#24242C", "#C8322A", "#D8402F", Silver, "#E8402A", "#FFE36A", RodPattern.SpiralStripes, RodGlyph.None, RodGlyph.Triangle, RodGlyph.Tag, "#D8322A");
+            Look(R("pike_spinning", "Спиннинг «Щучий»", 3, 15000, 40, 1.06f, "lake", 2.5f, false, "Для крупной озёрной рыбы."),
+                "#2E6CE0", "#1E2640", "#2A3A6A", Silver, "#BFE4FF", "#9FD8FF", RodPattern.Plain, RodGlyph.Wave, RodGlyph.Wave, RodGlyph.Drop, "#4AA8FF");
+            Look(R("sea_spinning", "Морской спиннинг", 4, 200000, 75, 1.1f, "mangrove", 2.7f, false, "Выдерживает рывки тунца."),
+                "#E4E8EE", "#2A62B8", "#2A62B8", Gold, "#FFD54A", "#7FD3FF", RodPattern.Plain, RodGlyph.Star, RodGlyph.Star, RodGlyph.Star, "#FFD54A");
+            Look(R("ice_spinning", "Ледяной спиннинг", 5, 3000000, 120, 1.13f, "open_sea", 2.8f, true, "Не замерзает даже в Арктике."),
+                "#8FB8E0", "#2A62C8", "#2A62C8", Silver, "#FFFFFF", "#E6F7FF", RodPattern.Plain, RodGlyph.Snowflake, RodGlyph.Snowflake, RodGlyph.Snowflake, "#FFFFFF");
+            Look(R("volcano_rod", "Вулканический спиннинг", 6, 50000000, 190, 1.17f, "arctic", 3.0f, true, "Выкован в лаве."),
+                "#1E1A1E", "#E8702A", "#E8702A", Gold, "#E8C24A", "#FFC21A", RodPattern.Ornament, RodGlyph.Spiral, RodGlyph.Spiral, RodGlyph.Tassel, "#E8702A");
+            Look(R("atlantis_trident", "Трезубец Атлантиды", 7, 800000000, 280, 1.22f, "volcano", 3.2f, true, "Удочка древних морских царей."),
+                "#E8A81A", "#2AA8A8", "#3AC0C0", Silver, "#FFF3B0", "#FFF3B0", RodPattern.Ornament, RodGlyph.Wave, RodGlyph.Flower, RodGlyph.Anchor, "#E8C24A");
+            Look(R("legend_rod", "Радужная удочка «Легенда»", 8, 15000000000, 400, 1.3f, "atlantis", 3.4f, true, "Достаёт до самой Бездны."),
+                "#D83A9A", "#2AA8A8", "#3AC0C0", Gold, "#FFB8E0", "#FFFFFF", RodPattern.Plain, RodGlyph.Flower, RodGlyph.Flower, RodGlyph.Flower, "#FF9BC8");
         }
 
         // ---------------- Baits (shop 2) ----------------

@@ -6,7 +6,7 @@ using F = ZooThrow.Data.AnimalFeatures;
 
 namespace ZooThrow.Animals
 {
-    public enum LimbKind { Leg, Arm, Wing }
+    public enum LimbKind { Leg, Arm, Wing, Tail }
 
     public class LimbSpec
     {
@@ -17,6 +17,8 @@ namespace ZooThrow.Animals
         public float phase;
         /// <summary>+1 right side, -1 left side (wings mirror their flap).</summary>
         public float side;
+        /// <summary>Tails only: true for a horizontal fluke that beats up and down (whales, dolphins).</summary>
+        public bool pitchWag;
     }
 
     public class AnimalModel
@@ -499,78 +501,151 @@ namespace ZooThrow.Animals
             mb.Box(new Vector3(0, H * 0.3f, L * 0.72f), new Vector3(W * 0.35f, 0.025f, 0.03f), Black);
         }
 
+        // ------------------------------------------------------------------ fish
+
+        /// <summary>Relative half-thickness of a fish body along its length; u = 0 at the nose, 1 at the tail root.</summary>
+        static float FishProfile(float u, float peak, float tailRoot)
+        {
+            if (u <= peak) return Mathf.Sqrt(Mathf.Clamp01(u / peak)) * 0.92f + 0.08f;
+            float k = (u - peak) / (1f - peak);
+            return Mathf.Lerp(1f, tailRoot, Mathf.Pow(k, 1.5f));
+        }
+
+        static void Fin(MeshBuilder mb, Vector3 a, Vector3 b, Vector3 c, Color col)
+        {
+            // Thin two-sided fin
+            mb.Tri(a, b, c, col);
+            mb.Tri(a, c, b, MeshBuilder.Shade(col, 0.85f));
+        }
+
+        /// <summary>
+        /// Fish, sharks, dolphins and whales: a lofted streamlined hull with a darker back and light belly, big
+        /// cartoon eyes, gills, mouth and triangular fins. The tail is a separate limb so it can swish.
+        /// </summary>
         static void BuildFish(MeshBuilder mb, AnimalModel model, AnimalModelSpec s)
         {
             float L = s.bodyLength, H = s.bodyHeight, W = s.bodyWidth, hs = s.headSize;
-            float y = H * 0.5f + 0.05f;
-            Vector3 c = new Vector3(0, y, 0);
             bool shark = (s.features & F.Crest) != 0;
             bool angler = (s.features & F.Lure) != 0;
             bool whale = W >= 0.8f;
-            mb.Sphere(c, new Vector3(W, H, L), s.primary, 10, 6);
-            mb.Sphere(c + new Vector3(0, -H * 0.18f, L * 0.05f), new Vector3(W * 0.85f, H * 0.65f, L * 0.85f), s.secondary, 8, 5);
+            bool round = H > L * 0.6f; // pufferfish, hatchetfish
+            bool fluke = !shark && (W >= 0.6f || (s.features & F.Snout) != 0 && W >= 0.42f);
+            float peak = angler ? 0.18f : round ? 0.45f : 0.32f;
+            float tailRoot = round ? 0.3f : 0.16f;
+            float y = H * 0.5f + 0.05f;
+            Vector3 c = new Vector3(0, y, 0);
+            float zNose = L * 0.5f, zTail = -L * 0.5f;
+            float Rw(float z) => W * 0.5f * FishProfile(Mathf.InverseLerp(zNose, zTail, z), peak, tailRoot);
+            float Rh(float z) => H * 0.5f * FishProfile(Mathf.InverseLerp(zNose, zTail, z), peak, tailRoot);
+
+            // Hull: rings from nose to tail root, coloured by height for countershading.
+            const int rings = 12, seg = 12;
+            Color back = MeshBuilder.Shade(s.primary, 0.78f);
+            var prev = new Vector3[seg];
+            var cur = new Vector3[seg];
+            for (int i = 0; i <= rings; i++)
+            {
+                float u = i / (float)rings;
+                float z = Mathf.Lerp(zNose, zTail, u);
+                float rw = Rw(z), rh = Rh(z);
+                for (int k = 0; k < seg; k++)
+                {
+                    float a = k * Mathf.PI * 2f / seg;
+                    // Slightly flatter belly, fuller back
+                    float sy = Mathf.Sin(a);
+                    cur[k] = c + new Vector3(Mathf.Cos(a) * rw, sy * rh * (sy > 0 ? 1.05f : 0.9f), z);
+                }
+                if (i == 0)
+                {
+                    Vector3 nose = c + new Vector3(0, -H * 0.02f, zNose + L * 0.02f);
+                    for (int k = 0; k < seg; k++)
+                    {
+                        int k1 = (k + 1) % seg;
+                        mb.Tri(nose, cur[k], cur[k1], HullColor(s, back, (cur[k].y + cur[k1].y) * 0.5f - y, H));
+                    }
+                }
+                else
+                {
+                    for (int k = 0; k < seg; k++)
+                    {
+                        int k1 = (k + 1) % seg;
+                        float yy = (prev[k].y + prev[k1].y + cur[k].y + cur[k1].y) * 0.25f - y;
+                        mb.Quad(prev[k], cur[k], cur[k1], prev[k1], HullColor(s, back, yy, H));
+                    }
+                }
+                System.Array.Copy(cur, prev, seg);
+            }
+            // Close the tail root
+            Vector3 tailCenter = c + new Vector3(0, 0, zTail);
+            for (int k = 0; k < seg; k++) mb.Tri(tailCenter, prev[(k + 1) % seg], prev[k], back);
+
+            float Surface(float z, float side) => Rw(z) * side;
 
             if ((s.features & F.Stripes) != 0)
-            {
-                // Thin vertical bands that follow the body profile.
                 for (int i = 0; i < 3; i++)
                 {
-                    float z = L * (0.22f - i * 0.2f);
-                    float k = Mathf.Sqrt(Mathf.Max(0.05f, 1f - (2f * z / L) * (2f * z / L)));
-                    mb.Sphere(c + new Vector3(0, 0, z), new Vector3(W * 1.03f * k, H * 1.02f * k, L * 0.07f), s.accent, 8, 4);
+                    float z = L * (0.18f - i * 0.18f);
+                    mb.Sphere(c + new Vector3(0, 0, z), new Vector3(Rw(z) * 2.06f, Rh(z) * 2.04f, L * 0.06f), s.accent, 10, 4);
                 }
-            }
             if ((s.features & F.Spots) != 0)
             {
                 Color spot = Color.Lerp(s.primary, s.accent, 0.65f);
                 for (int i = 0; i < 6; i++)
                     for (int side = -1; side <= 1; side += 2)
                     {
-                        float z = L * (0.25f - i * 0.1f);
-                        float yy = H * (0.12f + ((i * 37) % 5) * 0.03f);
-                        float k = Mathf.Sqrt(Mathf.Max(0.05f, 1f - (2f * z / L) * (2f * z / L)));
-                        mb.Sphere(c + new Vector3(side * W * 0.47f * k, yy, z), new Vector3(0.03f, H * 0.1f, H * 0.1f), spot, 5, 3);
+                        float z = L * (0.22f - i * 0.09f);
+                        float yy = Rh(z) * (0.15f + ((i * 37) % 5) * 0.08f);
+                        mb.Sphere(c + new Vector3(Surface(z, side) * 0.97f, yy, z), new Vector3(0.03f, H * 0.09f, H * 0.09f), spot, 5, 3);
                     }
             }
             if ((s.features & F.Glow) != 0)
-            {
                 for (int i = 0; i < 5; i++)
                     for (int side = -1; side <= 1; side += 2)
                     {
                         float z = L * (0.2f - i * 0.1f);
-                        float k = Mathf.Sqrt(Mathf.Max(0.05f, 1f - (2f * z / L) * (2f * z / L)));
-                        mb.Sphere(c + new Vector3(side * W * 0.48f * k, -H * 0.12f, z), Vector3.one * Mathf.Max(0.05f, H * 0.09f), s.accent, 5, 3);
+                        mb.Sphere(c + new Vector3(Surface(z, side) * 0.98f, -Rh(z) * 0.3f, z), Vector3.one * Mathf.Max(0.05f, H * 0.08f), s.accent, 5, 3);
                     }
+
+            // Face: mouth, gills, eyes
+            float zEye = zNose - L * (angler ? 0.12f : 0.16f);
+            Color lip = MeshBuilder.Shade(s.primary, 0.45f);
+            mb.Box(c + new Vector3(0, -Rh(zNose - L * 0.04f) * 0.25f, zNose - L * 0.02f), new Vector3(W * (angler ? 0.5f : 0.22f), H * 0.05f, L * 0.03f), lip);
+            float zGill = zNose - L * 0.27f;
+            for (int side = -1; side <= 1; side += 2)
+                for (int k = -1; k <= 1; k++)
+                    mb.Box(c + new Vector3(Surface(zGill, side) * 1.0f, k * Rh(zGill) * 0.28f, zGill + Mathf.Abs(k) * L * 0.02f),
+                        new Vector3(0.015f, Rh(zGill) * 0.32f, 0.02f), Quaternion.Euler(k * 25f, 0, 0), MeshBuilder.Shade(s.primary, 0.6f));
+            float eye = Mathf.Max(0.07f, hs * (angler ? 0.32f : 0.24f));
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Vector3 e = c + new Vector3(Surface(zEye, side) * 0.82f, Rh(zEye) * 0.3f, zEye);
+                mb.Sphere(e, new Vector3(eye * 0.6f, eye, eye), White, 8, 5);
+                mb.Sphere(e + new Vector3(side * eye * 0.22f, -eye * 0.05f, eye * 0.12f), new Vector3(eye * 0.3f, eye * 0.62f, eye * 0.62f), Black, 7, 4);
+                mb.Sphere(e + new Vector3(side * eye * 0.34f, eye * 0.2f, eye * 0.22f), Vector3.one * eye * 0.2f, White, 4, 3);
             }
 
-            // Mouth and snout
             if ((s.features & F.Snout) != 0)
-                mb.Box(c + new Vector3(0, -H * 0.1f, L * 0.52f), new Vector3(W * 0.3f, H * 0.2f, L * 0.18f), s.primary, 0.8f);
+                mb.Sphere(c + new Vector3(0, -H * 0.06f, zNose + L * 0.04f), new Vector3(W * 0.3f, H * 0.22f, L * 0.2f), s.primary, 7, 4);
             if ((s.features & F.LongSnout) != 0)
             {
                 float bill = L * 0.6f;
-                mb.Push(c + new Vector3(0, -H * 0.02f, L * 0.45f), Quaternion.Euler(90f, 0, 0));
+                mb.Push(c + new Vector3(0, -H * 0.02f, zNose - L * 0.04f), Quaternion.Euler(90f, 0, 0));
                 mb.Cone(Vector3.zero, Mathf.Max(0.04f, H * 0.1f), bill, 6, s.accent);
                 mb.Pop();
                 if ((s.features & F.Spikes) != 0)
-                {
-                    // Sawfish: teeth along both sides of the bill.
                     for (int i = 1; i < 7; i++)
                         for (int side = -1; side <= 1; side += 2)
-                            mb.Box(c + new Vector3(side * H * 0.1f * (1f - i / 8f), -H * 0.02f, L * 0.45f + bill * i / 8f), new Vector3(0.12f, 0.03f, 0.03f), Color.white);
-                }
+                            mb.Box(c + new Vector3(side * H * 0.1f * (1f - i / 8f), -H * 0.02f, zNose + bill * i / 8f), new Vector3(0.12f, 0.03f, 0.03f), Color.white);
             }
             if (angler)
             {
-                mb.Box(c + new Vector3(0, -H * 0.12f, L * 0.47f), new Vector3(W * 0.7f, H * 0.12f, 0.06f), MeshBuilder.Shade(s.primary, 0.4f));
                 for (int i = 0; i < 6; i++)
                 {
-                    mb.Push(c + new Vector3((i - 2.5f) * W * 0.11f, -H * 0.05f, L * 0.48f), Quaternion.Euler(180f, 0, 0));
-                    mb.Cone(Vector3.zero, 0.035f, H * 0.16f, 4, Color.white);
+                    mb.Push(c + new Vector3((i - 2.5f) * W * 0.09f, -H * 0.06f, zNose - L * 0.03f), Quaternion.Euler(180f, 0, 0));
+                    mb.Cone(Vector3.zero, 0.035f, H * 0.18f, 4, Color.white);
                     mb.Pop();
                 }
-                // Lure: a bent stalk from the forehead ending in a glowing bulb.
-                Vector3 p = c + new Vector3(0, H * 0.45f, L * 0.2f);
+                Vector3 p = c + new Vector3(0, Rh(zEye) * 0.95f, zEye + L * 0.05f);
                 for (int i = 0; i < 5; i++)
                 {
                     mb.Sphere(p, Vector3.one * 0.05f, s.secondary, 4, 3);
@@ -578,80 +653,101 @@ namespace ZooThrow.Animals
                 }
                 mb.Sphere(p, Vector3.one * Mathf.Max(0.12f, H * 0.18f), s.accent, 7, 5);
             }
+            if (shark)
+                for (int i = 0; i < 5; i++)
+                    mb.Box(c + new Vector3((i - 2) * W * 0.08f, -Rh(zNose - L * 0.06f) * 0.45f, zNose - L * 0.06f), new Vector3(0.04f, 0.07f, 0.03f), White, 0.2f);
             if ((s.features & F.Whiskers) != 0)
                 for (int side = -1; side <= 1; side += 2)
                 {
-                    mb.Push(c + new Vector3(side * W * 0.15f, -H * 0.15f, L * 0.46f), Quaternion.Euler(30f, side * 35f, 0));
+                    mb.Push(c + new Vector3(side * W * 0.12f, -H * 0.12f, zNose - L * 0.03f), Quaternion.Euler(30f, side * 35f, 0));
                     mb.Box(new Vector3(0, 0, L * 0.15f), new Vector3(0.03f, 0.03f, L * 0.3f), s.secondary);
                     mb.Pop();
                 }
 
-            Eyes(mb, c + new Vector3(0, H * 0.05f, L * 0.3f), hs, 0f, W * 0.42f, Mathf.Max(0.06f, hs * (angler ? 0.2f : 0.14f)), angler);
-            if (shark)
-            {
-                for (int i = 0; i < 5; i++)
-                    mb.Box(c + new Vector3((i - 2) * W * 0.09f, -H * 0.22f, L * 0.42f), new Vector3(0.04f, 0.07f, 0.03f), White, 0.2f);
-            }
-
             if ((s.features & F.Spikes) != 0 && (s.features & F.LongSnout) == 0)
             {
-                if (H > L * 0.6f)
+                if (round)
                 {
-                    // Puffer: spines all over.
-                    for (int i = 0; i < 18; i++)
+                    for (int i = 0; i < 22; i++)
                     {
-                        float a = i * 2.4f, b = (i % 6) / 6f * Mathf.PI - Mathf.PI * 0.4f;
+                        float a = i * 2.4f, b = (i % 7) / 7f * Mathf.PI - Mathf.PI * 0.45f;
                         var dir = new Vector3(Mathf.Cos(a) * Mathf.Cos(b), Mathf.Sin(b), Mathf.Sin(a) * Mathf.Cos(b));
-                        Vector3 surf = c + new Vector3(dir.x * W * 0.5f, dir.y * H * 0.5f, dir.z * L * 0.5f);
+                        float z = dir.z * L * 0.45f;
+                        Vector3 surf = c + new Vector3(dir.x * Rw(z), dir.y * Rh(z), z);
                         mb.Push(surf, Quaternion.FromToRotation(Vector3.up, dir));
-                        mb.Cone(Vector3.zero, 0.04f, Mathf.Max(0.1f, H * 0.18f), 4, s.accent);
+                        mb.Cone(Vector3.zero, 0.04f, Mathf.Max(0.1f, H * 0.16f), 4, s.accent);
                         mb.Pop();
                     }
                 }
                 else
                 {
-                    // Bony plates along the back.
                     for (int i = 0; i < 6; i++)
                     {
                         float z = L * (0.3f - i * 0.11f);
-                        float k = Mathf.Sqrt(Mathf.Max(0.05f, 1f - (2f * z / L) * (2f * z / L)));
-                        mb.Push(c + new Vector3(0, H * 0.48f * k, z), Quaternion.Euler(-20f, 0, 0));
+                        mb.Push(c + new Vector3(0, Rh(z) * 1.02f, z), Quaternion.Euler(-20f, 0, 0));
                         mb.Cone(Vector3.zero, Mathf.Max(0.04f, H * 0.1f), Mathf.Max(0.08f, H * 0.2f), 4, MeshBuilder.Shade(s.primary, 1.3f));
                         mb.Pop();
                     }
                 }
             }
 
-            if ((s.features & F.Fins) != 0)
+            // Fins
+            Color fin = shark || whale ? MeshBuilder.Shade(s.primary, 0.9f) : Color.Lerp(s.primary, s.accent, 0.3f);
+            if ((s.features & F.Fins) != 0 || shark)
             {
-                // dorsal
-                mb.Push(c + new Vector3(0, H * 0.45f, -L * 0.02f), Quaternion.Euler(-20f, 0, 0));
-                mb.Box(new Vector3(0, H * (shark ? 0.3f : 0.2f), 0), new Vector3(0.05f, H * (shark ? 0.6f : 0.4f), L * 0.25f), s.primary, 0.15f);
-                mb.Pop();
+                float zd = L * (shark ? 0.05f : 0.08f);
+                float top = Rh(zd) * 0.95f;
+                float fh = H * (shark ? 0.6f : whale ? 0.25f : 0.45f);
+                Fin(mb, c + new Vector3(0, top, zd + L * 0.14f), c + new Vector3(0, top + fh, zd - L * 0.08f), c + new Vector3(0, Rh(zd - L * 0.2f) * 0.95f, zd - L * 0.2f), fin);
+            }
+            if (!whale || (s.features & F.Fins) != 0)
                 for (int side = -1; side <= 1; side += 2)
                 {
-                    mb.Push(c + new Vector3(side * W * 0.45f, -H * 0.2f, L * 0.12f), Quaternion.Euler(20f, 0, side * -50f));
-                    mb.Box(new Vector3(side * L * 0.1f, 0, 0), new Vector3(L * 0.2f, 0.04f, L * 0.13f), s.primary);
-                    mb.Pop();
+                    float zp = zGill - L * 0.04f;
+                    Vector3 root = c + new Vector3(Surface(zp, side) * 0.92f, -Rh(zp) * 0.35f, zp);
+                    Fin(mb, root, root + new Vector3(side * L * 0.16f, -H * 0.22f, -L * 0.14f), root + new Vector3(0, -H * 0.05f, -L * 0.13f), fin);
                 }
-            }
-            // Tail: vertical fins for fish and sharks, a horizontal fluke for whales, dolphins and seals.
-            bool fluke = !shark && (W >= 0.6f || (s.features & F.Snout) != 0 && W >= 0.42f);
-            for (int side = -1; side <= 1; side += 2)
+            if (!fluke && !round)
             {
-                mb.Push(c + new Vector3(0, 0, -L * 0.48f), Quaternion.identity);
-                if (!fluke)
-                    mb.Box(new Vector3(0, side * H * 0.25f, -L * 0.08f), new Vector3(0.05f, H * 0.5f, L * 0.18f), Quaternion.Euler(side * 30f, 0, 0), s.primary, 0.4f);
-                else
-                    mb.Box(new Vector3(side * W * 0.3f, 0, -L * 0.08f), new Vector3(W * 0.6f, 0.05f, L * 0.18f), Quaternion.Euler(0, side * 25f, 0), s.primary, 0.6f);
-                mb.Pop();
+                // Anal fin under the rear
+                float za = -L * 0.25f;
+                Fin(mb, c + new Vector3(0, -Rh(za) * 0.95f, za + L * 0.06f), c + new Vector3(0, -Rh(za) - H * 0.22f, za - L * 0.06f), c + new Vector3(0, -Rh(za - L * 0.1f) * 0.95f, za - L * 0.1f), fin);
             }
+
             if (whale)
             {
-                // whale: belly grooves and a blowhole spout
-                for (int i = 0; i < 4; i++) mb.Box(c + new Vector3(0, -H * 0.48f, L * (0.25f - i * 0.1f)), new Vector3(W * 0.6f, 0.03f, 0.04f), Color.Lerp(s.secondary, s.accent, 0.3f));
-                mb.Cylinder(c + new Vector3(0, H * 0.45f, L * 0.15f), 0.05f, 0.12f, 0.35f, 6, new Color(0.75f, 0.9f, 1f));
+                for (int i = 0; i < 4; i++) mb.Box(c + new Vector3(0, -Rh(L * (0.25f - i * 0.1f)) * 0.97f, L * (0.25f - i * 0.1f)), new Vector3(W * 0.5f, 0.03f, 0.04f), Color.Lerp(s.secondary, s.accent, 0.3f));
+                mb.Cylinder(c + new Vector3(0, Rh(L * 0.15f) * 0.95f, L * 0.15f), 0.05f, 0.12f, 0.35f, 6, new Color(0.75f, 0.9f, 1f));
             }
+
+            // Tail as a separate limb so it can swish
+            var tb = new MeshBuilder();
+            float tl = L * (round ? 0.22f : 0.3f), th = Mathf.Max(H * 0.85f, 0.25f);
+            Color tailCol = shark || whale ? MeshBuilder.Shade(s.primary, 0.85f) : Color.Lerp(s.primary, s.accent, 0.25f);
+            if (fluke)
+            {
+                // Horizontal fluke (whales, dolphins, seals)
+                tb.Sphere(new Vector3(0, 0, -tl * 0.25f), new Vector3(W * 0.22f, H * 0.2f, tl * 0.6f), MeshBuilder.Shade(s.primary, 0.85f), 6, 4);
+                for (int side = -1; side <= 1; side += 2)
+                    Fin(tb, new Vector3(0, 0, -tl * 0.4f), new Vector3(side * W * 0.75f, 0, -tl * 1.05f), new Vector3(side * W * 0.15f, 0, -tl * 0.8f), tailCol);
+            }
+            else
+            {
+                // Forked tail: upper and lower lobes
+                tb.Sphere(new Vector3(0, 0, -tl * 0.15f), new Vector3(W * 0.16f, H * 0.28f, tl * 0.4f), MeshBuilder.Shade(s.primary, 0.85f), 6, 4);
+                float upper = shark ? 1.25f : 1f;
+                Fin(tb, new Vector3(0, 0, -tl * 0.15f), new Vector3(0, th * 0.6f * upper, -tl), new Vector3(0, th * 0.08f, -tl * 0.7f), tailCol);
+                Fin(tb, new Vector3(0, 0, -tl * 0.15f), new Vector3(0, th * 0.08f, -tl * 0.7f), new Vector3(0, -th * 0.08f, -tl * 0.7f), tailCol);
+                Fin(tb, new Vector3(0, 0, -tl * 0.15f), new Vector3(0, -th * 0.08f, -tl * 0.7f), new Vector3(0, -th * 0.55f, -tl * 0.95f), tailCol);
+            }
+            model.limbs.Add(new LimbSpec { mesh = tb.ToMesh("FishTail"), pivot = c + new Vector3(0, 0, zTail + L * 0.02f), kind = LimbKind.Tail, side = 1, pitchWag = fluke });
+        }
+
+        static Color HullColor(AnimalModelSpec s, Color back, float yRel, float H)
+        {
+            if (yRel > H * 0.28f) return back;
+            if (yRel < -H * 0.2f) return s.secondary;
+            return s.primary;
         }
 
         /// <summary>

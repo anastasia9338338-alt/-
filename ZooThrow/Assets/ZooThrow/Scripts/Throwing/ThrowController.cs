@@ -9,12 +9,13 @@ using ZooThrow.World;
 
 namespace ZooThrow.Throwing
 {
-    public enum ThrowPhase { None, Aiming, WindUp, Flying, Bite, Reward }
+    public enum ThrowPhase { None, Aiming, WindUp, Flying, Bite, Hook, Reel, Jump, Reward }
 
     /// <summary>
     /// The fishing loop: accuracy meter → cast → the bobber flies along a ballistic arc followed by the camera →
-    /// it lands in a location → a short wait for the bite → a random creature jumps out of the water → reward reveal.
-    /// The rod is always in the player's hand; the line runs from the rod tip to the bobber.
+    /// it lands in a location → wait for the bite → hook set (a reaction test that boosts luck) → the catch is
+    /// reeled towards the pier, fighting and splashing (clicks reel faster) → it leaps out of the water → reward.
+    /// The rod is always in the player's hand; the line runs from the rod tip to the bobber, then to the catch.
     /// </summary>
     public class ThrowController : MonoBehaviour
     {
@@ -36,6 +37,22 @@ namespace ZooThrow.Throwing
         BaitData _bait;
         RodData _rod;
         Vector3 _landing;
+        Transform _lineTarget;
+
+        // Hook and reel state
+        const float HookWindow = 1.1f;
+        const float PerfectHook = 0.35f;
+        float _nextDip;
+        AnimalData _caught;
+        Mutation _caughtMutation;
+        float _hookLuck = 1f;
+        float _reelProgress, _reelDuration, _fight, _splashTimer;
+        Vector3 _reelFrom, _reelTo, _jumpFrom, _jumpTo;
+        bool _bigCatch;
+
+        /// <summary>Reel progress 0..1 and the remaining distance in metres, for the HUD.</summary>
+        public float ReelProgress => _reelProgress;
+        public float ReelMetersLeft => _rewardActor != null ? Mathf.Max(0f, _rewardActor.transform.position.z - _reelTo.z) : 0f;
 
         public ThrowMeter Meter { get; } = new ThrowMeter();
         public ThrowPhase Phase { get; private set; }
@@ -186,7 +203,19 @@ namespace ZooThrow.Throwing
                     break;
                 case ThrowPhase.Bite:
                     _phaseTime += dt;
-                    if (_phaseTime >= _biteAt) Catch();
+                    if (_phaseTime >= _biteAt) StartHook();
+                    break;
+                case ThrowPhase.Hook:
+                    _phaseTime += dt;
+                    if (_phaseTime >= _nextDip) { _projectile.Dip(); _nextDip += 0.3f; _g.Vfx.Splash(_landing, Color.white); }
+                    if (ActionPressed()) SetHook(_phaseTime);
+                    else if (_phaseTime >= HookWindow) SetHook(-1f);
+                    break;
+                case ThrowPhase.Reel:
+                    UpdateReel(dt);
+                    break;
+                case ThrowPhase.Jump:
+                    UpdateJump(dt);
                     break;
                 case ThrowPhase.Reward:
                     _phaseTime += dt;
@@ -199,8 +228,10 @@ namespace ZooThrow.Throwing
         {
             if (!_line.enabled) return;
             // A sagging line from the rod tip to the bobber; taut while flying, slack while floating.
-            Vector3 a = _rodTip.position, b = _projectile.transform.position + Vector3.up * 0.25f;
-            float sag = Phase == ThrowPhase.Flying ? 0.2f : Mathf.Min(6f, Vector3.Distance(a, b) * 0.08f);
+            Vector3 a = _rodTip.position;
+            Vector3 b = _lineTarget != null ? _lineTarget.position + Vector3.up * 0.3f : _projectile.transform.position + Vector3.up * 0.25f;
+            // Taut while flying and reeling, slack while the bobber floats.
+            float sag = Phase == ThrowPhase.Flying || Phase == ThrowPhase.Reel || Phase == ThrowPhase.Jump ? 0.15f : Mathf.Min(6f, Vector3.Distance(a, b) * 0.08f);
             for (int i = 0; i < LinePoints; i++)
             {
                 float t = i / (float)(LinePoints - 1);
@@ -243,18 +274,137 @@ namespace ZooThrow.Throwing
             _biteAt = Random.Range(_g.Balance.biteDelayMin, _g.Balance.biteDelayMax);
         }
 
+        bool ActionPressed() =>
+            (GameInput.PrimaryPressed && !_g.UI.PointerOverUI) || GameInput.Pressed(GameKey.Jump) ||
+            GameInput.Pressed(GameKey.Throw) || GameInput.Pressed(GameKey.Interact);
+
+        /// <summary>The fish bites: the bobber starts dipping and the player has a short window to set the hook.</summary>
+        void StartHook()
+        {
+            Phase = ThrowPhase.Hook;
+            _phaseTime = 0f;
+            _nextDip = 0f;
+            _g.UI.ShowFlight(false);
+            _g.UI.ShowHook(true);
+            _g.UI.WorldPopup(_landing + Vector3.up * 2.2f, "!", new Color(1f, 0.35f, 0.3f), 2.2f);
+            _g.Sound.Play(Audio.Sfx.Great);
+            _g.Cam.Shake(0.15f);
+        }
+
+        /// <summary>Sets the hook. A fast reaction raises the luck of this catch; a missed window lowers it.</summary>
+        void SetHook(float reaction)
+        {
+            _g.UI.ShowHook(false);
+            string text;
+            Color color;
+            if (reaction >= 0f && reaction <= PerfectHook) { _hookLuck = 1.25f; text = "ИДЕАЛЬНАЯ ПОДСЕЧКА!"; color = new Color(1f, 0.85f, 0.2f); _g.Sound.Play(Audio.Sfx.Perfect); }
+            else if (reaction >= 0f) { _hookLuck = 1f; text = "Подсечка!"; color = new Color(0.55f, 1f, 0.55f); _g.Sound.Play(Audio.Sfx.Good); }
+            else { _hookLuck = 0.85f; text = "Поздно, но рыба на крючке"; color = new Color(1f, 0.6f, 0.5f); _g.Sound.Play(Audio.Sfx.Weak); }
+            _g.UI.WorldPopup(_landing + Vector3.up * 2.6f, text, color, 1.3f);
+
+            var db = _g.Db;
+            var r = LastResult;
+            var biome = db.BiomeAtDistance(r.total);
+            float luck = r.luck * _hookLuck;
+            _caught = AnimalRoller.Roll(db, biome, luck, _g.Rng);
+            _caughtMutation = AnimalRoller.RollMutation(_g.Balance, luck, _g.Rng);
+            if (_caught == null)
+            {
+                Debug.LogError("[ZooThrow] В локации " + (biome != null ? biome.id : "null") + " нет существ — проверь данные.");
+                FinishThrow();
+                return;
+            }
+
+            // The catch is now on the line: hide the bobber and pull the creature towards the pier.
+            _projectile.Hide();
+            if (_rewardActor != null) Destroy(_rewardActor.gameObject);
+            _rewardActor = AnimalActor.Create(_caught, _caughtMutation, _g.Balance, transform, _landing, _g.Rng.Next());
+            _rewardActor.transform.rotation = Quaternion.Euler(0, 180f, 0);
+            _lineTarget = _rewardActor.transform;
+            int tier = (int)_caught.rarity;
+            _bigCatch = _rewardActor.Height > 2.4f;
+            _reelFrom = _landing;
+            _reelTo = WorldLayout.TrackPoint(_bigCatch ? 10f : 4f);
+            _reelProgress = 0f;
+            _reelDuration = Mathf.Clamp(1.6f + r.total * 0.004f + tier * 0.35f, 1.6f, 6f);
+            _fight = 1f + tier * 0.6f;
+            _splashTimer = 0f;
+            Phase = ThrowPhase.Reel;
+            _phaseTime = 0f;
+            _g.Cam.SetProjectile(_rewardActor.transform);
+            _g.UI.ShowReel(true);
+        }
+
+        void UpdateReel(float dt)
+        {
+            _phaseTime += dt;
+            float speed = 1f / _reelDuration;
+            if (ActionPressed())
+            {
+                _reelProgress += 0.06f;
+                _g.Sound.Play(Audio.Sfx.Rep, 0.4f, 1f + _reelProgress * 0.3f);
+            }
+            _reelProgress = Mathf.Min(1f, _reelProgress + speed * dt);
+            float e = 1f - Mathf.Pow(1f - _reelProgress, 2f);
+            Vector3 p = Vector3.Lerp(_reelFrom, _reelTo, e);
+            // The fish fights: it darts left and right, harder for rare catches, calming down near the pier.
+            float lateral = Mathf.Sin(_phaseTime * (3f + _fight)) * _fight * (1f - _reelProgress);
+            p.x = Mathf.Clamp(p.x + lateral, -WorldLayout.LaneHalfWidth + 1f, WorldLayout.LaneHalfWidth - 1f);
+            // Half under water: only the back and the dorsal fin show above the surface.
+            p.y = WorldLayout.WaterLevel - _rewardActor.Height * 0.45f;
+            var t = _rewardActor.transform;
+            Vector3 move = p - t.position;
+            t.position = p;
+            if (move.sqrMagnitude > 1e-5f)
+                t.rotation = Quaternion.Slerp(t.rotation, Quaternion.LookRotation(new Vector3(move.x, 0, move.z).normalized + Vector3.back * 0.5f, Vector3.up), 1f - Mathf.Exp(-8f * dt));
+            _splashTimer -= dt;
+            if (_splashTimer <= 0f)
+            {
+                _splashTimer = 0.16f;
+                var biome = _g.Db.BiomeAtDistance(WorldLayout.DistanceOf(p));
+                _g.Vfx.Splash(new Vector3(p.x, WorldLayout.WaterLevel, p.z), biome != null ? biome.laneColor : Color.white);
+            }
+            _g.UI.SetReel(_reelProgress, ReelMetersLeft);
+            if (_reelProgress >= 1f) StartJump();
+        }
+
+        void StartJump()
+        {
+            _g.UI.ShowReel(false);
+            Phase = ThrowPhase.Jump;
+            _phaseTime = 0f;
+            _jumpFrom = _rewardActor.transform.position;
+            // Small catches land on the pier in front of the player; giants surface in the water ahead of it.
+            _jumpTo = _bigCatch ? WorldLayout.TrackPoint(9f) + Vector3.up * WorldLayout.WaterLevel
+                                : WorldLayout.ThrowPad + new Vector3(0, 0.3f, 2.2f);
+            _rewardActor.Celebrate();
+            _g.Vfx.Splash(new Vector3(_jumpFrom.x, WorldLayout.WaterLevel, _jumpFrom.z), Color.white);
+            _g.Sound.Play(Audio.Sfx.Whoosh, 0.7f);
+            _g.Cam.SetShowcase(_jumpTo, _rewardActor.Height);
+        }
+
+        void UpdateJump(float dt)
+        {
+            _phaseTime += dt;
+            float k = Mathf.Clamp01(_phaseTime / 0.75f);
+            float h = 2.5f + _rewardActor.Height * 0.6f;
+            var p = ThrowMath.ArcPoint(_jumpFrom, _jumpTo, h, k);
+            _rewardActor.transform.position = p;
+            _rewardActor.transform.rotation = Quaternion.Euler(-60f + k * 60f, 180f, 0);
+            if (k >= 1f) Catch();
+        }
+
+        /// <summary>The catch has landed: add it to the collection and show the reward.</summary>
         void Catch()
         {
             var db = _g.Db;
             var r = LastResult;
-            Vector3 pos = _landing;
-            _projectile.Dip();
-            _g.UI.WorldPopup(pos + Vector3.up * 2.2f, "КЛЮЁТ!", new Color(1f, 0.35f, 0.3f), 1.6f);
-            _g.UI.ShowFlight(false);
+            Vector3 pos = _jumpTo;
+            _lineTarget = null;
+            _line.enabled = false;
+            var animal = _caught;
+            var mutation = _caughtMutation;
 
-            var biome = db.BiomeAtDistance(r.total);
-            var animal = AnimalRoller.Roll(db, biome, r.luck, _g.Rng);
-            var mutation = AnimalRoller.RollMutation(_g.Balance, r.luck, _g.Rng);
             float previousBest = _g.State.bestDistance;
             var newlyUnlocked = _g.Biomes.RegisterLanding(r.total);
             var s = _g.State;
@@ -265,13 +415,6 @@ namespace ZooThrow.Throwing
             _g.Vfx.Splash(pos, Color.white);
             _g.Cam.Shake(0.3f);
 
-            if (animal == null)
-            {
-                Debug.LogError("[ZooThrow] В локации " + (biome != null ? biome.id : "null") + " нет существ — проверь данные.");
-                FinishThrow();
-                return;
-            }
-
             var owned = _g.Inventory.Add(animal, mutation, out bool firstTime, out double autoSold);
             bool placed = false;
             if (owned != null && s.settings.autoPlaceAnimals) placed = _g.Pen.Place(owned);
@@ -281,12 +424,8 @@ namespace ZooThrow.Throwing
             _g.Vfx.Confetti(pos + Vector3.up, rarity.color, rarity.particleBurst);
             if (rarity.glowIntensity > 0f) _g.Vfx.Beam(pos, rarity.color, rarity.glowIntensity);
             _g.Sound.PlayReward(animal.rarity);
-
-            if (_rewardActor != null) Destroy(_rewardActor.gameObject);
-            _rewardActor = AnimalActor.Create(animal, mutation, _g.Balance, transform, pos, _g.Rng.Next());
-            _rewardActor.transform.rotation = Quaternion.Euler(0, 180f, 0);
+            _rewardActor.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, 180f, 0));
             _rewardActor.Celebrate();
-            _g.Cam.SetShowcase(pos, _rewardActor.Height);
 
             Phase = ThrowPhase.Reward;
             _phaseTime = 0f;
@@ -312,6 +451,9 @@ namespace ZooThrow.Throwing
             _waitingForModal = false;
             _projectile.Hide();
             _line.enabled = false;
+            _lineTarget = null;
+            _g.UI.ShowHook(false);
+            _g.UI.ShowReel(false);
             if (_rewardActor != null)
             {
                 _g.Vfx.Poof(_rewardActor.transform.position + Vector3.up * 0.5f);
