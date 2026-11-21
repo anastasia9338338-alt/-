@@ -75,7 +75,7 @@ def sheet(files, out, cols=6, size=220, **kw):
     return report
 
 d = sys.argv[1]
-for prefix, out, kw in [("animal_", "animals.png", {}), ("food_", "foods.png", {}), ("trainer_", "trainers.png", {}), ("prop_", "props.png", {})]:
+for prefix, out, kw in [("animal_", "animals.png", {}), ("bait_", "baits.png", {}), ("rod_", "rods.png", {}), ("trainer_", "trainers.png", {}), ("prop_", "props.png", {})]:
     files = sorted(glob.glob(os.path.join(d, prefix + "*.json")))
     rep = sheet(files, os.path.join(d, "..", out), **kw)
     bad = [(n, b, f) for n, t, f, b in rep if b > 0]

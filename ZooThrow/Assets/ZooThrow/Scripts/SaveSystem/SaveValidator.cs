@@ -15,8 +15,9 @@ namespace ZooThrow.SaveSystem
             var fixes = new List<string>();
             var b = db.balance;
             if (s.settings == null) { s.settings = new SettingsData(); fixes.Add("settings"); }
-            if (s.ownedFoods == null) s.ownedFoods = new List<string>();
+            if (s.ownedBaits == null) s.ownedBaits = new List<string>();
             if (s.ownedTrainers == null) s.ownedTrainers = new List<string>();
+            if (s.ownedRods == null) s.ownedRods = new List<string>();
             if (s.upgrades == null) s.upgrades = new List<UpgradeLevel>();
             if (s.animals == null) s.animals = new List<OwnedAnimal>();
             if (s.penSlots == null) s.penSlots = new List<int>();
@@ -34,11 +35,17 @@ namespace ZooThrow.SaveSystem
             s.totalThrows = Math.Max(0, s.totalThrows);
             s.perfectThrows = Math.Max(0, Math.Min(s.totalThrows, s.perfectThrows));
 
-            int removed = s.ownedFoods.RemoveAll(id => db.Food(id) == null);
-            Dedupe(s.ownedFoods);
-            if (!s.ownedFoods.Contains(b.startingFoodId)) { s.ownedFoods.Insert(0, b.startingFoodId); removed++; }
-            if (removed > 0) fixes.Add("foods");
-            if (!s.ownedFoods.Contains(s.selectedFood)) { s.selectedFood = b.startingFoodId; fixes.Add("selectedFood"); }
+            int removed = s.ownedBaits.RemoveAll(id => db.Bait(id) == null);
+            Dedupe(s.ownedBaits);
+            if (!s.ownedBaits.Contains(b.startingBaitId)) { s.ownedBaits.Insert(0, b.startingBaitId); removed++; }
+            if (removed > 0) fixes.Add("baits");
+            if (!s.ownedBaits.Contains(s.selectedBait)) { s.selectedBait = b.startingBaitId; fixes.Add("selectedBait"); }
+
+            removed = s.ownedRods.RemoveAll(id => db.Rod(id) == null);
+            Dedupe(s.ownedRods);
+            if (!s.ownedRods.Contains(b.startingRodId)) { s.ownedRods.Insert(0, b.startingRodId); removed++; }
+            if (removed > 0) fixes.Add("rods");
+            if (!s.ownedRods.Contains(s.selectedRod)) { s.selectedRod = b.startingRodId; fixes.Add("selectedRod"); }
 
             removed = s.ownedTrainers.RemoveAll(id => db.Trainer(id) == null);
             Dedupe(s.ownedTrainers);

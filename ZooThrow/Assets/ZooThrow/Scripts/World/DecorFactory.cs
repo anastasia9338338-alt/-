@@ -260,6 +260,76 @@ namespace ZooThrow.World
             mb.Box(a + d * 0.5f + Vector3.up * 1.0f, new Vector3(0.12f, 0.18f, len), rot, wood);
         }
 
+        public static void Reeds(MeshBuilder mb, Vector3 p, System.Random rng, Color c)
+        {
+            mb.Push(p, Quaternion.Euler(0, R(rng, 0, 360), 0));
+            int n = rng.Next(5, 9);
+            for (int i = 0; i < n; i++)
+            {
+                float h = R(rng, 1.2f, 2.2f);
+                Vector3 b = new Vector3(R(rng, -0.4f, 0.4f), 0, R(rng, -0.4f, 0.4f));
+                mb.Box(b + new Vector3(0, h * 0.5f, 0), new Vector3(0.05f, h, 0.05f), Quaternion.Euler(R(rng, -8, 8), 0, R(rng, -8, 8)), c);
+                if (i % 2 == 0) mb.Box(b + new Vector3(0, h * 0.85f, 0), new Vector3(0.12f, h * 0.22f, 0.12f), new Color(0.45f, 0.3f, 0.18f)); // cattail head
+            }
+            mb.Pop();
+        }
+
+        public static void LilyPad(MeshBuilder mb, Vector3 p, System.Random rng)
+        {
+            float r = R(rng, 0.35f, 0.7f);
+            mb.Cylinder(p, r, r, 0.03f, 9, new Color(0.3f, 0.65f, 0.3f));
+            if (rng.NextDouble() < 0.35)
+            {
+                Color petal = rng.NextDouble() < 0.5 ? new Color(1f, 0.75f, 0.85f) : Color.white;
+                for (int i = 0; i < 5; i++)
+                {
+                    float a = i * 72f;
+                    mb.Box(p + Quaternion.Euler(0, a, 0) * new Vector3(0, 0.12f, 0.1f), new Vector3(0.1f, 0.05f, 0.2f), Quaternion.Euler(-35f, a, 0), petal, 0.4f);
+                }
+                mb.Sphere(p + Vector3.up * 0.12f, 0.08f, new Color(1f, 0.85f, 0.2f), 5, 3);
+            }
+        }
+
+        public static void DeadTree(MeshBuilder mb, Vector3 p, System.Random rng, Color bark)
+        {
+            float s = R(rng, 0.8f, 1.4f);
+            mb.Push(p, Quaternion.Euler(0, R(rng, 0, 360), 0), Vector3.one * s);
+            mb.Cylinder(Vector3.zero, 0.3f, 0.15f, 3.2f, 6, bark);
+            for (int i = 0; i < 3; i++)
+            {
+                mb.Push(new Vector3(0, 1.6f + i * 0.5f, 0), Quaternion.Euler(R(rng, 35, 60), i * 120f, 0));
+                mb.Cylinder(Vector3.zero, 0.1f, 0.03f, R(rng, 0.8f, 1.4f), 5, bark, false);
+                mb.Pop();
+            }
+            mb.Pop();
+        }
+
+        public static void GlowCrystal(MeshBuilder mb, Vector3 p, System.Random rng, Color c)
+        {
+            mb.Push(p, Quaternion.Euler(0, R(rng, 0, 360), 0));
+            int n = rng.Next(2, 5);
+            for (int i = 0; i < n; i++)
+            {
+                mb.Push(new Vector3(R(rng, -0.4f, 0.4f), 0, R(rng, -0.4f, 0.4f)), Quaternion.Euler(R(rng, -25, 25), 0, R(rng, -25, 25)));
+                float h = R(rng, 0.8f, 2.4f);
+                mb.Cylinder(Vector3.zero, 0.25f, 0.22f, h, 5, MeshBuilder.Shade(c, R(rng, 0.85f, 1.15f)));
+                mb.Cone(Vector3.up * h, 0.22f, 0.5f, 5, Color.Lerp(c, Color.white, 0.5f));
+                mb.Pop();
+            }
+            mb.Pop();
+        }
+
+        public static void Column(MeshBuilder mb, Vector3 p, System.Random rng, Color marble)
+        {
+            float h = R(rng, 1.5f, 5f);
+            bool broken = rng.NextDouble() < 0.5;
+            mb.Box(p + new Vector3(0, 0.2f, 0), new Vector3(1.4f, 0.4f, 1.4f), MeshBuilder.Shade(marble, 0.9f));
+            mb.Cylinder(p + new Vector3(0, 0.4f, 0), 0.5f, 0.45f, h, 10, marble);
+            if (!broken) mb.Box(p + new Vector3(0, 0.4f + h + 0.15f, 0), new Vector3(1.3f, 0.3f, 1.3f), MeshBuilder.Shade(marble, 0.95f));
+            else mb.Box(p + new Vector3(R(rng, 0.6f, 1.2f), 0.3f, R(rng, -0.6f, 0.6f)), new Vector3(0.8f, 0.6f, 0.8f), Quaternion.Euler(0, R(rng, 0, 90), 70f), marble);
+            if (rng.NextDouble() < 0.4) mb.Sphere(p + new Vector3(0.4f, 0.4f, 0.3f), new Vector3(0.6f, 0.5f, 0.6f), new Color(0.3f, 0.6f, 0.4f), 5, 3); // seaweed
+        }
+
         public static void Cloud(MeshBuilder mb, Vector3 p, System.Random rng)
         {
             float s = R(rng, 1f, 2.2f);

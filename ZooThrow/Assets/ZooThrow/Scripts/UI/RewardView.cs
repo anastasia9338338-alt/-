@@ -106,7 +106,7 @@ namespace ZooThrow.UI
             var buttons = UIFactory.Rect("Buttons", _modalContent);
             UIFactory.Place(buttons, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 50), new Vector2(900, 110));
             UIFactory.HLayout(buttons, 24, null, TextAnchor.MiddleCenter, false, false);
-            _penButton = UIFactory.Button(buttons, "В ЗАГОН", UITheme.Blue, PlaceInPen, 34, IconId.Paw, 26);
+            _penButton = UIFactory.Button(buttons, "В АКВАРИУМ", UITheme.Blue, PlaceInPen, 34, IconId.Fish, 26);
             UIFactory.Layout(_penButton.button, 360, 104);
             _takeButton = UIFactory.Button(buttons, "ЗАБРАТЬ", UITheme.Green, DismissModal, 38, IconId.Check, 26);
             UIFactory.Layout(_takeButton.button, 360, 104);
@@ -116,10 +116,12 @@ namespace ZooThrow.UI
         string StatusText(bool placed, double autoSold, bool owned)
         {
             if (!owned) return "Инвентарь полон — продано за " + NumberFormat.Money(autoSold);
-            return placed ? "Уже в загоне и приносит деньги!" : "Добавлено в инвентарь (Tab)";
+            return placed ? "Уже в аквариуме и приносит деньги!" : "Добавлено в садок (Tab)";
         }
 
-        string IncomeText(AnimalData data, Mutation m) => "+" + NumberFormat.PerSecond(AnimalRoller.Income(_g.Db, data, m));
+        string IncomeText(AnimalData data, Mutation m) =>
+            "+" + NumberFormat.PerSecond(AnimalRoller.Income(_g.Db, data, m)) + "   <size=70%><color=#FFD23F>шанс " +
+            NumberFormat.OneIn(AnimalRoller.Chance(_g.Db, data, _g.CurrentLuck)) + "</color></size>";
 
         string NameText(AnimalData data, Mutation m)
         {
@@ -159,7 +161,7 @@ namespace ZooThrow.UI
             _modalNew.transform.parent.gameObject.SetActive(firstTime);
             bool canPen = _modalAnimal != null && !placed;
             _penButton.SetActive(canPen);
-            if (canPen) _penButton.label.text = _g.Pen.HasFreeSlot ? "В ЗАГОН" : "ЗАМЕНИТЬ СЛАБОГО";
+            if (canPen) _penButton.label.text = _g.Pen.HasFreeSlot ? "В АКВАРИУМ" : "ЗАМЕНИТЬ СЛАБОГО";
             _modal.gameObject.SetActive(true);
             _modal.SetAsLastSibling();
             ModalOpen = true;
@@ -171,7 +173,7 @@ namespace ZooThrow.UI
             if (_modalAnimal != null)
             {
                 bool ok = _g.Pen.PlaceOrReplaceWeakest(_modalAnimal);
-                GameEvents.RaiseToast(ok ? "Животное в загоне!" : "В загоне все сильнее — оставили в инвентаре", ok ? UITheme.Money : UITheme.Yellow);
+                GameEvents.RaiseToast(ok ? "Улов в аквариуме!" : "В аквариуме все доходнее, оставили в садке", ok ? UITheme.Money : UITheme.Yellow);
             }
             DismissModal();
         }

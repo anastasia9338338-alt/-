@@ -3,7 +3,7 @@ using ZooThrow.Visuals;
 
 namespace ZooThrow.Player
 {
-    public enum AvatarPose { Locomotion, Aim, Throw, PullUp }
+    public enum AvatarPose { Locomotion, Aim, Throw, PullUp, Reel }
 
     /// <summary>Blocky cartoon character built from boxes, animated procedurally (idle, walk, run, jump, throw, pull-ups).</summary>
     public class PlayerAvatar : MonoBehaviour
@@ -137,6 +137,15 @@ namespace ZooThrow.Player
                         torso = Quaternion.Euler(Mathf.Lerp(-5f, 20f, release), Mathf.Lerp(30f, -25f, release), 0);
                         legL = Quaternion.Euler(Mathf.Lerp(-12f, -30f, release), 0, 0);
                         legR = Quaternion.Euler(Mathf.Lerp(12f, 25f, release), 0, 0);
+                        break;
+                    }
+                case AvatarPose.Reel:
+                    {
+                        // Both hands on the rod, held out in front, with a small reeling motion.
+                        armR = Quaternion.Euler(-55f + Mathf.Sin(_time * 9f) * 4f, 0, 8f);
+                        armL = Quaternion.Euler(-45f, 0, -25f + Mathf.Sin(_time * 9f) * 6f);
+                        torso = Quaternion.Euler(-6f, 0, 0);
+                        legL = Quaternion.Euler(-10f, 0, 0); legR = Quaternion.Euler(10f, 0, 0);
                         break;
                     }
                 case AvatarPose.PullUp:

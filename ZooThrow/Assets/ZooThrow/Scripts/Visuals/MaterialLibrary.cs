@@ -19,6 +19,8 @@ namespace ZooThrow.Visuals
         public static Material GlowAdditive { get; private set; }
         public static Material GlowAlpha { get; private set; }
         public static Material Sky { get; private set; }
+        /// <summary>Opaque-looking unlit material for the fishing line (white texture, colour from vertices).</summary>
+        public static Material Line { get; private set; }
         public static Texture2D SoftDot { get; private set; }
 
         static readonly List<string> s_Missing = new List<string>();
@@ -44,6 +46,9 @@ namespace ZooThrow.Visuals
             GlowAlpha.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
             GlowAlpha.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
             Sky = new Material(sky) { name = "ZT_Sky" };
+            Line = new Material(glow) { name = "ZT_Line", mainTexture = Texture2D.whiteTexture };
+            Line.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            Line.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
         }
 
         static Shader Find(string name, string fallback)

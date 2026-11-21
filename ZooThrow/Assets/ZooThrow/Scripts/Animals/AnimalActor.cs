@@ -225,7 +225,11 @@ namespace ZooThrow.Animals
                     case LimbKind.Wing:
                         {
                             bool flying = Data.movement == MovementStyle.Fly;
-                            float flap = flying ? Mathf.Sin(_time * 11f) * 40f + 5f : Mathf.Sin(_time * 1.5f) * 4f - 55f;
+                            bool swimming = Data.movement == MovementStyle.Swim;
+                            // Flyers beat fast, swimmers (rays, sea dragons) glide with slow strokes, others keep wings folded.
+                            float flap = flying ? Mathf.Sin(_time * 11f) * 40f + 5f
+                                       : swimming ? Mathf.Sin(_time * 2.2f) * 28f
+                                       : Mathf.Sin(_time * 1.5f) * 4f - 55f;
                             // The left wing is mirrored with a negative x scale, so it needs the opposite z angle.
                             t.localRotation = Quaternion.Euler(0, 0, flap * spec.side);
                             break;

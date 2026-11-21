@@ -84,6 +84,13 @@ namespace ZooThrow.Visuals
             ps.Emit(p, count);
         }
 
+        /// <summary>Water splash: a ring of droplets thrown up plus a little sparkle.</summary>
+        public void Splash(Vector3 pos, Color water)
+        {
+            Emit(_confetti, pos + Vector3.up * 0.1f, Color.Lerp(water, Color.white, 0.6f), 22);
+            Emit(_dust, pos + Vector3.up * 0.1f, new Color(1f, 1f, 1f, 0.8f), 14);
+        }
+
         public void Landing(Vector3 pos, Color groundColor)
         {
             Emit(_dust, pos + Vector3.up * 0.2f, Color.Lerp(groundColor, Color.white, 0.4f), 26);

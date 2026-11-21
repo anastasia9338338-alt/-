@@ -148,7 +148,7 @@ namespace ZooThrow.Core
                         if (money > 0)
                         {
                             g.Economy.Add(money);
-                            g.UI.Message("С возвращением!", "Пока тебя не было (" + NumberFormat.Duration(seconds) + "), животные заработали\n<color=#73FF80><size=48>" + NumberFormat.Money(money) + "</size></color>", "ЗАБРАТЬ",
+                            g.UI.Message("С возвращением!", "Пока тебя не было (" + NumberFormat.Duration(seconds) + "), твой аквариум заработал\n<color=#73FF80><size=48>" + NumberFormat.Money(money) + "</size></color>", "ЗАБРАТЬ",
                                 () => { g.Sound.Play(Sfx.Coin); g.Vfx.Coins(g.Player.transform.position + Vector3.up * 2f, 30); });
                         }
                         break;

@@ -91,6 +91,17 @@ namespace UnityEngine
             var t = Vector3.Cross(u, v) * 2f;
             return v + t * q.w + Vector3.Cross(u, t);
         }
+        public static Quaternion FromToRotation(Vector3 from, Vector3 to)
+        {
+            from = from.normalized; to = to.normalized;
+            float d = Vector3.Dot(from, to);
+            if (d > 0.99999f) return identity;
+            if (d < -0.99999f) { var ax = Vector3.Cross(Vector3.right, from); if (ax.sqrMagnitude < 1e-6f) ax = Vector3.Cross(Vector3.up, from); return Axis(ax.normalized, 180f); }
+            var c = Vector3.Cross(from, to);
+            var q = new Quaternion(c.x, c.y, c.z, 1f + d);
+            float m = (float)Math.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            return new Quaternion(q.x / m, q.y / m, q.z / m, q.w / m);
+        }
         public static Quaternion LookRotation(Vector3 f, Vector3 up)
         {
             f = f.normalized; var r = Vector3.Cross(up, f).normalized; var u = Vector3.Cross(f, r);

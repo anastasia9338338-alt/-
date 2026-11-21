@@ -38,7 +38,8 @@ namespace ZooThrow.Player
             switch (s.kind)
             {
                 case StationKind.Throw: _g.Throw.RequestThrow(); break;
-                case StationKind.FoodShop: _g.UI.Open(WindowId.Shop); break;
+                case StationKind.RodShop: _g.UI.Open(WindowId.Rods); break;
+                case StationKind.BaitShop: _g.UI.Open(WindowId.Baits); break;
                 case StationKind.UpgradeShop: _g.UI.Open(WindowId.Upgrades); break;
                 case StationKind.Training: _g.Training.StartTraining(); break;
                 case StationKind.Pen: _g.UI.Open(WindowId.Animals); break;

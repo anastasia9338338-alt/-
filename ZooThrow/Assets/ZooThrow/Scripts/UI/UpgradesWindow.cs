@@ -149,7 +149,7 @@ namespace ZooThrow.UI
         protected override void Tick()
         {
             var up = G.Upgrades;
-            _stats.text = "Сила " + G.State.powerLevel + "   •   Идеальный бросок: до " + NumberFormat.Meters(G.ThrowPerfectDistance) +
+            _stats.text = "Сила " + G.State.powerLevel + "   •   Идеальный заброс: до " + NumberFormat.Meters(G.ThrowPerfectDistance) +
                           "   •   Удача ×" + up.LuckMultiplier.ToString("0.00") + "   •   Опыт ×" + up.XpMultiplier.ToString("0.00") +
                           "   •   Офлайн: " + up.OfflineHours.ToString("0") + " ч";
             Subtitle.text = "Деньги: " + NumberFormat.Money(G.Economy.Money);

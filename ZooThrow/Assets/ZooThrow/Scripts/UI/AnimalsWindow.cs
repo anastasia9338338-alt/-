@@ -46,13 +46,13 @@ namespace ZooThrow.UI
             top.sizeDelta = new Vector2(0, 64);
             _stats = UIFactory.Text(top, "", 28, Color.white, TextAlignmentOptions.MidlineLeft, true, true);
             UIFactory.Stretch(_stats.rectTransform, 4, 0, 760, 0);
-            var best = UIFactory.Button(top, "ЛУЧШИХ В ЗАГОН", UITheme.Blue, () =>
+            var best = UIFactory.Button(top, "ЛУЧШИХ В АКВАРИУМ", UITheme.Blue, () =>
             {
                 G.Pen.ArrangeBest();
-                GameEvents.RaiseToast("В загоне самые доходные животные!", UITheme.Money);
+                GameEvents.RaiseToast("В аквариуме самый доходный улов!", UITheme.Money);
             }, 24, IconId.Upgrade, 18);
             UIFactory.Place((RectTransform)best.button.transform, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-400, 0), new Vector2(350, 62));
-            var sellAll = UIFactory.Button(top, "ПРОДАТЬ ВСЕХ ВНЕ ЗАГОНА", UITheme.Red, SellAllClicked, 22, IconId.Coin, 18);
+            var sellAll = UIFactory.Button(top, "ПРОДАТЬ ВСЁ ВНЕ АКВАРИУМА", UITheme.Red, SellAllClicked, 22, IconId.Coin, 18);
             UIFactory.Place((RectTransform)sellAll.button.transform, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(0, 0), new Vector2(390, 62));
 
             // Pen strip
@@ -60,7 +60,7 @@ namespace ZooThrow.UI
             var prt = penPanel.rectTransform;
             prt.anchorMin = new Vector2(0, 1); prt.anchorMax = new Vector2(1, 1); prt.pivot = new Vector2(0.5f, 1);
             prt.offsetMin = new Vector2(0, -280); prt.offsetMax = new Vector2(0, -76);
-            var penTitle = UIFactory.Text(prt, "ЗАГОН — нажми на животное, чтобы вернуть его в инвентарь", 22, UITheme.TextDim, TextAlignmentOptions.MidlineLeft, true, true);
+            var penTitle = UIFactory.Text(prt, "АКВАРИУМ — нажми на существо, чтобы вернуть его в садок", 22, UITheme.TextDim, TextAlignmentOptions.MidlineLeft, true, true);
             UIFactory.Place(penTitle.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(16, -6), new Vector2(1200, 34));
             var row = UIFactory.Rect("Slots", prt);
             row.anchorMin = new Vector2(0, 0); row.anchorMax = new Vector2(1, 1);
@@ -75,7 +75,7 @@ namespace ZooThrow.UI
             _grid = UIFactory.Scroll(scrollRoot, out _);
             UIFactory.Stretch((RectTransform)_grid.parent.parent);
             UIFactory.Grid(_grid, new Vector2(272, 330), new Vector2(14, 14), 5, new RectOffset(4, 4, 4, 8));
-            _empty = UIFactory.Text(scrollRoot, "Пока пусто. Брось еду, чтобы поймать первое животное!", 30, UITheme.TextDim, TextAlignmentOptions.Center, true, true);
+            _empty = UIFactory.Text(scrollRoot, "Садок пуст. Закинь удочку, чтобы поймать первую рыбу!", 30, UITheme.TextDim, TextAlignmentOptions.Center, true, true);
             UIFactory.Stretch(_empty.rectTransform);
         }
 
@@ -118,10 +118,10 @@ namespace ZooThrow.UI
             UIFactory.Place(c.name.rectTransform, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -170), new Vector2(260, 32));
             c.income = UIFactory.Text(c.root, "", 22, UITheme.Money, TextAlignmentOptions.Center, true, true);
             UIFactory.Place(c.income.rectTransform, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -202), new Vector2(260, 30));
-            c.placedBadge = UIFactory.Text(c.root, "В ЗАГОНЕ", 16, UITheme.Yellow, TextAlignmentOptions.Center, true, true);
+            c.placedBadge = UIFactory.Text(c.root, "В АКВАРИУМЕ", 16, UITheme.Yellow, TextAlignmentOptions.Center, true, true);
             UIFactory.Place(c.placedBadge.rectTransform, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -232), new Vector2(260, 22));
             var card = c;
-            c.place = UIFactory.Button(c.root, "В ЗАГОН", UITheme.Blue, () => PlaceClicked(card), 18, null, 14);
+            c.place = UIFactory.Button(c.root, "В АКВАРИУМ", UITheme.Blue, () => PlaceClicked(card), 18, null, 14);
             UIFactory.Place((RectTransform)c.place.button.transform, new Vector2(0, 0), new Vector2(0, 0), new Vector2(10, 10), new Vector2(122, 60));
             c.sell = UIFactory.Button(c.root, "ПРОДАТЬ", UITheme.Red, () => SellClicked(card), 16, null, 14);
             UIFactory.Place((RectTransform)c.sell.button.transform, new Vector2(1, 0), new Vector2(1, 0), new Vector2(-10, 10), new Vector2(122, 60));
@@ -169,7 +169,7 @@ namespace ZooThrow.UI
             c.income.text = "+" + NumberFormat.PerSecond(G.Inventory.IncomeOf(a));
             bool placed = G.Pen.IsPlaced(a.uid);
             c.placedBadge.gameObject.SetActive(placed);
-            c.place.label.text = placed ? "УБРАТЬ" : "В ЗАГОН";
+            c.place.label.text = placed ? "УБРАТЬ" : "В АКВАРИУМ";
             c.place.SetColor(placed ? UITheme.Grey : UITheme.Blue);
             c.sell.label.text = NumberFormat.Money(G.Inventory.SellPrice(a));
         }
@@ -202,7 +202,7 @@ namespace ZooThrow.UI
 
         protected override void Tick()
         {
-            _stats.text = "Загон " + G.Pen.PlacedCount + "/" + G.Pen.Capacity + "   •   <color=#73FF80>+" + NumberFormat.PerSecond(G.Pen.TotalIncome) + "</color>";
+            _stats.text = "Аквариум " + G.Pen.PlacedCount + "/" + G.Pen.Capacity + "   •   <color=#73FF80>+" + NumberFormat.PerSecond(G.Pen.TotalIncome) + "</color>";
         }
 
         void SlotClicked(int slot)
@@ -229,11 +229,11 @@ namespace ZooThrow.UI
             if (pen.Place(c.animal)) return;
             if (pen.PlaceOrReplaceWeakest(c.animal))
             {
-                GameEvents.RaiseToast("Заменили самое слабое животное в загоне", UITheme.Yellow);
+                GameEvents.RaiseToast("Заменили самое слабое существо в аквариуме", UITheme.Yellow);
                 return;
             }
             G.Sound.Play(Audio.Sfx.Error);
-            GameEvents.RaiseToast("Загон полон, и все в нём доходнее. Улучши загон!", UITheme.Red);
+            GameEvents.RaiseToast("Аквариум полон, и все в нём доходнее. Улучши аквариум!", UITheme.Red);
         }
 
         void SellClicked(AnimalCard c)
@@ -243,7 +243,7 @@ namespace ZooThrow.UI
             var data = G.Inventory.DataOf(a);
             if (data.rarity >= Rarity.Epic || a.mutation != Mutation.None)
             {
-                UI.Confirm("Продать?", data.displayName + " — " + G.Db.GetRarity(data.rarity).displayName.ToLowerInvariant() + " животное.\nТы получишь " + NumberFormat.Money(G.Inventory.SellPrice(a)) + ".",
+                UI.Confirm("Продать?", data.displayName + " — " + G.Db.GetRarity(data.rarity).displayName.ToLowerInvariant() + " существо.\nТы получишь " + NumberFormat.Money(G.Inventory.SellPrice(a)) + ".",
                     "ПРОДАТЬ", UITheme.Red, () => DoSell(a));
             }
             else DoSell(a);
@@ -267,10 +267,10 @@ namespace ZooThrow.UI
                 if (!G.Pen.IsPlaced(a.uid)) { count++; total += G.Inventory.SellPrice(a); }
             if (count == 0)
             {
-                GameEvents.RaiseToast("Все животные уже в загоне", UITheme.Yellow);
+                GameEvents.RaiseToast("Весь улов уже в аквариуме", UITheme.Yellow);
                 return;
             }
-            UI.Confirm("Продать " + count + " животн.?", "Все животные вне загона будут проданы за " + NumberFormat.Money(total) + ".\nЖивотные в загоне останутся.", "ПРОДАТЬ", UITheme.Red, () =>
+            UI.Confirm("Продать " + count + " шт.?", "Весь улов вне аквариума будет продан за " + NumberFormat.Money(total) + ".\nСущества в аквариуме останутся.", "ПРОДАТЬ", UITheme.Red, () =>
             {
                 double sum = G.Inventory.SellAllNotPlaced(G.Pen, out int n);
                 G.Sound.Play(Audio.Sfx.Coin);

@@ -22,8 +22,8 @@
 <body>
   <canvas id="unity-canvas" tabindex="-1"></canvas>
   <div id="loader">
-    <div id="logo">ЗОО-<span>БРОСОК</span></div>
-    <div id="tagline">Брось еду — поймай редкого зверя!</div>
+    <div id="logo">КЛЁВЫЙ <span>УЛОВ</span></div>
+    <div id="tagline">Закинь удочку — поймай морского дракона!</div>
     <div id="bar"><div id="fill"></div></div>
     <div id="status">Загрузка...</div>
     <div id="error"></div>
@@ -66,7 +66,7 @@
     script.onload = function () {
       createUnityInstance(canvas, config, function (progress) {
         fill.style.width = Math.round(progress * 100) + "%";
-        statusEl.textContent = progress < 0.9 ? "Загрузка... " + Math.round(progress * 100) + "%" : "Готовим зоопарк...";
+        statusEl.textContent = progress < 0.9 ? "Загрузка... " + Math.round(progress * 100) + "%" : "Готовим удочки...";
       }).then(function (unityInstance) {
         loader.classList.add("hidden");
         canvas.focus();

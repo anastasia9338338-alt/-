@@ -12,17 +12,18 @@ namespace ZooThrow.Data
         public int startingPenCapacity = 4;
         public int maxPenSlots = 12;
         public int inventoryCapacity = 200;
-        public string startingFoodId = "carrot";
+        public string startingBaitId = "worm";
+        public string startingRodId = "bamboo_rod";
         public string startingTrainerId = "pullup_bar";
 
-        [Header("Дальность = база + сила + еда + бонус точности")]
+        [Header("Дальность заброса = база + сила + удочка + наживка + бонус точности")]
         public float baseDistance = 12f;
         [Tooltip("Метры силы за каждый уровень Throw Power.")]
         public float distancePerPowerLevel = 3f;
         [Tooltip("Показатель степени роста силы по уровню (1 = линейно).")]
-        public float powerCurveExponent = 1.0f;
+        public float powerCurveExponent = 1.12f;
         [Range(0f, 0.2f)] public float distanceJitter = 0.03f;
-        public float maxThrowDistance = 760f;
+        public float maxThrowDistance = 1200f;
 
         [Header("Мини-игра точности")]
         [Tooltip("Полных проходов индикатора туда-обратно в секунду.")]
@@ -40,17 +41,20 @@ namespace ZooThrow.Data
         [Tooltip("Удача умножается на это значение при PERFECT.")]
         public float perfectLuckBonus = 1.3f;
         [Tooltip("Насколько сильно удача сдвигает веса редкостей: вес × удача^(уровень редкости × это число).")]
-        public float luckTierScale = 0.6f;
+        public float luckTierScale = 0.5f;
 
-        [Header("Полёт еды")]
+        [Header("Полёт лески и поклёвка")]
         public float minFlightTime = 1.4f;
         public float flightTimePerSqrtMeter = 0.12f;
         public float arcHeightPerMeter = 0.22f;
         public float maxArcHeight = 110f;
+        [Tooltip("Пауза между приводнением поплавка и поклёвкой, секунды.")]
+        public float biteDelayMin = 0.6f;
+        public float biteDelayMax = 1.3f;
 
         [Header("Тренировка")]
-        public double xpBase = 10;
-        public double xpGrowth = 1.4;
+        public double xpBase = 20;
+        public double xpGrowth = 1.36;
         public float repDuration = 0.8f;
         public int maxPowerLevel = 250;
 

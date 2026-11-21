@@ -6,7 +6,7 @@ namespace ZooThrow.Data
     public class UpgradeData : ScriptableObject
     {
         public string id = "pen_capacity";
-        public string displayName = "Больше загон";
+        public string displayName = "Больше аквариум";
         [TextArea] public string description;
         public UpgradeEffect effect;
         public double baseCost = 100;

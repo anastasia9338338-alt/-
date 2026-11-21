@@ -56,7 +56,8 @@ static class Program
             }
             Write(outDir, "animal_" + a.id, sb);
         }
-        foreach (var f in db.foods) { var sb = new StringBuilder(); AppendMesh(sb, FoodModelFactory.Get(f), v => v); Write(outDir, "food_" + f.id, sb); }
+        foreach (var f in db.baits) { var sb = new StringBuilder(); AppendMesh(sb, BaitModelFactory.Get(f), v => v); Write(outDir, "bait_" + f.id, sb); }
+        foreach (var r in db.rods) { var sb = new StringBuilder(); AppendMesh(sb, RodModelFactory.Get(r), v => Quaternion.Euler(0, 0, -50f) * v); Write(outDir, "rod_" + r.id, sb); }
         foreach (var t in db.trainers) { var sb = new StringBuilder(); AppendMesh(sb, TrainerModelFactory.Get(t), v => v); Write(outDir, "trainer_" + t.id, sb); }
 
         var rng = new System.Random(3);
@@ -78,6 +79,11 @@ static class Program
             ("buoy", mb => DecorFactory.Buoy(mb, Vector3.zero)),
             ("pyramid", mb => DecorFactory.Pyramid(mb, Vector3.zero, 4f)),
             ("cloud", mb => DecorFactory.Cloud(mb, Vector3.zero, rng)),
+            ("reeds", mb => DecorFactory.Reeds(mb, Vector3.zero, rng, new Color(0.45f, 0.65f, 0.3f))),
+            ("lily", mb => DecorFactory.LilyPad(mb, Vector3.zero, new System.Random(5))),
+            ("dead_tree", mb => DecorFactory.DeadTree(mb, Vector3.zero, rng, new Color(0.35f, 0.3f, 0.22f))),
+            ("glow_crystal", mb => DecorFactory.GlowCrystal(mb, Vector3.zero, rng, new Color(0.7f, 0.3f, 1f))),
+            ("column", mb => DecorFactory.Column(mb, Vector3.zero, rng, new Color(0.92f, 0.9f, 0.84f))),
         };
         foreach (var (name, build) in props)
         {

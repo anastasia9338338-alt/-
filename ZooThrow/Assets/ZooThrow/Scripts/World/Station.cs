@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace ZooThrow.World
 {
-    public enum StationKind { Throw, FoodShop, UpgradeShop, Training, Pen, Collection }
+    public enum StationKind { Throw, RodShop, BaitShop, UpgradeShop, Training, Pen, Collection }
 
     /// <summary>An interactable spot on the map. The player's InteractionSystem picks the nearest one in range.</summary>
     public class Station : MonoBehaviour

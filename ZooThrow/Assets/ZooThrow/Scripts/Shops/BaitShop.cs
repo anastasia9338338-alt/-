@@ -6,7 +6,7 @@ using ZooThrow.World;
 
 namespace ZooThrow.Shops
 {
-    public class FoodShop
+    public class BaitShop
     {
         readonly GameDatabase _db;
         readonly SaveData _s;
@@ -14,58 +14,58 @@ namespace ZooThrow.Shops
         readonly EconomyManager _eco;
         readonly BiomeManager _biomes;
 
-        public FoodShop(GameDatabase db, SaveManager save, EconomyManager eco, BiomeManager biomes)
+        public BaitShop(GameDatabase db, SaveManager save, EconomyManager eco, BiomeManager biomes)
         {
             _db = db; _save = save; _s = save.Data; _eco = eco; _biomes = biomes;
         }
 
-        public FoodData Selected => _db.Food(_s.selectedFood) ?? _db.Food(_db.balance.startingFoodId);
-        public bool Owns(FoodData f) => f != null && _s.ownedFoods.Contains(f.id);
+        public BaitData Selected => _db.Bait(_s.selectedBait) ?? _db.Bait(_db.balance.startingBaitId);
+        public bool Owns(BaitData f) => f != null && _s.ownedBaits.Contains(f.id);
 
-        public bool IsUnlocked(FoodData f)
+        public bool IsUnlocked(BaitData f)
         {
             if (f == null) return false;
             if (!string.IsNullOrEmpty(f.requiredBiomeId) && !_biomes.IsUnlocked(f.requiredBiomeId)) return false;
             return _s.powerLevel >= f.requiredPowerLevel;
         }
 
-        public string LockReason(FoodData f)
+        public string LockReason(BaitData f)
         {
             if (!string.IsNullOrEmpty(f.requiredBiomeId) && !_biomes.IsUnlocked(f.requiredBiomeId))
             {
                 var b = _db.Biome(f.requiredBiomeId);
-                return "Открой биом «" + (b != null ? b.displayName : f.requiredBiomeId) + "»";
+                return "Открой «" + (b != null ? b.displayName : f.requiredBiomeId) + "»";
             }
             if (_s.powerLevel < f.requiredPowerLevel) return "Нужна сила " + f.requiredPowerLevel;
             return "";
         }
 
-        public PurchaseResult TryBuy(FoodData f)
+        public PurchaseResult TryBuy(BaitData f)
         {
             if (f == null) return PurchaseResult.Unknown;
             if (Owns(f)) return PurchaseResult.AlreadyOwned;
             if (!IsUnlocked(f)) return PurchaseResult.Locked;
             if (!_eco.TrySpend(f.price)) return PurchaseResult.NotEnoughMoney;
-            _s.ownedFoods.Add(f.id);
-            _s.selectedFood = f.id; // a freshly bought food is always better, so equip it
+            _s.ownedBaits.Add(f.id);
+            _s.selectedBait = f.id; // freshly bought bait is always better, so equip it
             _save.MarkDirty();
             GameEvents.RaiseShopChanged();
             return PurchaseResult.Ok;
         }
 
-        public bool Select(FoodData f)
+        public bool Select(BaitData f)
         {
             if (!Owns(f)) return false;
-            _s.selectedFood = f.id;
+            _s.selectedBait = f.id;
             _save.MarkDirty();
             GameEvents.RaiseShopChanged();
             return true;
         }
 
-        /// <summary>Cycles through owned foods; dir = +1 or -1.</summary>
+        /// <summary>Cycles through owned baits; dir = +1 or -1.</summary>
         public void Cycle(int dir)
         {
-            var owned = _db.foods.FindAll(Owns);
+            var owned = _db.baits.FindAll(Owns);
             if (owned.Count <= 1) return;
             int i = owned.IndexOf(Selected);
             i = ((i + dir) % owned.Count + owned.Count) % owned.Count;

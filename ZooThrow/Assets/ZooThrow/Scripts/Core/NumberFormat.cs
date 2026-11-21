@@ -39,6 +39,15 @@ namespace ZooThrow.Core
             return p <= 0 ? "0%" : "<0.01%";
         }
 
+        /// <summary>Odds as "1 из N" (one in N), the way rare catches are usually shown.</summary>
+        public static string OneIn(double chance)
+        {
+            if (chance <= 0 || double.IsNaN(chance)) return "—";
+            double n = 1.0 / chance;
+            if (n < 1.05) return "1 из 1";
+            return "1 из " + Short(Math.Round(n));
+        }
+
         public static string Duration(double seconds)
         {
             var t = TimeSpan.FromSeconds(Math.Max(0, seconds));

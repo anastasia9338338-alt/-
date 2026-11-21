@@ -31,7 +31,7 @@ namespace ZooThrow.UI
             _sensitivity = SliderRow(content, "Чувствительность мыши", out _sensValue, v => { S.mouseSensitivity = Mathf.Lerp(0.1f, 3f, v); Changed(); });
             ToggleRow(content, "Инверсия мыши по вертикали", () => S.invertY, () => S.invertY = !S.invertY);
             ToggleRow(content, "Тряска камеры", () => S.cameraShake, () => S.cameraShake = !S.cameraShake);
-            ToggleRow(content, "Сразу сажать новых животных в загон", () => S.autoPlaceAnimals, () => S.autoPlaceAnimals = !S.autoPlaceAnimals);
+            ToggleRow(content, "Сразу выпускать улов в аквариум", () => S.autoPlaceAnimals, () => S.autoPlaceAnimals = !S.autoPlaceAnimals);
             ToggleRow(content, "Показывать FPS", () => S.showFps, () => S.showFps = !S.showFps);
 
             Section(content, "Графика");
@@ -121,14 +121,14 @@ namespace ZooThrow.UI
         protected override void Tick()
         {
             var s = G.State;
-            _stats.text = "Бросков: " + s.totalThrows + "   •   Идеальных: " + s.perfectThrows + "\n" +
-                          "Рекорд дальности: " + NumberFormat.Meters(s.bestDistance) + "   •   Открыто биомов: " + s.unlockedBiomes.Count + " / " + G.Db.biomes.Count + "\n" +
+            _stats.text = "Забросов: " + s.totalThrows + "   •   Идеальных: " + s.perfectThrows + "\n" +
+                          "Рекорд дальности: " + NumberFormat.Meters(s.bestDistance) + "   •   Открыто локаций: " + s.unlockedBiomes.Count + " / " + G.Db.biomes.Count + "\n" +
                           "Всего заработано: " + NumberFormat.Money(s.totalEarned) + "   •   Видов в коллекции: " + s.discoveredAnimals.Count + " / " + G.Db.animals.Count;
         }
 
         void ResetClicked()
         {
-            UI.Confirm("Сбросить прогресс?", "Все деньги, животные, улучшения и рекорды будут удалены без возможности восстановления.", "СБРОСИТЬ", UITheme.Red, () =>
+            UI.Confirm("Сбросить прогресс?", "Все деньги, улов, удочки, улучшения и рекорды будут удалены без возможности восстановления.", "СБРОСИТЬ", UITheme.Red, () =>
                 UI.Confirm("Точно?", "Это последнее предупреждение. Начать игру заново?", "ДА, СБРОСИТЬ", UITheme.Red, () => G.ResetProgress()));
         }
     }

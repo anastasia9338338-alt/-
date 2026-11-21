@@ -20,6 +20,7 @@ namespace ZooThrow.CameraSystem
         Transform _projectile;
         Vector3 _showcasePoint;
         float _showcaseAngle;
+        float _showcaseScale = 1f;
         float _yaw, _pitch = 16f, _distance = 10f, _targetDistance = 10f;
         float _shake;
         Vector3 _smoothPos;
@@ -41,7 +42,14 @@ namespace ZooThrow.CameraSystem
         public void SetFollow() { Mode = CameraMode.Follow; _modeBlend = 0f; }
         public void SetAim() { Mode = CameraMode.Aim; _modeBlend = 0f; }
         public void SetProjectile(Transform projectile) { _projectile = projectile; Mode = CameraMode.Projectile; _modeBlend = 0f; }
-        public void SetShowcase(Vector3 point) { _showcasePoint = point; _showcaseAngle = -35f; Mode = CameraMode.Showcase; _modeBlend = 0f; }
+        public void SetShowcase(Vector3 point, float subjectHeight = 1.5f)
+        {
+            _showcasePoint = point;
+            _showcaseScale = Mathf.Max(1f, subjectHeight / 2f);
+            _showcaseAngle = -35f;
+            Mode = CameraMode.Showcase;
+            _modeBlend = 0f;
+        }
         public void Shake(float amount)
         {
             if (_g != null && !_g.State.settings.cameraShake) return;
@@ -91,9 +99,10 @@ namespace ZooThrow.CameraSystem
                 case CameraMode.Showcase:
                     {
                         _showcaseAngle += dt * 18f;
-                        Vector3 offset = Quaternion.Euler(0, _showcaseAngle, 0) * new Vector3(0, 3.2f, -8.5f);
+                        // Big monsters get a camera that backs off and looks higher.
+                        Vector3 offset = Quaternion.Euler(0, _showcaseAngle, 0) * new Vector3(0, 3.2f, -8.5f) * _showcaseScale;
                         desiredPos = _showcasePoint + offset;
-                        desiredRot = Quaternion.LookRotation(_showcasePoint + Vector3.up * 1.2f - desiredPos, Vector3.up);
+                        desiredRot = Quaternion.LookRotation(_showcasePoint + Vector3.up * 1.2f * _showcaseScale - desiredPos, Vector3.up);
                         sharpness = 5f;
                         break;
                     }

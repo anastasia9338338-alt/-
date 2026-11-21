@@ -10,7 +10,9 @@ namespace ZooThrow.World
         /// <summary>World Z where throw distance is 0 m.</summary>
         public const float ThrowOriginZ = 10f;
         public const float PadRadius = 3.2f;
-        public const float LaneHalfWidth = 6f;
+        public const float LaneHalfWidth = 9f;
+        /// <summary>Surface height of the casting channel water.</summary>
+        public const float WaterLevel = 0.08f;
         public const float WorldHalfWidth = 90f;
 
         public static readonly Vector3 PenCenter = new Vector3(-26f, 0f, -14f);
@@ -21,7 +23,8 @@ namespace ZooThrow.World
         public static readonly Vector3 PullUpBar = new Vector3(24f, 0f, -12f);
         public const float BarHeight = 3.1f;
 
-        public static readonly Vector3 FoodShop = new Vector3(-13f, 0f, 3f);
+        public static readonly Vector3 RodShop = new Vector3(-13f, 0f, 3f);
+        public static readonly Vector3 BaitShop = new Vector3(13f, 0f, -4f);
         public static readonly Vector3 UpgradeShop = new Vector3(13f, 0f, 3f);
         public static readonly Vector3 Museum = new Vector3(0f, 0f, -26f);
 

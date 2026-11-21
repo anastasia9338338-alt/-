@@ -6,13 +6,14 @@ namespace ZooThrow.Data
 
     public enum ThrowGrade { Weak = 0, Good = 1, Great = 2, Perfect = 3 }
 
-    public enum BodyPlan { Quadruped, Bird, Frog, Snail, Fish, Snake, Bug, Ape, Octopus, Turtle, Dragon }
+    public enum BodyPlan { Quadruped, Bird, Frog, Snail, Fish, Snake, Bug, Ape, Octopus, Turtle, Dragon, SeaSerpent, Jellyfish, Ray }
 
     public enum MovementStyle { Walk, Hop, Fly, Swim, Slither }
 
-    public enum BiomeStyle { Forest, Savanna, Desert, Jungle, Ocean, Mountains }
+    /// <summary>Visual style of a fishing location: shore decoration and water tone.</summary>
+    public enum BiomeStyle { Pond, River, Lake, Swamp, Mangrove, Reef, OpenSea, Arctic, Trench, Volcano, Atlantis, Abyss }
 
-    public enum FoodShape { Carrot, Apple, Bread, Burger, Pizza, Steak, GoldenStar, RainbowCake }
+    public enum BaitShape { Worm, Maggot, Corn, Shrimp, Minnow, Squid, Spoon, GlowOrb, DragonBait }
 
     public enum TrainerShape { PullUpBar, Dumbbells, Barbell, Kettlebell, PowerRack, CosmicMachine }
 
@@ -49,5 +50,11 @@ namespace ZooThrow.Data
         Fluffy = 1 << 24,
         Spikes = 1 << 25,
         SingleHorn = 1 << 26,
+        /// <summary>Long pointed bill (swordfish, marlin).</summary>
+        LongSnout = 1 << 27,
+        /// <summary>Glowing lure on a stalk (anglerfish).</summary>
+        Lure = 1 << 28,
+        /// <summary>Emissive glow spots for deep-sea creatures.</summary>
+        Glow = 1 << 29,
     }
 }

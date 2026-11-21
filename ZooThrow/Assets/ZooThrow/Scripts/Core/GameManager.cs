@@ -31,7 +31,8 @@ namespace ZooThrow.Core
         public EconomyManager Economy { get; private set; }
         public UpgradeManager Upgrades { get; private set; }
         public BiomeManager Biomes { get; private set; }
-        public FoodShop Foods { get; private set; }
+        public BaitShop Baits { get; private set; }
+        public RodShop Rods { get; private set; }
         public TrainerShop Trainers { get; private set; }
         public AnimalInventory Inventory { get; private set; }
         public AnimalPen Pen { get; private set; }
@@ -61,7 +62,8 @@ namespace ZooThrow.Core
             Economy = new EconomyManager(save);
             Upgrades = new UpgradeManager(db, save, Economy);
             Biomes = new BiomeManager(db, save);
-            Foods = new FoodShop(db, save, Economy, Biomes);
+            Baits = new BaitShop(db, save, Economy, Biomes);
+            Rods = new RodShop(db, save, Economy, Biomes);
             Trainers = new TrainerShop(db, save, Economy);
             Inventory = new AnimalInventory(db, save, Economy);
             Pen = new AnimalPen(db, save, Upgrades, Inventory);
@@ -69,7 +71,10 @@ namespace ZooThrow.Core
 
         public void SetMode(GameMode mode) => Mode = mode;
 
-        public float ThrowPerfectDistance => ThrowMath.PerfectDistance(Balance, State.powerLevel, Upgrades.ArmsMultiplier, Foods.Selected);
+        public float ThrowPerfectDistance => ThrowMath.PerfectDistance(Balance, State.powerLevel, Upgrades.ArmsMultiplier, Rods.Selected, Baits.Selected);
+
+        /// <summary>Luck of the current rod and bait including upgrades, for chance displays (no perfect bonus).</summary>
+        public float CurrentLuck => ThrowMath.GearLuck(Rods.Selected, Baits.Selected) * Upgrades.LuckMultiplier;
 
         void Update()
         {

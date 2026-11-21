@@ -24,16 +24,28 @@ namespace ZooThrow.UI
             }, 150f);
         }
 
-        public static Texture Food(FoodData f)
+        public static Texture Bait(BaitData f)
         {
             if (R == null || f == null) return null;
-            return R.Get("food_" + f.id, root =>
+            return R.Get("bait_" + f.id, root =>
             {
-                var go = MaterialLibrary.MeshObject("Food", root, FoodModelFactory.Get(f), new Vector3(0, 0.35f, 0));
-                go.transform.localScale = Vector3.one * 1.4f;
-                go.transform.localRotation = Quaternion.Euler(-25f, 0, 10f);
-                return 0.9f;
+                var go = MaterialLibrary.MeshObject("Bait", root, BaitModelFactory.Get(f), new Vector3(0, 0.3f, 0));
+                go.transform.localScale = Vector3.one * 2f;
+                go.transform.localRotation = Quaternion.Euler(-25f, 30f, 10f);
+                return 0.75f;
             }, 160f);
+        }
+
+        public static Texture Rod(RodData r)
+        {
+            if (R == null || r == null) return null;
+            return R.Get("rod_" + r.id, root =>
+            {
+                // Lay the rod diagonally so the whole blank fits the square portrait.
+                var go = MaterialLibrary.MeshObject("Rod", root, RodModelFactory.Get(r), new Vector3(-r.length * 0.3f, 0.1f, 0));
+                go.transform.localRotation = Quaternion.Euler(0, 0, -50f);
+                return r.length * 0.75f;
+            }, 180f);
         }
 
         public static Texture Trainer(TrainerData t)

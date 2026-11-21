@@ -37,15 +37,17 @@ namespace ZooThrow.SaveSystem
     [Serializable]
     public class SaveData
     {
-        public const int CurrentVersion = 1;
+        public const int CurrentVersion = 2;
 
         public int version = CurrentVersion;
         public double money;
         public double totalEarned;
         public int powerLevel = 1;
         public double xp;
-        public List<string> ownedFoods = new List<string>();
-        public string selectedFood;
+        public List<string> ownedBaits = new List<string>();
+        public string selectedBait;
+        public List<string> ownedRods = new List<string>();
+        public string selectedRod;
         public List<string> ownedTrainers = new List<string>();
         public List<UpgradeLevel> upgrades = new List<UpgradeLevel>();
         public List<OwnedAnimal> animals = new List<OwnedAnimal>();
@@ -68,10 +70,12 @@ namespace ZooThrow.SaveSystem
             {
                 money = b.startingMoney,
                 powerLevel = Math.Max(1, b.startingPowerLevel),
-                selectedFood = b.startingFoodId,
+                selectedBait = b.startingBaitId,
+                selectedRod = b.startingRodId,
                 lastSavedUtcTicks = DateTime.UtcNow.Ticks,
             };
-            s.ownedFoods.Add(b.startingFoodId);
+            s.ownedBaits.Add(b.startingBaitId);
+            s.ownedRods.Add(b.startingRodId);
             s.ownedTrainers.Add(b.startingTrainerId);
             if (db.biomes.Count > 0) s.unlockedBiomes.Add(db.biomes[0].id);
             for (int i = 0; i < b.maxPenSlots; i++) s.penSlots.Add(0);

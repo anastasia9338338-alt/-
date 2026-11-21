@@ -8,7 +8,7 @@ using ZooThrow.World;
 
 namespace ZooThrow.UI
 {
-    /// <summary>Always-on HUD: stats bar, side menu, food selector, throw/training buttons, prompts and objectives.</summary>
+    /// <summary>Always-on HUD: stats bar, side menu, bait/rod panel, cast/training buttons, prompts and objectives.</summary>
     public class HudView : MonoBehaviour
     {
         UIManager _ui;
@@ -90,10 +90,11 @@ namespace ZooThrow.UI
         void BuildSideMenu(RectTransform layer)
         {
             var menu = UIFactory.Rect("SideMenu", layer);
-            UIFactory.Place(menu, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(22, 20), new Vector2(128, 700));
+            UIFactory.Place(menu, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(22, 20), new Vector2(128, 820));
             UIFactory.VLayout(menu, 14, null, TextAnchor.MiddleCenter, true, false);
-            MenuButton(menu, "Животные", "Tab", IconId.Paw, UITheme.Green, () => _ui.Toggle(WindowId.Animals));
-            MenuButton(menu, "Магазин", "B", IconId.Food, UITheme.Orange, () => _ui.Toggle(WindowId.Shop));
+            MenuButton(menu, "Аквариум", "Tab", IconId.Fish, UITheme.Blue, () => _ui.Toggle(WindowId.Animals));
+            MenuButton(menu, "Удочки", "B", IconId.Rod, UITheme.Orange, () => _ui.Toggle(WindowId.Rods));
+            MenuButton(menu, "Наживка", "N", IconId.Worm, UITheme.Green, () => _ui.Toggle(WindowId.Baits));
             MenuButton(menu, "Улучшения", "U", IconId.Upgrade, UITheme.Blue, () => _ui.Toggle(WindowId.Upgrades));
             MenuButton(menu, "Коллекция", "C", IconId.Collection, UITheme.Purple, () => _ui.Toggle(WindowId.Collection));
             MenuButton(menu, "Настройки", "Esc", IconId.Gear, UITheme.Grey, () => _ui.Toggle(WindowId.Settings));
@@ -102,7 +103,7 @@ namespace ZooThrow.UI
         void MenuButton(Transform parent, string label, string key, IconId icon, Color color, System.Action onClick)
         {
             var b = UIFactory.Button(parent, null, color, onClick, 28, null, 24);
-            UIFactory.Layout(b.button, 128, 118);
+            UIFactory.Layout(b.button, 128, 120);
             var face = b.bg.transform;
             var ic = UIFactory.Icon(face, icon, Color.white, 58);
             UIFactory.Place(ic.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -12), new Vector2(58, 58));
@@ -130,12 +131,12 @@ namespace ZooThrow.UI
             UIFactory.Place(_bottomRow, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 24), new Vector2(1180, 140));
             UIFactory.HLayout(_bottomRow, 18, null, TextAnchor.MiddleCenter, false, false);
 
-            // Food selector
-            var food = UIFactory.Panel(_bottomRow, "FoodSelector", UITheme.HudPill, 30);
+            // Bait selector with the current rod underneath
+            var food = UIFactory.Panel(_bottomRow, "BaitSelector", UITheme.HudPill, 30);
             UIFactory.Layout(food, 520, 130);
-            var prev = UIFactory.Button(food.transform, null, UITheme.Grey, () => _g.Foods.Cycle(-1), 26, IconId.ChevronLeft, 14);
+            var prev = UIFactory.Button(food.transform, null, UITheme.Grey, () => _g.Baits.Cycle(-1), 26, IconId.ChevronLeft, 14);
             UIFactory.Place((RectTransform)prev.button.transform, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(12, 0), new Vector2(54, 96));
-            var next = UIFactory.Button(food.transform, null, UITheme.Grey, () => _g.Foods.Cycle(1), 26, IconId.ChevronRight, 14);
+            var next = UIFactory.Button(food.transform, null, UITheme.Grey, () => _g.Baits.Cycle(1), 26, IconId.ChevronRight, 14);
             UIFactory.Place((RectTransform)next.button.transform, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-12, 0), new Vector2(54, 96));
             var portraitBg = UIFactory.Panel(food.transform, "PortraitBg", new Color(1, 1, 1, 0.08f), 20);
             UIFactory.Place(portraitBg.rectTransform, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(78, 0), new Vector2(110, 110));
@@ -149,7 +150,7 @@ namespace ZooThrow.UI
             var keys = UIFactory.Text(food.transform, "Q / R", 16, new Color(1, 1, 1, 0.5f), TextAlignmentOptions.BottomRight, true);
             UIFactory.Place(keys.rectTransform, new Vector2(1, 0), new Vector2(1, 0), new Vector2(-74, 6), new Vector2(80, 24));
 
-            _throwButton = UIFactory.Button(_bottomRow, "БРОСИТЬ", UITheme.Green, () => _g.Throw.RequestThrow(), 46, IconId.Target, 30);
+            _throwButton = UIFactory.Button(_bottomRow, "ЗАБРОСИТЬ", UITheme.Green, () => _g.Throw.RequestThrow(), 42, IconId.Rod, 30);
             UIFactory.Layout(_throwButton.button, 360, 130);
             var fkey = UIFactory.Panel(_throwButton.bg.transform, "Key", new Color(0, 0, 0, 0.35f), 10);
             UIFactory.Place(fkey.rectTransform, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-10, -10), new Vector2(32, 28));
@@ -189,7 +190,7 @@ namespace ZooThrow.UI
 
         void BuildHints(RectTransform layer)
         {
-            var help = UIFactory.Text(layer, "WASD — ходьба • Shift — бег • Пробел — прыжок • E — действие • F — бросок • Alt — курсор • Esc — меню", 18, new Color(1, 1, 1, 0.6f), TextAlignmentOptions.BottomLeft, false, true);
+            var help = UIFactory.Text(layer, "WASD — ходьба • Shift — бег • Пробел — прыжок • E — действие • F — заброс • Q/R — наживка • Alt — курсор • Esc — меню", 18, new Color(1, 1, 1, 0.6f), TextAlignmentOptions.BottomLeft, false, true);
             UIFactory.Place(help.rectTransform, new Vector2(0, 0), new Vector2(0, 0), new Vector2(18, 8), new Vector2(1200, 30));
             _fps = UIFactory.Text(layer, "", 20, UITheme.Money, TextAlignmentOptions.TopLeft, true, true);
             UIFactory.Place(_fps.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(16, -10), new Vector2(200, 30));
@@ -257,18 +258,21 @@ namespace ZooThrow.UI
             if (_bottomRow.gameObject.activeSelf != showRow) _bottomRow.gameObject.SetActive(showRow);
             if (_trainingPanel.gameObject.activeSelf != training) _trainingPanel.gameObject.SetActive(training);
 
-            var food = _g.Foods.Selected;
-            if (food != null && food.id != _lastFoodId)
+            var bait = _g.Baits.Selected;
+            var rod = _g.Rods.Selected;
+            string gearKey = (bait != null ? bait.id : "") + "|" + (rod != null ? rod.id : "");
+            if (bait != null && gearKey != _lastFoodId)
             {
-                _lastFoodId = food.id;
-                _foodName.text = food.displayName;
-                _foodInfo.text = (food.distanceBonus > 0 ? "+" + food.distanceBonus.ToString("0") + " м дальности" : "Без бонуса") + "\nУдача ×" + food.luck.ToString("0.00");
-                _foodPortrait.texture = Portraits.Food(food);
+                _lastFoodId = gearKey;
+                _foodName.text = bait.displayName;
+                _foodInfo.text = "Удача ×" + bait.luck.ToString("0.00") +
+                                 (rod != null ? "\n" + rod.displayName + (rod.distanceBonus > 0 ? " (+" + rod.distanceBonus.ToString("0") + " м)" : "") : "");
+                _foodPortrait.texture = Portraits.Bait(bait);
             }
 
             bool nearTraining = _interaction.Current != null && _interaction.Current.kind == StationKind.Training;
             if (_trainButton.button.gameObject.activeSelf != (nearTraining && playing)) _trainButton.button.gameObject.SetActive(nearTraining && playing);
-            _throwButton.SetState(_g.Throw.PlayerOnPad ? "БРОСИТЬ" : "К БРОСКУ", UITheme.Green, playing);
+            _throwButton.SetState(_g.Throw.PlayerOnPad ? "ЗАБРОСИТЬ" : "НА ПИРС", UITheme.Green, playing);
 
             bool showPrompt = playing && _interaction.Current != null && !_ui.AnyWindowOpen;
             if (_promptPill.gameObject.activeSelf != showPrompt) _promptPill.gameObject.SetActive(showPrompt);
@@ -293,36 +297,42 @@ namespace ZooThrow.UI
             var s = _g.State;
             string text;
             float progress;
-            var apple = _g.Db.foods.Count > 1 ? _g.Db.foods[1] : null;
+            var secondRod = _g.Db.rods.Count > 1 ? _g.Db.rods[1] : null;
+            var secondBait = _g.Db.baits.Count > 1 ? _g.Db.baits[1] : null;
             var next = _g.Biomes.Next;
             if (s.totalThrows == 0)
             {
-                text = "Подойди к жёлтой площадке и брось еду (F или кнопка «БРОСИТЬ»).";
+                text = "Встань на пирс и закинь удочку (F или кнопка «ЗАБРОСИТЬ»).";
                 progress = 0f;
             }
             else if (_g.Pen.PlacedCount == 0 && _g.Inventory.Count > 0)
             {
-                text = "Посади животное в загон: Tab, затем «В загон».";
+                text = "Выпусти улов в аквариум: Tab, затем «В аквариум».";
                 progress = 0.3f;
             }
             else if (s.powerLevel < 3)
             {
-                text = "Потренируйся на турнике (E рядом с ним), чтобы бросать дальше.";
+                text = "Потренируйся на турнике (E рядом с ним), чтобы забрасывать дальше.";
                 progress = (s.powerLevel - 1 + _g.Training.Xp01) / 2f;
             }
-            else if (apple != null && !_g.Foods.Owns(apple))
+            else if (secondRod != null && !_g.Rods.Owns(secondRod))
             {
-                text = "Накопи " + NumberFormat.Money(apple.price) + " и купи «" + apple.displayName + "» в магазине еды (B).";
-                progress = (float)System.Math.Min(1.0, _g.Economy.Money / System.Math.Max(1.0, apple.price));
+                text = "Накопи " + NumberFormat.Money(secondRod.price) + " и купи «" + secondRod.displayName + "» в магазине удочек (B).";
+                progress = (float)System.Math.Min(1.0, _g.Economy.Money / System.Math.Max(1.0, secondRod.price));
+            }
+            else if (secondBait != null && !_g.Baits.Owns(secondBait))
+            {
+                text = "Купи наживку «" + secondBait.displayName + "» (N): с ней чаще клюёт редкая рыба.";
+                progress = (float)System.Math.Min(1.0, _g.Economy.Money / System.Math.Max(1.0, secondBait.price));
             }
             else if (next != null)
             {
-                text = "Добрось до биома «" + next.displayName + "»: нужно " + NumberFormat.Meters(next.startDistance) + ". Твой идеальный бросок: " + NumberFormat.Meters(_g.ThrowPerfectDistance) + ".";
+                text = "Заброс до локации «" + next.displayName + "»: нужно " + NumberFormat.Meters(next.startDistance) + ". Твой идеальный заброс: " + NumberFormat.Meters(_g.ThrowPerfectDistance) + ".";
                 progress = Mathf.Clamp01(s.bestDistance / Mathf.Max(1f, next.startDistance));
             }
             else
             {
-                text = "Собери всю коллекцию: " + _g.Inventory.DiscoveredCount + " / " + _g.Db.animals.Count + ".";
+                text = "Поймай всех существ: " + _g.Inventory.DiscoveredCount + " / " + _g.Db.animals.Count + ".";
                 progress = _g.Inventory.DiscoveredCount / (float)Mathf.Max(1, _g.Db.animals.Count);
             }
             if (_objective.text != text) _objective.text = text;

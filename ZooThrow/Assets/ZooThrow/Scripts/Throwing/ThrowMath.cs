@@ -11,7 +11,8 @@ namespace ZooThrow.Throwing
         public float accuracyMultiplier;
         public float baseDistance;
         public float strengthDistance;
-        public float foodBonus;
+        /// <summary>Rod plus bait distance bonus, metres.</summary>
+        public float gearBonus;
         public float accuracyBonus;
         public float total;
         public float luck;
@@ -49,12 +50,18 @@ namespace ZooThrow.Throwing
             }
         }
 
+        public static float GearBonus(RodData rod, BaitData bait) =>
+            (rod != null ? rod.distanceBonus : 0f) + (bait != null ? bait.distanceBonus : 0f);
+
+        public static float GearLuck(RodData rod, BaitData bait) =>
+            (rod != null ? rod.luck : 1f) * (bait != null ? bait.luck : 1f);
+
         /// <summary>
-        /// Distance = base + strength + food bonus + accuracy bonus.
-        /// The accuracy bonus is (multiplier - 1) × (base + strength + food), so a weak throw has a negative bonus.
+        /// Cast distance = base + strength + rod/bait bonus + accuracy bonus.
+        /// The accuracy bonus is (multiplier - 1) × (base + strength + gear), so a weak cast has a negative bonus.
         /// jitter01 is a uniform random value in [0,1] used for the small natural spread.
         /// </summary>
-        public static ThrowResult Compute(BalanceSettings b, int powerLevel, float armsMultiplier, FoodData food,
+        public static ThrowResult Compute(BalanceSettings b, int powerLevel, float armsMultiplier, RodData rod, BaitData bait,
             float offset, float luckMultiplier, float jitter01)
         {
             var r = new ThrowResult();
@@ -63,20 +70,19 @@ namespace ZooThrow.Throwing
             r.accuracyMultiplier = AccuracyMultiplier(b, r.offset);
             r.baseDistance = b.baseDistance;
             r.strengthDistance = StrengthDistance(b, powerLevel, armsMultiplier);
-            r.foodBonus = food != null ? food.distanceBonus : 0f;
-            float raw = r.baseDistance + r.strengthDistance + r.foodBonus;
+            r.gearBonus = GearBonus(rod, bait);
+            float raw = r.baseDistance + r.strengthDistance + r.gearBonus;
             r.accuracyBonus = raw * (r.accuracyMultiplier - 1f);
             float jitter = 1f + (Mathf.Clamp01(jitter01) * 2f - 1f) * b.distanceJitter;
             r.total = Mathf.Clamp((raw + r.accuracyBonus) * jitter, 1f, b.maxThrowDistance);
-            float foodLuck = food != null ? food.luck : 1f;
-            r.luck = foodLuck * luckMultiplier * (r.grade == ThrowGrade.Perfect ? b.perfectLuckBonus : 1f);
+            r.luck = GearLuck(rod, bait) * luckMultiplier * (r.grade == ThrowGrade.Perfect ? b.perfectLuckBonus : 1f);
             return r;
         }
 
         /// <summary>Best possible distance (perfect, no jitter) — used for UI previews and biome hints.</summary>
-        public static float PerfectDistance(BalanceSettings b, int powerLevel, float armsMultiplier, FoodData food)
+        public static float PerfectDistance(BalanceSettings b, int powerLevel, float armsMultiplier, RodData rod, BaitData bait)
         {
-            float raw = b.baseDistance + StrengthDistance(b, powerLevel, armsMultiplier) + (food != null ? food.distanceBonus : 0f);
+            float raw = b.baseDistance + StrengthDistance(b, powerLevel, armsMultiplier) + GearBonus(rod, bait);
             return Mathf.Min(raw * b.perfectMultiplier, b.maxThrowDistance);
         }
 
@@ -97,10 +103,10 @@ namespace ZooThrow.Throwing
         {
             switch (g)
             {
-                case ThrowGrade.Perfect: return "PERFECT THROW!";
-                case ThrowGrade.Great: return "Отличный бросок!";
-                case ThrowGrade.Good: return "Хороший бросок";
-                default: return "Слабый бросок";
+                case ThrowGrade.Perfect: return "PERFECT CAST!";
+                case ThrowGrade.Great: return "Отличный заброс!";
+                case ThrowGrade.Good: return "Хороший заброс";
+                default: return "Слабый заброс";
             }
         }
     }

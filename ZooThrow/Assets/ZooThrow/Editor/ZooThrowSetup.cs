@@ -341,13 +341,14 @@ namespace ZooThrow.EditorTools
             foreach (var r in db.rarities) Save(r, "Rarities");
             foreach (var b in db.biomes) Save(b, "Biomes");
             foreach (var a in db.animals) Save(a, "Animals");
-            foreach (var f in db.foods) Save(f, "Foods");
+            foreach (var f in db.baits) Save(f, "Baits");
+            foreach (var r in db.rods) Save(r, "Rods");
             foreach (var t in db.trainers) Save(t, "Trainers");
             foreach (var u in db.upgrades) Save(u, "Upgrades");
             db.name = "ZooThrowDatabase";
             AssetDatabase.CreateAsset(db, ResourcesFolder + "/" + GameDatabase.ResourcePath + ".asset");
             AssetDatabase.SaveAssets();
-            Debug.Log("[ZooThrow] Созданы данные игры: " + db.animals.Count + " животных, " + db.foods.Count + " видов еды, " + db.biomes.Count + " биомов.");
+            Debug.Log("[ZooThrow] Созданы данные игры: " + db.animals.Count + " существ, " + db.rods.Count + " удочек, " + db.baits.Count + " видов наживки, " + db.biomes.Count + " локаций.");
         }
 
         // ------------------------------------------------------------------ scene and build
@@ -373,7 +374,7 @@ namespace ZooThrow.EditorTools
         static void ConfigurePlayerSettings()
         {
             PlayerSettings.companyName = "ZooThrow";
-            PlayerSettings.productName = "Зоо-Бросок";
+            PlayerSettings.productName = "Клёвый Улов";
             PlayerSettings.colorSpace = ColorSpace.Linear;
             PlayerSettings.runInBackground = true;
             PlayerSettings.defaultWebScreenWidth = 1280;

@@ -93,8 +93,8 @@ namespace ZooThrow.UI
             SetZone(_good, c, b.goodHalfWidth);
             SetZone(_great, c, b.greatHalfWidth);
             SetZone(_perfect, c, b.perfectHalfWidth);
-            var food = _g.Foods.Selected;
-            _preview.text = "Идеальный бросок: до " + NumberFormat.Meters(_g.ThrowPerfectDistance) + "  •  " + (food != null ? food.displayName : "");
+            var food = _g.Baits.Selected;
+            _preview.text = "Идеальный заброс: до " + NumberFormat.Meters(_g.ThrowPerfectDistance) + "  •  " + (food != null ? food.displayName : "") + "  •  " + _g.Rods.Selected.displayName;
         }
 
         public void ShowGrade(ThrowResult r)

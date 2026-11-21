@@ -5,7 +5,7 @@ using UnityEngine.InputSystem;
 
 namespace ZooThrow.Core
 {
-    public enum GameKey { Forward, Back, Left, Right, Jump, Sprint, Interact, Throw, Menu, Animals, Shop, Upgrades, Collection, FreeCursor, PrevFood, NextFood }
+    public enum GameKey { Forward, Back, Left, Right, Jump, Sprint, Interact, Throw, Menu, Animals, Rods, Baits, Upgrades, Collection, FreeCursor, PrevBait, NextBait }
 
     /// <summary>
     /// One input facade for both the new Input System and the legacy Input Manager, so the project works with
@@ -67,12 +67,13 @@ namespace ZooThrow.Core
                 case GameKey.Throw: return kb[Key.F];
                 case GameKey.Menu: return kb[Key.Escape];
                 case GameKey.Animals: return kb[Key.Tab];
-                case GameKey.Shop: return kb[Key.B];
+                case GameKey.Rods: return kb[Key.B];
+                case GameKey.Baits: return kb[Key.N];
                 case GameKey.Upgrades: return kb[Key.U];
                 case GameKey.Collection: return kb[Key.C];
                 case GameKey.FreeCursor: return kb[Key.LeftAlt];
-                case GameKey.PrevFood: return kb[Key.Q];
-                case GameKey.NextFood: return kb[Key.R];
+                case GameKey.PrevBait: return kb[Key.Q];
+                case GameKey.NextBait: return kb[Key.R];
                 default: return null;
             }
         }
@@ -91,12 +92,13 @@ namespace ZooThrow.Core
                 case GameKey.Throw: return KeyCode.F;
                 case GameKey.Menu: return KeyCode.Escape;
                 case GameKey.Animals: return KeyCode.Tab;
-                case GameKey.Shop: return KeyCode.B;
+                case GameKey.Rods: return KeyCode.B;
+                case GameKey.Baits: return KeyCode.N;
                 case GameKey.Upgrades: return KeyCode.U;
                 case GameKey.Collection: return KeyCode.C;
                 case GameKey.FreeCursor: return KeyCode.LeftAlt;
-                case GameKey.PrevFood: return KeyCode.Q;
-                case GameKey.NextFood: return KeyCode.R;
+                case GameKey.PrevBait: return KeyCode.Q;
+                case GameKey.NextBait: return KeyCode.R;
                 default: return KeyCode.None;
             }
         }

@@ -31,21 +31,27 @@ namespace ZooThrow.UI
             var tabs = UIFactory.Rect("Tabs", body);
             tabs.anchorMin = new Vector2(0, 1); tabs.anchorMax = new Vector2(1, 1); tabs.pivot = new Vector2(0.5f, 1);
             tabs.offsetMin = new Vector2(0, -74); tabs.offsetMax = Vector2.zero;
-            UIFactory.HLayout(tabs, 10, null, TextAnchor.MiddleLeft, true, true);
+            tabs.offsetMin = new Vector2(0, -150);
+            // Twelve locations: two rows of tabs.
+            var grid = tabs.gameObject.AddComponent<GridLayoutGroup>();
+            grid.cellSize = new Vector2(232, 68);
+            grid.spacing = new Vector2(10, 10);
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = 6;
             for (int i = 0; i < G.Db.biomes.Count; i++)
             {
                 int index = i;
-                var b = UIFactory.Button(tabs, G.Db.biomes[i].displayName, UITheme.Grey, () => { _biomeIndex = index; Refresh(); }, 24, null, 18);
+                var b = UIFactory.Button(tabs, G.Db.biomes[i].displayName, UITheme.Grey, () => { _biomeIndex = index; Refresh(); }, 16, null, 16);
                 _tabs.Add(b);
             }
             _biomeInfo = UIFactory.Text(body, "", 24, UITheme.TextDim, TextAlignmentOptions.MidlineLeft, true, true);
             var irt = _biomeInfo.rectTransform;
             irt.anchorMin = new Vector2(0, 1); irt.anchorMax = new Vector2(1, 1); irt.pivot = new Vector2(0.5f, 1);
-            irt.offsetMin = new Vector2(6, -124); irt.offsetMax = new Vector2(-6, -82);
+            irt.offsetMin = new Vector2(6, -204); irt.offsetMax = new Vector2(-6, -158);
 
             var area = UIFactory.Rect("Grid", body);
             area.anchorMin = Vector2.zero; area.anchorMax = Vector2.one;
-            area.offsetMin = Vector2.zero; area.offsetMax = new Vector2(0, -132);
+            area.offsetMin = Vector2.zero; area.offsetMax = new Vector2(0, -212);
             _grid = UIFactory.Scroll(area, out _);
             UIFactory.Stretch((RectTransform)_grid.parent.parent);
             UIFactory.Grid(_grid, new Vector2(274, 336), new Vector2(14, 14), 5, new RectOffset(4, 4, 4, 8));
@@ -86,15 +92,15 @@ namespace ZooThrow.UI
                 int found = 0, total = 0;
                 foreach (var a in db.animals) if (a.biomeId == b.id) { total++; if (G.Inventory.IsDiscovered(a.id)) found++; }
                 bool unlocked = G.Biomes.IsUnlocked(b);
-                _tabs[i].label.text = (unlocked ? "" : "? ") + b.displayName + " " + found + "/" + total;
+                _tabs[i].label.text = b.displayName + "\n<size=80%>" + (unlocked ? "" : "закрыто • ") + found + "/" + total + "</size>";
                 _tabs[i].SetColor(i == _biomeIndex ? b.accentColor : unlocked ? UITheme.Grey : new Color(0.2f, 0.22f, 0.32f));
             }
 
-            float luck = G.Foods.SelectedLuck * G.Upgrades.LuckMultiplier;
+            float luck = G.CurrentLuck;
             bool biomeOpen = G.Biomes.IsUnlocked(biome);
             _biomeInfo.text = biomeOpen
-                ? biome.description + "   <color=#FFD23F>Шансы указаны для еды «" + G.Foods.Selected.displayName + "» (удача ×" + luck.ToString("0.00") + ").</color>"
-                : "<color=#FF8A8A>Биом закрыт:</color> добрось еду до " + NumberFormat.Meters(biome.startDistance) + ". Твой идеальный бросок сейчас: " + NumberFormat.Meters(G.ThrowPerfectDistance) + ".";
+                ? biome.description + "   <color=#FFD23F>Шансы для «" + G.Rods.Selected.displayName + "» и наживки «" + G.Baits.Selected.displayName + "» (удача ×" + luck.ToString("0.00") + ").</color>"
+                : "<color=#FF8A8A>Локация закрыта:</color> закинь удочку на " + NumberFormat.Meters(biome.startDistance) + ". Твой идеальный заброс сейчас: " + NumberFormat.Meters(G.ThrowPerfectDistance) + ".";
 
             _species.Clear();
             foreach (var a in db.animals) if (a.biomeId == biome.id) _species.Add(a);
@@ -116,8 +122,8 @@ namespace ZooThrow.UI
                 c.rarity.color = Color.Lerp(rarity.color, Color.white, 0.3f);
                 c.name.text = known ? a.displayName : "???";
                 c.income.text = known ? "+" + NumberFormat.PerSecond(AnimalRoller.Income(db, a, Mutation.None)) : "+$?/сек";
-                c.chance.text = "Шанс: " + NumberFormat.Percent(AnimalRoller.Chance(db, a, luck));
-                c.trait.text = known ? a.trait : "Ещё не найдено";
+                c.chance.text = "Шанс: " + NumberFormat.OneIn(AnimalRoller.Chance(db, a, luck));
+                c.trait.text = known ? a.trait : "Ещё не поймано";
             }
             Subtitle.text = "Открыто " + G.Inventory.DiscoveredCount + " / " + db.animals.Count;
         }

@@ -7,7 +7,7 @@ namespace ZooThrow.UI
     public enum IconId
     {
         Circle, Coin, Income, Power, Paw, Shop, Upgrade, Collection, Gear, Lock, Star, Close, ChevronLeft, ChevronRight,
-        Check, Flag, Food, Sparkle, Clock, Target
+        Check, Flag, Food, Sparkle, Clock, Target, Fish, Rod, Worm
     }
 
     /// <summary>UI sprites generated at runtime: anti-aliased rounded rectangles (9-sliced) and vector-like icons.</summary>
@@ -231,6 +231,25 @@ namespace ZooThrow.UI
                     }
                 case IconId.Food:
                     return p => U(U(Circle(p, new Vector2(-0.22f, -0.15f), 0.55f), Circle(p, new Vector2(0.22f, -0.15f), 0.55f)), Segment(p, new Vector2(0, 0.35f), new Vector2(0.3f, 0.75f), 0.1f));
+                case IconId.Fish:
+                    {
+                        var tail = new[] { new Vector2(-0.45f, 0f), new Vector2(-0.92f, 0.42f), new Vector2(-0.92f, -0.42f) };
+                        return p => Sub(U(Box(p, new Vector2(0.1f, 0f), new Vector2(0.6f, 0.38f), 0.36f), Poly(p, tail)), Circle(p, new Vector2(0.42f, 0.1f), 0.09f));
+                    }
+                case IconId.Rod:
+                    return p => U(U(Segment(p, new Vector2(-0.75f, -0.8f), new Vector2(0.6f, 0.75f), 0.07f), Circle(p, new Vector2(-0.45f, -0.45f), 0.17f)),
+                                 U(Segment(p, new Vector2(0.6f, 0.75f), new Vector2(0.72f, -0.15f), 0.035f), Ring(p, new Vector2(0.72f, -0.32f), 0.14f, 0.05f)));
+                case IconId.Worm:
+                    return p =>
+                    {
+                        float d = 10f;
+                        for (int i = 0; i < 6; i++)
+                        {
+                            var a = new Vector2(-0.7f + i * 0.28f, Mathf.Sin(i * 1.4f) * 0.25f);
+                            d = U(d, Circle(p, a, 0.2f));
+                        }
+                        return d;
+                    };
                 case IconId.Clock:
                     return p => U(Ring(p, Vector2.zero, 0.75f, 0.1f), U(Segment(p, Vector2.zero, new Vector2(0, 0.5f), 0.08f), Segment(p, Vector2.zero, new Vector2(0.35f, -0.1f), 0.08f)));
                 case IconId.Target:

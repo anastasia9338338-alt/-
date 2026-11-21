@@ -10,8 +10,9 @@ namespace ZooThrow.SaveSystem
     /// </summary>
     public class SaveManager
     {
-        const string MainKey = "zoothrow.save.v1";
-        const string BackupKey = "zoothrow.save.v1.backup";
+        // v2: the fishing version. Saves of the earlier food-throwing prototype are not carried over.
+        const string MainKey = "zoothrow.save.v2";
+        const string BackupKey = "zoothrow.save.v2.backup";
         const string HashSuffix = ".hash";
 
         public enum LoadOutcome { NewGame, Loaded, RestoredBackup, CorruptedReset }
@@ -67,7 +68,7 @@ namespace ZooThrow.SaveSystem
             try
             {
                 var data = JsonUtility.FromJson<SaveData>(json);
-                return data != null && data.version >= 1 ? data : null;
+                return data != null && data.version >= 2 ? data : null;
             }
             catch (Exception e)
             {

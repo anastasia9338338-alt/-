@@ -71,8 +71,9 @@ namespace ZooThrow.UI
             _throwHud = _hudLayer.gameObject.AddComponent<ThrowHud>();
             _throwHud.Build(this, _g, _hudLayer);
 
-            AddWindow<AnimalsWindow>(WindowId.Animals, "Животные", IconId.Paw, UITheme.Green, new Vector2(1500, 900));
-            AddWindow<ShopWindow>(WindowId.Shop, "Магазин еды", IconId.Food, UITheme.Orange, new Vector2(1400, 860));
+            AddWindow<AnimalsWindow>(WindowId.Animals, "Аквариум", IconId.Fish, UITheme.Blue, new Vector2(1500, 900));
+            AddWindow<RodShopWindow>(WindowId.Rods, "Удочки", IconId.Rod, UITheme.Orange, new Vector2(1400, 860));
+            AddWindow<BaitShopWindow>(WindowId.Baits, "Наживка", IconId.Worm, UITheme.Green, new Vector2(1400, 860));
             AddWindow<UpgradesWindow>(WindowId.Upgrades, "Улучшения", IconId.Upgrade, UITheme.Blue, new Vector2(1400, 880));
             AddWindow<CollectionWindow>(WindowId.Collection, "Коллекция", IconId.Collection, UITheme.Purple, new Vector2(1500, 900));
             AddWindow<SettingsWindow>(WindowId.Settings, "Меню", IconId.Gear, UITheme.Grey, new Vector2(1000, 860));
@@ -89,12 +90,12 @@ namespace ZooThrow.UI
             GameEvents.Toast += (text, color) => _toasts.Show(text, color);
             GameEvents.InventoryChanged += () => MarkDirty(WindowId.Animals, WindowId.Collection);
             GameEvents.PenChanged += () => MarkDirty(WindowId.Animals);
-            GameEvents.ShopChanged += () => MarkDirty(WindowId.Shop, WindowId.Upgrades, WindowId.Collection);
+            GameEvents.ShopChanged += () => MarkDirty(WindowId.Rods, WindowId.Baits, WindowId.Upgrades, WindowId.Collection);
             GameEvents.PowerChanged += () => MarkDirty(WindowId.Upgrades);
             GameEvents.PowerLevelUp += level =>
             {
-                _banner.Enqueue("СИЛА БРОСКА " + level + "!", "Дальность: до " + NumberFormat.Meters(_g.ThrowPerfectDistance), UITheme.Blue, 1.6f);
-                MarkDirty(WindowId.Shop, WindowId.Upgrades);
+                _banner.Enqueue("СИЛА ЗАБРОСА " + level + "!", "Дальность: до " + NumberFormat.Meters(_g.ThrowPerfectDistance), UITheme.Blue, 1.6f);
+                MarkDirty(WindowId.Rods, WindowId.Baits, WindowId.Upgrades);
             };
             GameEvents.MoneySpent += _ => _g.Sound.Play(Audio.Sfx.Buy);
         }
@@ -183,14 +184,15 @@ namespace ZooThrow.UI
             bool free = _g.Mode == GameMode.Playing || _g.Mode == GameMode.Training || AnyWindowOpen;
             if (!free) return;
             if (GameInput.Pressed(GameKey.Animals)) Toggle(WindowId.Animals);
-            else if (GameInput.Pressed(GameKey.Shop)) Toggle(WindowId.Shop);
+            else if (GameInput.Pressed(GameKey.Rods)) Toggle(WindowId.Rods);
+            else if (GameInput.Pressed(GameKey.Baits)) Toggle(WindowId.Baits);
             else if (GameInput.Pressed(GameKey.Upgrades)) Toggle(WindowId.Upgrades);
             else if (GameInput.Pressed(GameKey.Collection)) Toggle(WindowId.Collection);
             else if (!AnyWindowOpen)
             {
                 if (GameInput.Pressed(GameKey.Throw)) _g.Throw.RequestThrow();
-                if (GameInput.Pressed(GameKey.PrevFood)) _g.Foods.Cycle(-1);
-                if (GameInput.Pressed(GameKey.NextFood)) _g.Foods.Cycle(1);
+                if (GameInput.Pressed(GameKey.PrevBait)) _g.Baits.Cycle(-1);
+                if (GameInput.Pressed(GameKey.NextBait)) _g.Baits.Cycle(1);
             }
         }
 
@@ -231,8 +233,8 @@ namespace ZooThrow.UI
 
         public void QueueBiomeBanner(BiomeData b)
         {
-            _banner.Enqueue("НОВЫЙ БИОМ ОТКРЫТ!", b.displayName.ToUpperInvariant(), b.accentColor, 3f, Audio.Sfx.Unlock);
-            MarkDirty(WindowId.Shop, WindowId.Collection);
+            _banner.Enqueue("НОВАЯ ЛОКАЦИЯ ОТКРЫТА!", b.displayName.ToUpperInvariant(), b.accentColor, 3f, Audio.Sfx.Unlock);
+            MarkDirty(WindowId.Rods, WindowId.Baits, WindowId.Collection);
         }
 
         public void WorldPopup(Vector3 world, string text, Color color, float scale = 1f) => _popups.Show(world, text, color, scale);

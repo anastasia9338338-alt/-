@@ -6,7 +6,7 @@ using ZooThrow.Core;
 
 namespace ZooThrow.UI
 {
-    public enum WindowId { Animals, Shop, Upgrades, Collection, Settings }
+    public enum WindowId { Animals, Rods, Baits, Upgrades, Collection, Settings }
 
     /// <summary>Modal window with a dimmed backdrop, header, close button and pop-in/out animation.</summary>
     public abstract class UIWindow : MonoBehaviour

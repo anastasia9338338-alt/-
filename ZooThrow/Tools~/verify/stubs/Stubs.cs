@@ -12,7 +12,7 @@ namespace UnityEngine.InputSystem.Controls
 namespace UnityEngine.InputSystem
 {
     using UnityEngine.InputSystem.Controls;
-    public enum Key { None, Space, Enter, Tab, A, B, C, D, E, F, I, Q, R, S, U, W, X, Z, Digit1, LeftShift, LeftAlt, Escape, UpArrow, DownArrow, LeftArrow, RightArrow }
+    public enum Key { None, Space, Enter, Tab, A, B, C, D, E, F, I, N, Q, R, S, U, W, X, Z, Digit1, LeftShift, LeftAlt, Escape, UpArrow, DownArrow, LeftArrow, RightArrow }
     public class Keyboard { public static Keyboard current { get; } public KeyControl this[Key key] => null; }
     public class Pointer { public Vector2Control position { get; protected set; } public Vector2Control delta { get; protected set; } }
     public class Mouse : Pointer { public static Mouse current { get; } public DeltaControl scroll { get; protected set; } public ButtonControl leftButton { get; protected set; } public ButtonControl rightButton { get; protected set; } }
