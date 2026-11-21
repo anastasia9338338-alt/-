@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes">
+  <title>{{{ PRODUCT_NAME }}}</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1b2440; font-family: "Trebuchet MS", Arial, sans-serif; }
+    #unity-canvas { width: 100%; height: 100%; display: block; background: #7fc4ff; outline: none; }
+    #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+              background: radial-gradient(circle at 50% 40%, #3d8bff 0%, #1b2440 70%); color: #fff; transition: opacity .4s; }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+    #logo { font-size: 64px; font-weight: 900; letter-spacing: 2px; text-shadow: 0 6px 0 #0d1530, 0 0 30px rgba(255,210,63,.6); margin-bottom: 8px; }
+    #logo span { color: #ffd23f; }
+    #tagline { font-size: 20px; opacity: .85; margin-bottom: 36px; }
+    #bar { width: min(520px, 80vw); height: 26px; border-radius: 13px; background: rgba(255,255,255,.15); overflow: hidden; box-shadow: inset 0 2px 6px rgba(0,0,0,.4); }
+    #fill { width: 0%; height: 100%; border-radius: 13px; background: linear-gradient(90deg, #3ddc6e, #ffd23f); transition: width .2s; }
+    #status { margin-top: 14px; font-size: 16px; opacity: .8; }
+    #error { display: none; max-width: 640px; margin-top: 18px; padding: 12px 18px; border-radius: 12px; background: rgba(255,80,90,.25); font-size: 15px; }
+  </style>
+</head>
+<body>
+  <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <div id="loader">
+    <div id="logo">ЗОО-<span>БРОСОК</span></div>
+    <div id="tagline">Брось еду — поймай редкого зверя!</div>
+    <div id="bar"><div id="fill"></div></div>
+    <div id="status">Загрузка...</div>
+    <div id="error"></div>
+  </div>
+  <script>
+    var canvas = document.querySelector("#unity-canvas");
+    var loader = document.querySelector("#loader");
+    var fill = document.querySelector("#fill");
+    var statusEl = document.querySelector("#status");
+    var errorEl = document.querySelector("#error");
+    function showError(message) {
+      errorEl.style.display = "block";
+      errorEl.textContent = "Ошибка: " + message;
+    }
+    var buildUrl = "Build";
+    var loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+    var config = {
+      dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+      frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+#if USE_WASM
+      codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+#endif
+#if MEMORY_FILENAME
+      memoryUrl: buildUrl + "/{{{ MEMORY_FILENAME }}}",
+#endif
+#if SYMBOLS_FILENAME
+      symbolsUrl: buildUrl + "/{{{ SYMBOLS_FILENAME }}}",
+#endif
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+      productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+      productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+      showBanner: function (msg, type) { if (type === "error") showError(msg); else console.warn(msg); }
+    };
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      statusEl.textContent = "Игра рассчитана на компьютер с клавиатурой и мышью.";
+    }
+    var script = document.createElement("script");
+    script.src = loaderUrl;
+    script.onload = function () {
+      createUnityInstance(canvas, config, function (progress) {
+        fill.style.width = Math.round(progress * 100) + "%";
+        statusEl.textContent = progress < 0.9 ? "Загрузка... " + Math.round(progress * 100) + "%" : "Готовим зоопарк...";
+      }).then(function (unityInstance) {
+        loader.classList.add("hidden");
+        canvas.focus();
+      }).catch(function (message) {
+        showError(message);
+      });
+    };
+    script.onerror = function () { showError("не удалось загрузить " + loaderUrl); };
+    document.body.appendChild(script);
+    canvas.addEventListener("click", function () { canvas.focus(); });
+  </script>
+</body>
+</html>
